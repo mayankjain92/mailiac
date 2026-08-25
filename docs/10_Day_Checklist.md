@@ -29,8 +29,8 @@ Simple rule for every module, every time:
 
 ### Mayank
 
-- [ ] `/new-branch` → `feat/mayank/express-ingestion`
-- [ ] `/implement-module` → Finish `POST /api/upload`
+- [x] `/new-branch` → `feat/mayank/express-ingestion`
+- [x] `/implement-module` → Finish `POST /api/upload`
   - **Where:** `apps/api/src/routes/upload.ts`
   - **Scaffold already in place:** multer memoryStorage (20 MB), `randomUUID()`, `emailQueue.add()`, returns `202 { jobId }`
   - **What to add:** input validation (MIME-type check for `.eml`), error handling middleware
