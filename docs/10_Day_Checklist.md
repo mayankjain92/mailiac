@@ -85,33 +85,33 @@ Simple rule for every module, every time:
   - **Where:** `apps/api/src/routes/reports.ts`
   - **Scaffold already in place:** `AnalysisReportModel.findOne({ messageId })`, 404 if missing
   - **What to add:** ensure `connectDb` is called before this runs, add response typing
-- [ ] `/pre-pr-check` → `/open-pr`
+- [x] `/pre-pr-check` → `/open-pr`
 
 ### Praneet
 
-- [ ] `/new-branch` → `feat/praneet/decloak-geoip`
-- [ ] `/implement-module` → `decloakHtml(rawHtml: string): { cleanedHtml, zeroWidthCharCount, glasswormFlag }`
+- [x] `/new-branch` → `feat/praneet/decloak-geoip`
+- [x] `/implement-module` → `decloakHtml(rawHtml: string): { cleanedHtml, zeroWidthCharCount, glasswormFlag }`
   - **Where:** `packages/parsing/decloak/src/index.ts`
   - **Scaffold:** typed signature, throws `TODO`
   - **What to implement:** strip zero-width chars, detect Glassworm patterns, sanitise HTML
-- [ ] `/implement-module` → `enrichHopsWithGeo(hops: ForensicHop[]): Promise<ForensicHop[]>`
+- [x] `/implement-module` → `enrichHopsWithGeo(hops: ForensicHop[]): Promise<ForensicHop[]>`
   - **Where:** `packages/parsing/geoip/src/index.ts`
   - **Scaffold:** typed signature, throws `TODO`
   - **What to implement:** HTTP call to GeoIP API (`GEOIP_API_KEY`), timeout + fallback, populate `city/country/coordinates/asn`
-- [ ] `/pre-pr-check` → `/open-pr`
+- [x] `/pre-pr-check` → `/open-pr`
 
 ### Vivek
 
-- [ ] `/new-branch` → `feat/vivek/auth-identity`
-- [ ] `/implement-module` → `verifyAuth(rawEml: Buffer): Promise<AuthResult>`
+- [x] `/new-branch` → `feat/vivek/auth-identity`
+- [x] `/implement-module` → `verifyAuth(rawEml: Buffer): Promise<AuthResult>`
   - **Where:** `packages/scoring/auth/src/index.ts`
   - **Scaffold:** typed signature, throws `TODO`
   - **What to implement:** SPF/DKIM/DMARC/ARC parsing, compute `authScore`
-- [ ] `/implement-module` → `scoreIdentity(senderDomain: string, protectedDomains: string[]): IdentityResult`
+- [x] `/implement-module` → `scoreIdentity(senderDomain: string, protectedDomains: string[]): IdentityResult`
   - **Where:** `packages/scoring/identity/src/index.ts`
   - **Scaffold:** typed signature, throws `TODO`
   - **What to implement:** Levenshtein, Damerau-Levenshtein, Jaro-Winkler, homoglyph detection, compute `identityScore`
-- [ ] `/pre-pr-check` → `/open-pr`
+- [x] `/pre-pr-check` → `/open-pr`
 
 ### Harshita (Track D — Frontend)
 
@@ -127,10 +127,10 @@ Simple rule for every module, every time:
 
 ### Mayank
 
-- [ ] `/new-branch` → `feat/mayank/notify-webhook-endpoint`
-- [ ] `/implement-module` → WebSocket/SSE job notifications
+- [x] `/new-branch` → `feat/mayank/notify-webhook-endpoint`
+- [x] `/implement-module` → WebSocket/SSE job notifications
   - **Where:** new file `apps/api/src/routes/notify.ts` (to be created)
-- [ ] `/pre-pr-check` → `/open-pr`
+- [x] `/pre-pr-check` → `/open-pr`
 
 ### Praneet
 

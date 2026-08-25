@@ -2,6 +2,7 @@ import express, { type Application } from 'express';
 import { uploadRouter } from './routes/upload.js';
 import { jobsRouter } from './routes/jobs.js';
 import { reportsRouter } from './routes/reports.js';
+import { notifyRouter } from './routes/notify.js';
 import { errorHandler } from './middleware/error.js';
 import { connectDb } from '@mailiac/db';
 
@@ -12,6 +13,7 @@ app.use(express.json());
 app.use('/api', uploadRouter);
 app.use('/api', jobsRouter);
 app.use('/api', reportsRouter);
+app.use('/api', notifyRouter);
 
 app.use(errorHandler);
 
