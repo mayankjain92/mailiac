@@ -127,10 +127,10 @@ Simple rule for every module, every time:
 
 ### Mayank
 
-- [ ] `/new-branch` → `feat/mayank/notify-webhook-endpoint`
-- [ ] `/implement-module` → WebSocket/SSE job notifications
+- [x] `/new-branch` → `feat/mayank/notify-webhook-endpoint`
+- [x] `/implement-module` → WebSocket/SSE job notifications
   - **Where:** new file `apps/api/src/routes/notify.ts` (to be created)
-- [ ] `/pre-pr-check` → `/open-pr`
+- [x] `/pre-pr-check` → `/open-pr`
 
 ### Praneet
 
