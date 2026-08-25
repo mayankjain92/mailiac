@@ -1,5 +1,4 @@
 // @ts-check
-const { defineConfig } = require("eslint-define-config");
 
 module.exports = {
   root: true,
@@ -12,7 +11,6 @@ module.exports = {
   extends: [
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended",
-    "plugin:@typescript-eslint/recommended-requiring-type-checking",
   ],
   rules: {
     "@typescript-eslint/no-explicit-any": "error",

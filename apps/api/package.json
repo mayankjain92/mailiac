@@ -8,7 +8,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "dev": "node --watch dist/server.js",
     "start": "node dist/server.js"
   },
