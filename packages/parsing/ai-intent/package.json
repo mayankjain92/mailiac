@@ -19,9 +19,11 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
+    "@google/genai": "^2.18.0",
     "@mailiac/shared-types": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"
   }
