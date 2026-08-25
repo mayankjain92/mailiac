@@ -38,12 +38,12 @@ Simple rule for every module, every time:
 
 ### Praneet
 
-- [ ] `/new-branch` → `feat/praneet/mime-parse`
-- [ ] `/implement-module` → `parseEmlToMdm(rawEml: Buffer): Promise<MDM>`
+- [x] `/new-branch` → `feat/praneet/mime-parse`
+- [x] `/implement-module` → `parseEmlToMdm(rawEml: Buffer): Promise<MDM>`
   - **Where:** `packages/parsing/mime/src/index.ts`
   - **Scaffold:** typed signature, throws `TODO`
   - **What to implement:** postal-mime parsing, SHA-256 attachment hashing, populate all MDM fields
-- [ ] `/pre-pr-check` → `/open-pr`
+- [x] `/pre-pr-check` → `/open-pr`
 
 ### Vivek
 
@@ -220,10 +220,10 @@ Simple rule for every module, every time:
 |---|---|---|---|
 | `packages/shared-types` | 11 interfaces (frozen) | All | ✅ Done — do not modify |
 | `packages/db` | `connectDb()`, `AnalysisReportModel` | Mayank | ✅ Schema scaffolded — wire startup call |
-| `apps/api` | Express server, 3 routes, BullMQ queue | Mayank | 🔲 Plumbing in place — implement logic |
+| `apps/api` | Express server, 3 routes, BullMQ queue | Mayank | ✅ Ingestion route implemented & merged |
 | `apps/worker` | BullMQ Worker, 11-stage pipeline | Mayank | 🔲 Comments in place — uncomment on Day 9 |
 | `apps/web` | Next.js 14 UI, `lib/api.ts`, 3 pages | Harshita | 🔲 Scaffold prompt ready |
-| `packages/parsing/mime` | `parseEmlToMdm` | Praneet | 🔲 Stub only |
+| `packages/parsing/mime` | `parseEmlToMdm` | Praneet | ✅ Implemented & Merged |
 | `packages/parsing/decloak` | `decloakHtml` | Praneet | 🔲 Stub only |
 | `packages/parsing/geoip` | `enrichHopsWithGeo` | Praneet | 🔲 Stub only |
 | `packages/parsing/ai-intent` | `scoreIntent` | Praneet | 🔲 Stub only |
