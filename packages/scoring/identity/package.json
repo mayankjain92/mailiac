@@ -19,7 +19,10 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
-    "@mailiac/shared-types": "workspace:*"
+    "@mailiac/shared-types": "workspace:*",
+    "@types/damerau-levenshtein": "^1.0.2",
+    "damerau-levenshtein": "^1.0.8",
+    "tldts": "^7.4.11"
   },
   "devDependencies": {
     "typescript": "^5.4.5",

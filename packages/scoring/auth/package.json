@@ -19,7 +19,8 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
-    "@mailiac/shared-types": "workspace:*"
+    "@mailiac/shared-types": "workspace:*",
+    "mailauth": "^5.0.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
