@@ -19,7 +19,8 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
-    "@mailiac/shared-types": "workspace:*"
+    "@mailiac/shared-types": "workspace:*",
+    "cheerio": "^1.2.0"
   },
   "devDependencies": {
     "typescript": "^5.4.5",

@@ -6,16 +6,25 @@ import type { AnalysisReport } from '@mailiac/shared-types';
 // ---------------------------------------------------------------------------
 
 export async function connectDb(uri: string): Promise<void> {
+  if (mongoose.connection.readyState === 1) {
+    return;
+  }
   await mongoose.connect(uri);
+}
+
+export async function disconnectDb(): Promise<void> {
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.disconnect();
+  }
 }
 
 // ---------------------------------------------------------------------------
 // AnalysisReport Mongoose schema + model
 // ---------------------------------------------------------------------------
 
-type AnalysisReportDocument = AnalysisReport &
+export type AnalysisReportDocument = AnalysisReport &
   Document & {
-    expireAt: Date;
+    expireAt?: Date;
   };
 
 const forensicHopSchema = new Schema(
