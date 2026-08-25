@@ -10,19 +10,38 @@ const upload = multer({
 
 export const uploadRouter: IRouter = Router();
 
+uploadRouter.post('/upload', upload.single('eml'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: 'No file uploaded. Send an EML file as the "eml" field.' });
+      return;
+    }
 
-uploadRouter.post('/upload', upload.single('eml'), async (req, res) => {
-  if (!req.file) {
-    res.status(400).json({ error: 'No file uploaded. Send an EML file as the "eml" field.' });
-    return;
+    const filename = req.file.originalname.toLowerCase();
+    const mimetype = req.file.mimetype.toLowerCase();
+
+    const isValidExtension = filename.endsWith('.eml');
+    const isValidMime =
+      mimetype === 'message/rfc822' ||
+      mimetype === 'application/octet-stream' ||
+      mimetype === 'text/plain' ||
+      mimetype === 'message/global' ||
+      mimetype === 'application/eml';
+
+    if (!isValidExtension && !isValidMime) {
+      res.status(400).json({ error: 'Invalid file type. File must have a .eml extension or message/rfc822 MIME type.' });
+      return;
+    }
+
+    const messageId = randomUUID();
+
+    await emailQueue.add('process-email', {
+      messageId,
+      buffer: req.file.buffer,
+    });
+
+    res.status(202).json({ jobId: messageId });
+  } catch (err) {
+    next(err);
   }
-
-  const messageId = randomUUID();
-
-  await emailQueue.add('process-email', {
-    messageId,
-    buffer: req.file.buffer,
-  });
-
-  res.status(202).json({ jobId: messageId });
 });
