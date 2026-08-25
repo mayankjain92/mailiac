@@ -47,12 +47,12 @@ Simple rule for every module, every time:
 
 ### Vivek
 
-- [ ] `/new-branch` → `feat/vivek/reverse-hop`
-- [ ] `/implement-module` → `traceReverseHops(receivedHeadersRaw: string[]): Promise<ReverseHopResult>`
+- [x] `/new-branch` → `feat/vivek/reverse-hop`
+- [x] `/implement-module` → `traceReverseHops(receivedHeadersRaw: string[]): Promise<ReverseHopResult>`
   - **Where:** `packages/scoring/reverse-hop/src/index.ts`
   - **Scaffold:** typed signature, throws `TODO`
   - **What to implement:** parse Received headers, PTR validation, detect injection, populate `ForensicHop[]`
-- [ ] `/pre-pr-check` → `/open-pr`
+- [x] `/pre-pr-check` → `/open-pr`
 
 ---
 
