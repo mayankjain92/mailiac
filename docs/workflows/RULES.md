@@ -79,3 +79,25 @@ question, rather than guessing silently or expanding scope.
 - Never hardcode API keys or the webhook signing secret — always read from
   `process.env`. If a task needs a new environment variable, add a placeholder to
   `.env.example` and say so, rather than inventing a default value silently.
+
+---
+
+# Track D (Harshita): Frontend
+
+## Your app
+`apps/web` only. Never touch `apps/api`, `apps/worker`, or `packages/`.
+
+## Context
+- All data types come from `@mailiac/shared-types` — import them,
+  never redefine `AnalysisReport`/`RiskMatrix`/etc. locally.
+- ALL data fetching goes through `src/lib/api.ts`. No component should ever
+  call `fetch()` directly or import `mock-data.ts` directly — this is what makes
+  the Day 9 swap to the real backend a one-file change instead of a rewrite.
+- Build and test every screen against the mock fixture first. Don't wait for
+  the real backend to be ready to build UI.
+- Risk score color bands: green <40, yellow 40-70, red >70.
+
+## Non-goals
+No auth/login. No settings/admin pages. Just the 3 screens: upload, status,
+report. If it's not one of those 3, it's out of scope for this sprint.
+

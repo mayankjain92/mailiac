@@ -2,7 +2,7 @@
 
 ## AI-Powered Email Forensics & Threat Intelligence Platform
 
-**Team:** Mayank (Fullstack – MERN) · Praneet (Fullstack – MERN) · Vivek (Backend – Spring Boot, cross-trained on MERN-style logic)
+**Team:** Mayank (Fullstack – MERN) · Praneet (Fullstack – MERN) · Vivek (Backend – Spring Boot, cross-trained on MERN-style logic) · Harshita (Frontend – Next.js / Tailwind)
 **Timeline:** 10-day prototype sprint
 **Tooling:** Antigravity coding agents (per-module task cards) · Git (monorepo, Turborepo)
 
@@ -10,7 +10,7 @@
 
 ## 1. Purpose of This Document
 
-The master platform PRD defines _what_ the system does (9-step forensic pipeline, 4-Pillar Risk Scoring Engine, async architecture). This document defines _who builds what and how_, so that three backend developers can work **in parallel with minimal blocking**, using AI coding agents against clearly scoped, contract-first task cards.
+The master platform PRD defines _what_ the system does (9-step forensic pipeline, 4-Pillar Risk Scoring Engine, async architecture). This document defines _who builds what and how_, so that four developers can work **in parallel with minimal blocking**, using AI coding agents against clearly scoped, contract-first task cards.
 
 The core idea: every pipeline stage is written as a **pure function against a shared TypeScript contract** (the Message Data Model, or MDM). As long as everyone agrees on the contract on Day 1, each person can build and unit-test their stage in isolation — using fixture data and stubs — without waiting on anyone else's code. Integration only requires wiring functions together, not rewriting them.
 
@@ -18,13 +18,14 @@ The core idea: every pipeline stage is written as a **pure function against a sh
 
 ## 2. Team & Track Mapping
 
-| Developer   | Primary Stack                      | Track                                       | Track Theme                                                                                           |
-| ----------- | ---------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| **Mayank**  | MERN (express/Node, MongoDB)       | **Track A — Platform & Delivery**           | Ingestion, queueing, persistence, notifications, reporting                                            |
-| **Praneet** | MERN (Node, React)                 | **Track B — Enrichment Layer**              | MIME parsing, HTML de-cloaking, GeoIP, AI intent extraction                                           |
-| **Vivek**   | Spring Boot + adaptable to TS/Node | **Track C — Verification & Scoring Engine** | Crypto auth, reverse-hop trust chain, identity/typosquat detection, risk aggregation, webhook signing |
+| Developer | Primary Stack | Track | Track Theme |
+| --- | --- | --- | --- |
+| **Mayank** | MERN (express/Node, MongoDB) | **Track A — Platform & Delivery** | Ingestion, queueing, persistence, notifications, reporting |
+| **Praneet** | MERN (Node, React) | **Track B — Enrichment Layer** | MIME parsing, HTML de-cloaking, GeoIP, AI intent extraction |
+| **Vivek** | Spring Boot + adaptable to TS/Node | **Track C — Verification & Scoring Engine** | Crypto auth, reverse-hop trust chain, identity/typosquat detection, risk aggregation, webhook signing |
+| **Harshita** | Next.js (App Router), Tailwind, shadcn/ui | **Track D — Frontend Application** | Mock data fixture (`mock-data.ts`), `lib/api.ts` abstraction, 3 pages (`/upload`, `/status/[jobId]`, `/report/[jobId]`), recharts breakdown & Leaflet hop map |
 
-**Why this split:** Vivek's background is service-layer/algorithmic logic (Spring Boot is exactly this kind of work), so Track C isolates the deterministic, math-and-rules-heavy pillars — the parts least tied to Express/Fastify idioms and most transferable regardless of language familiarity. Mayank and Praneet, both MERN-native, split the two halves of the Node-specific work: Mayank owns the request/queue/DB "plumbing," Praneet owns the "data gathering" stages that call external libraries/APIs.
+**Why this split:** Vivek's background is service-layer/algorithmic logic (Spring Boot is exactly this kind of work), so Track C isolates the deterministic, math-and-rules-heavy pillars — the parts least tied to Express/Fastify idioms and most transferable regardless of language familiarity. Mayank and Praneet, both MERN-native, split the two halves of the Node-specific work: Mayank owns the request/queue/DB "plumbing," Praneet owns the "data gathering" stages that call external libraries/APIs. Harshita owns Track D (Frontend), building all UI components against a single abstraction (`src/lib/api.ts`) and mock fixture so frontend development runs completely in parallel with zero backend dependencies until Day 9 integration.
 
 Each track produces **independently testable modules** and touches its own package folder, so PRs rarely conflict.
 

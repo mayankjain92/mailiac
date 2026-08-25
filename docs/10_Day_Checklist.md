@@ -14,13 +14,13 @@ Simple rule for every module, every time:
 
 ## Day 1 — Everyone together ✅ DONE
 
-- [x] **All 3:** Scaffold the Turborepo monorepo
-  - 16 workspace packages, root config, Docker Compose, README, `.env.example`
+- [x] **All 4:** Scaffold the Turborepo monorepo
+  - Workspace packages & apps, root config, Docker Compose, README, `.env.example`
   - `pnpm turbo run build typecheck` → 30/30 tasks, 0 errors
-- [x] **All 3:** Freeze `packages/shared-types` — 11 typed interfaces, no logic
-- [ ] **All 3:** Paste the Global Rules into Customizations → Rules → + Workspace
-- [ ] **All 3:** Each paste your own individual track rules into your own agent session
-- [x] **All 3:** Add the 6 workflows (`new-branch`, `sync-contract`, `implement-module`, `pre-pr-check`, `open-pr`, `integration-check`)
+- [x] **All 4:** Freeze `packages/shared-types` — 11 typed interfaces, no logic
+- [ ] **All 4:** Paste the Global Rules into Customizations → Rules → + Workspace
+- [ ] **All 4:** Each paste your own individual track rules into your own agent session
+- [x] **All 4:** Add the 7 workflows (`new-branch`, `sync-contract`, `implement-module`, `pre-pr-check`, `open-pr`, `integration-check`, `wire-real-api`)
 - [x] **Mayank:** Wire the placeholder pipeline in `apps/worker` — all 11 stages are logged in order, every real function call is commented out
 
 ---
@@ -34,7 +34,7 @@ Simple rule for every module, every time:
   - **Where:** `apps/api/src/routes/upload.ts`
   - **Scaffold already in place:** multer memoryStorage (20 MB), `randomUUID()`, `emailQueue.add()`, returns `202 { jobId }`
   - **What to add:** input validation (MIME-type check for `.eml`), error handling middleware
-- [ ] `/pre-pr-check` → `/open-pr`
+- [x] `/pre-pr-check` → `/open-pr`
 
 ### Praneet
 
@@ -53,6 +53,18 @@ Simple rule for every module, every time:
   - **Scaffold:** typed signature, throws `TODO`
   - **What to implement:** parse Received headers, PTR validation, detect injection, populate `ForensicHop[]`
 - [x] `/pre-pr-check` → `/open-pr`
+
+### Harshita (Track D — Frontend)
+
+- [ ] `/new-branch` → `feat/harshita/scaffold-web`
+- [ ] Implement scaffold prompt for `apps/web`:
+  - **Stack:** Next.js 14 (App Router), Tailwind CSS + shadcn/ui, recharts, react-leaflet + leaflet, `@mailiac/shared-types`
+  - **Mock Data Fixture:** create `apps/web/src/lib/mock-data.ts` exporting realistic `AnalysisReport` object
+  - **API Abstraction Layer:** create `apps/web/src/lib/api.ts` with mock returns (simulated delay via `setTimeout`):
+    - `uploadEml(file: File)`
+    - `getJobStatus(jobId: string)`
+    - `getReport(jobId: string)`
+- [ ] `/pre-pr-check` → `/open-pr`
 
 ---
 
@@ -101,6 +113,14 @@ Simple rule for every module, every time:
   - **What to implement:** Levenshtein, Damerau-Levenshtein, Jaro-Winkler, homoglyph detection, compute `identityScore`
 - [ ] `/pre-pr-check` → `/open-pr`
 
+### Harshita (Track D — Frontend)
+
+- [ ] `/new-branch` → `feat/harshita/upload-status-pages`
+- [ ] `/implement-module` → Create `/upload` and `/status/[jobId]` pages:
+  - **`/upload`:** Drag-and-drop / file-picker for `.eml`, calls `uploadEml()`, displays `jobId`, redirects to `/status/[jobId]`
+  - **`/status/[jobId]`:** Polls `getJobStatus()` every 2s, state indicator (`queued`/`processing`/`completed`/`failed`), redirects to `/report/[jobId]` on completion
+- [ ] `/pre-pr-check` → `/open-pr`
+
 ---
 
 ## Day 6–8
@@ -138,16 +158,28 @@ Simple rule for every module, every time:
   - **What to implement:** HMAC-SHA256 using `WEBHOOK_SIGNING_SECRET`
 - [ ] `/pre-pr-check` → `/open-pr`
 
+### Harshita (Track D — Frontend)
+
+- [ ] `/new-branch` → `feat/harshita/report-page`
+- [ ] `/implement-module` → Create `/report/[jobId]` page:
+  - Risk score gauge (0-100, color-coded: green <40, yellow 40-70, red >70)
+  - Bar chart (recharts) of 4 pillar scores (auth/identity/ip/nlp)
+  - Table of forensic hop path (IP, city, country, trusted flag)
+  - Leaflet map plotting hop coordinates
+  - AI Summary section (urgency, intent labels)
+- [ ] `/pre-pr-check` → `/open-pr`
+
 ---
 
 ## Day 9 — Integration Day (all together)
 
-- [ ] **All 3:** Make sure every PR from Days 1–8 is merged into `develop`
+- [ ] **All 4:** Make sure every PR from Days 1–8 is merged into `develop`
+- [ ] **Harshita:** Run `/wire-real-api` → swap mock data returns in `src/lib/api.ts` for real `fetch()` calls to `NEXT_PUBLIC_API_URL` endpoints
 - [ ] **Mayank:** Uncomment and wire the real function calls in `apps/worker/src/index.ts`
   - All 11 stage calls are already in place as comments, in the correct order — just replace `console.info` with real awaited calls
 - [ ] **Mayank (or whoever's driving):** run `/integration-check`
-- [ ] **All 3:** Upload the 4 test emails (clean, phishing, spoofed-domain, forwarded mailing-list) and verify scores
-- [ ] **All 3:** fix anything broken, re-run `/integration-check` until clean
+- [ ] **All 4:** Upload the 4 test emails (clean, phishing, spoofed-domain, forwarded mailing-list) via the frontend (`/upload`) and verify end-to-end flow
+- [ ] **All 4:** Fix anything broken, re-run `/integration-check` until clean
 
 ---
 
@@ -170,7 +202,12 @@ Simple rule for every module, every time:
 - [ ] Fix edge cases found during integration (scoring side)
 - [ ] Double-check the final risk formula against real test emails
 
-- [ ] **All 3:** Final `develop → main` merge, demo run-through
+### Harshita
+
+- [ ] UI polish & SOC analyst dark dashboard styling refinements
+- [ ] Verify error states (failed job, missing report) rendering smoothly
+
+- [ ] **All 4:** Final `develop → main` merge, demo run-through
 
 ---
 
@@ -179,20 +216,22 @@ Simple rule for every module, every time:
 > All functions below throw `new Error('TODO: implement <name>')` — zero logic is inside them yet.
 > Each developer opens their branch, queries the assistant, and implements the real logic.
 
-| Package | Exported function | Owner | Status |
+| Package / App | Exported function / App scope | Owner | Status |
 |---|---|---|---|
 | `packages/shared-types` | 11 interfaces (frozen) | All | ✅ Done — do not modify |
 | `packages/db` | `connectDb()`, `AnalysisReportModel` | Mayank | ✅ Schema scaffolded — wire startup call |
 | `apps/api` | Express server, 3 routes, BullMQ queue | Mayank | 🔲 Plumbing in place — implement logic |
 | `apps/worker` | BullMQ Worker, 11-stage pipeline | Mayank | 🔲 Comments in place — uncomment on Day 9 |
+| `apps/web` | Next.js 14 UI, `lib/api.ts`, 3 pages | Harshita | 🔲 Scaffold prompt ready |
 | `packages/parsing/mime` | `parseEmlToMdm` | Praneet | 🔲 Stub only |
 | `packages/parsing/decloak` | `decloakHtml` | Praneet | 🔲 Stub only |
 | `packages/parsing/geoip` | `enrichHopsWithGeo` | Praneet | 🔲 Stub only |
 | `packages/parsing/ai-intent` | `scoreIntent` | Praneet | 🔲 Stub only |
-| `packages/scoring/reverse-hop` | `traceReverseHops` | Vivek | 🔲 Stub only |
+| `packages/scoring/reverse-hop` | `traceReverseHops` | Vivek | ✅ Implemented & Merged |
 | `packages/scoring/auth` | `verifyAuth` | Vivek | 🔲 Stub only |
 | `packages/scoring/identity` | `scoreIdentity` | Vivek | 🔲 Stub only |
 | `packages/scoring/ip-reputation` | `scoreIpReputation` | Vivek | 🔲 Stub only |
 | `packages/scoring/risk-engine` | `aggregateRisk` | Vivek | 🔲 Stub only |
 | `packages/webhooks` | `signPayload` | Vivek | 🔲 Stub only |
 | `packages/reporting/pdf` | `generateForensicPdf` | Mayank | 🔲 Stub only |
+
