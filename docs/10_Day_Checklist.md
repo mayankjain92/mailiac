@@ -72,16 +72,16 @@ Simple rule for every module, every time:
 
 ### Mayank
 
-- [ ] `/new-branch` → `feat/mayank/persistence`
-- [ ] `/implement-module` → Wire up database connection + persistence
+- [x] `/new-branch` → `feat/mayank/persistence`
+- [x] `/implement-module` → Wire up database connection + persistence
   - **Where (db schema):** `packages/db/src/index.ts`
   - **Scaffold already in place:** `connectDb(uri)` helper, full `AnalysisReportModel` Mongoose schema with TTL (`expireAt`, `expires: '24h'`), indexes on `messageId` and `senderDomain`
   - **What to add:** call `connectDb(process.env.MONGODB_URI)` on `apps/api` startup
-- [ ] `/implement-module` → `GET /api/jobs/:id`
+- [x] `/implement-module` → `GET /api/jobs/:id`
   - **Where:** `apps/api/src/routes/jobs.ts`
   - **Scaffold already in place:** BullMQ `getJob()` + state → `queued | processing | completed | failed` mapping
   - **What to add:** proper error handling, response typing
-- [ ] `/implement-module` → `GET /api/reports/:id`
+- [x] `/implement-module` → `GET /api/reports/:id`
   - **Where:** `apps/api/src/routes/reports.ts`
   - **Scaffold already in place:** `AnalysisReportModel.findOne({ messageId })`, 404 if missing
   - **What to add:** ensure `connectDb` is called before this runs, add response typing
