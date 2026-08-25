@@ -22,6 +22,7 @@
     "@mailiac/shared-types": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"
   }

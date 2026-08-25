@@ -262,6 +262,9 @@ importers:
         specifier: workspace:*
         version: link:../../shared-types
     devDependencies:
+      '@types/node':
+        specifier: ^20.19.43
+        version: 20.19.43
       typescript:
         specifier: ^5.4.5
         version: 5.9.3
@@ -313,6 +316,9 @@ importers:
         specifier: workspace:*
         version: link:../shared-types
     devDependencies:
+      '@types/node':
+        specifier: ^20.19.43
+        version: 20.19.43
       typescript:
         specifier: ^5.4.5
         version: 5.9.3
