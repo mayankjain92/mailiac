@@ -1,0 +1,20 @@
+Received: from mail.example.com (mail.example.com [203.0.113.10]) by mx.target.com; Tue, 25 Aug 2026 12:00:00 +0000
+From: "Test Sender" <sender@example.com>
+To: "Test Receiver" <receiver@target.com>
+Subject: Email with Zero Byte Attachment
+Date: Tue, 25 Aug 2026 12:00:00 +0000
+Message-ID: <zero-byte-001@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="ZERO-BYTE-BOUNDARY"
+
+--ZERO-BYTE-BOUNDARY
+Content-Type: text/plain; charset="utf-8"
+
+This email contains a 0-byte attachment.
+--ZERO-BYTE-BOUNDARY
+Content-Type: text/plain; name="empty.txt"
+Content-Disposition: attachment; filename="empty.txt"
+Content-Transfer-Encoding: base64
+
+
+--ZERO-BYTE-BOUNDARY--
