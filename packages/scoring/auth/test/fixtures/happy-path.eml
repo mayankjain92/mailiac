@@ -1,0 +1,11 @@
+Received-SPF: pass (google.com: domain of user@example.com designates 203.0.113.1 as permitted sender)
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@example.com header.s=20230601 header.b=AbCd123;
+       spf=pass (google.com: domain of user@example.com designates 203.0.113.1 as permitted sender) smtp.mailfrom=user@example.com;
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=example.com
+From: "Jane Doe" <user@example.com>
+To: "Target" <target@target.com>
+Subject: Legitimate Email
+Date: Tue, 25 Aug 2026 10:00:00 +0000
+
+This is a legitimate authenticated email.
