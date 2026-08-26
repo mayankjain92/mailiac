@@ -16,7 +16,7 @@ describe('Reverse-Hop Trace Algorithm', () => {
   });
 
   describe('isPrivateIP', () => {
-    it('correctly identifies private IPv4 addresses', () => {
+    it('correctly identifies private IPv4 addresses (Test 7)', () => {
       expect(isPrivateIP('10.0.0.1')).toBe(true);
       expect(isPrivateIP('172.16.254.1')).toBe(true);
       expect(isPrivateIP('172.31.0.1')).toBe(true);
@@ -26,21 +26,22 @@ describe('Reverse-Hop Trace Algorithm', () => {
       expect(isPrivateIP('0.0.0.0')).toBe(true);
     });
 
-    it('correctly identifies public IPv4 addresses', () => {
+    it('correctly identifies non-private/public IPv4 addresses (Test 7)', () => {
       expect(isPrivateIP('8.8.8.8')).toBe(false);
       expect(isPrivateIP('209.85.220.41')).toBe(false);
       expect(isPrivateIP('172.15.255.255')).toBe(false);
       expect(isPrivateIP('172.32.0.0')).toBe(false);
     });
 
-    it('correctly identifies private/local IPv6 addresses', () => {
+    it('correctly identifies private/local IPv6 addresses (Test 8)', () => {
       expect(isPrivateIP('::1')).toBe(true);
       expect(isPrivateIP('fe80::1')).toBe(true);
       expect(isPrivateIP('fc00::1')).toBe(true);
+      expect(isPrivateIP('fd00::1')).toBe(true);
       expect(isPrivateIP('fdff::ffff')).toBe(true);
     });
 
-    it('correctly identifies public IPv6 addresses', () => {
+    it('correctly identifies public IPv6 addresses (Test 8)', () => {
       expect(isPrivateIP('2001:db8::1')).toBe(false);
       expect(isPrivateIP('2607:f8b0:4001:c09::26')).toBe(false);
     });
@@ -75,6 +76,13 @@ describe('Reverse-Hop Trace Algorithm', () => {
       expect(parsed.claimedHostname).toBe('mail.google.com');
     });
 
+    it('parses folded/multiline Received header correctly (Test 6)', () => {
+      const header = `Received: from mail.google.com\n\t(mail.google.com [209.85.220.41])\n\tby mx.target.com with SMTP id xyz`;
+      const parsed = parseReceivedHeader(header);
+      expect(parsed.ip).toBe('209.85.220.41');
+      expect(parsed.claimedHostname).toBe('mail.google.com');
+    });
+
     it('returns nulls for Received header without from clause', () => {
       const header = 'Received: by mx.target.com with SMTP id 12345';
       const parsed = parseReceivedHeader(header);
@@ -84,7 +92,7 @@ describe('Reverse-Hop Trace Algorithm', () => {
   });
 
   describe('traceReverseHops', () => {
-    it('happy path: all hops are public and have valid PTR records', async () => {
+    it('Test 1 — trusted chain: hop 0 and hop 1 are public + matching PTR', async () => {
       const headers = [
         'Received: from mail.google.com (mail.google.com [209.85.220.41]) by mx.target.com',
         'Received: from relay.sender.com (relay.sender.com [198.51.100.5]) by mail.google.com',
@@ -98,40 +106,41 @@ describe('Reverse-Hop Trace Algorithm', () => {
 
       const result = await traceReverseHops(headers);
 
+      expect(result.path[0].trusted).toBe(true);
+      expect(result.path[1].trusted).toBe(true);
       expect(result.injectionDetected).toBe(false);
       expect(result.evidenceBoundaryIndex).toBe(2);
       expect(result.originatingSenderIp).toBe('198.51.100.5');
-      expect(result.path).toHaveLength(2);
-      expect(result.path[0].trusted).toBe(true);
-      expect(result.path[1].trusted).toBe(true);
     });
 
-    it('private IP boundary: identifies boundary at private IP and isolates public IP below it', async () => {
+    it('Test 2 — private boundary: hop 0 & 1 trusted public, hop 2 private IP, hop 3 public IP', async () => {
       const headers = [
         'Received: from mail.google.com (mail.google.com [209.85.220.41]) by mx.target.com',
-        'Received: from internal.local (local [10.0.0.5]) by mail.google.com',
-        'Received: from workstation.local (workstation [192.168.1.10]) by internal.local',
-        'Received: from public.home.com (public.home.com [198.51.100.20]) by workstation.local',
+        'Received: from relay.sender.com (relay.sender.com [198.51.100.5]) by mail.google.com',
+        'Received: from internal.local (local [10.0.0.5]) by relay.sender.com',
+        'Received: from public.home.com (public.home.com [198.51.100.20]) by internal.local',
       ];
 
       vi.mocked(dns.reverse).mockImplementation(async (ip) => {
         if (ip === '209.85.220.41') return ['mail.google.com'];
+        if (ip === '198.51.100.5') return ['relay.sender.com'];
         if (ip === '198.51.100.20') return ['public.home.com'];
         return [];
       });
 
       const result = await traceReverseHops(headers);
 
-      expect(result.injectionDetected).toBe(true);
-      expect(result.evidenceBoundaryIndex).toBe(1); // Index of internal.local
-      expect(result.originatingSenderIp).toBe('198.51.100.20');
       expect(result.path[0].trusted).toBe(true);
-      expect(result.path[1].trusted).toBe(false); // Boundary (private)
-      expect(result.path[2].trusted).toBe(false); // Below boundary
-      expect(result.path[3].trusted).toBe(false); // Below boundary
+      expect(result.path[1].trusted).toBe(true);
+      expect(result.path[2].trusted).toBe(false); // boundary (private)
+      expect(result.path[3].trusted).toBe(false); // below boundary
+      expect(result.evidenceBoundaryIndex).toBe(2);
+      expect(result.injectionDetected).toBe(false);
+      expect(result.originatingSenderIp).toBe('198.51.100.5');
+      expect(result.originatingSenderIp).not.toBe('198.51.100.20');
     });
 
-    it('PTR mismatch boundary: identifies boundary at PTR mismatch and marks as untrusted', async () => {
+    it('Test 3 — PTR mismatch: hop 0 valid public + matching PTR, hop 1 mismatching PTR, hop 2 another public IP', async () => {
       const headers = [
         'Received: from mail.google.com (mail.google.com [209.85.220.41]) by mx.target.com',
         'Received: from spoofed.com (spoofed.com [198.51.100.5]) by mail.google.com',
@@ -140,22 +149,53 @@ describe('Reverse-Hop Trace Algorithm', () => {
 
       vi.mocked(dns.reverse).mockImplementation(async (ip) => {
         if (ip === '209.85.220.41') return ['mail.google.com'];
-        if (ip === '198.51.100.5') return ['legit-domain.com']; // PTR mismatch (expected spoofed.com)
+        if (ip === '198.51.100.5') return ['legit-domain.com']; // PTR mismatch
         if (ip === '198.51.100.10') return ['other.com'];
         return [];
       });
 
       const result = await traceReverseHops(headers);
 
-      expect(result.injectionDetected).toBe(true);
-      expect(result.evidenceBoundaryIndex).toBe(1); // Index of spoofed.com
-      expect(result.originatingSenderIp).toBe('198.51.100.5'); // Originating sender is the first public IP below boundary (which is spoofed.com itself)
       expect(result.path[0].trusted).toBe(true);
       expect(result.path[1].trusted).toBe(false);
       expect(result.path[2].trusted).toBe(false);
+      expect(result.evidenceBoundaryIndex).toBe(1);
+      expect(result.injectionDetected).toBe(true);
+      expect(result.originatingSenderIp).toBe('209.85.220.41');
     });
 
-    it('DNS failure: fallback gracefully to ptrValid=false and stop trust', async () => {
+    it('Test 4 — private first hop: hop 0 is a private IP', async () => {
+      const headers = [
+        'Received: from internal.local (local [10.0.0.5]) by mx.target.com',
+      ];
+
+      const result = await traceReverseHops(headers);
+
+      expect(result.evidenceBoundaryIndex).toBe(0);
+      expect(result.injectionDetected).toBe(false);
+      expect(result.originatingSenderIp).toBeNull();
+    });
+
+    it('Test 5 — all hops trusted: evidenceBoundaryIndex = path.length, originatingSenderIp = last trusted public IP', async () => {
+      const headers = [
+        'Received: from mx.google.com (mx.google.com [209.85.220.41]) by mx.target.com',
+        'Received: from mail.sender.org (mail.sender.org [198.51.100.77]) by mx.google.com',
+      ];
+
+      vi.mocked(dns.reverse).mockImplementation(async (ip) => {
+        if (ip === '209.85.220.41') return ['mx.google.com'];
+        if (ip === '198.51.100.77') return ['mail.sender.org'];
+        return [];
+      });
+
+      const result = await traceReverseHops(headers);
+
+      expect(result.evidenceBoundaryIndex).toBe(result.path.length);
+      expect(result.injectionDetected).toBe(false);
+      expect(result.originatingSenderIp).toBe('198.51.100.77');
+    });
+
+    it('DNS failure: fallback gracefully to ptrValid=false and stop trust with injectionDetected=true', async () => {
       const headers = [
         'Received: from mail.google.com (mail.google.com [209.85.220.41]) by mx.target.com',
         'Received: from flakey.com (flakey.com [198.51.100.5]) by mail.google.com',
@@ -170,29 +210,10 @@ describe('Reverse-Hop Trace Algorithm', () => {
 
       expect(result.injectionDetected).toBe(true);
       expect(result.evidenceBoundaryIndex).toBe(1);
-      expect(result.originatingSenderIp).toBe('198.51.100.5');
+      expect(result.originatingSenderIp).toBe('209.85.220.41');
       expect(result.path[0].trusted).toBe(true);
       expect(result.path[1].trusted).toBe(false);
       expect(result.path[1].ptrValid).toBe(false);
-    });
-
-    it('no public IP below boundary: returns null originatingSenderIp', async () => {
-      const headers = [
-        'Received: from mail.google.com (mail.google.com [209.85.220.41]) by mx.target.com',
-        'Received: from internal.local (local [10.0.0.5]) by mail.google.com',
-        'Received: from workstation.local (workstation [192.168.1.10]) by internal.local',
-      ];
-
-      vi.mocked(dns.reverse).mockImplementation(async (ip) => {
-        if (ip === '209.85.220.41') return ['mail.google.com'];
-        return [];
-      });
-
-      const result = await traceReverseHops(headers);
-
-      expect(result.injectionDetected).toBe(true);
-      expect(result.evidenceBoundaryIndex).toBe(1);
-      expect(result.originatingSenderIp).toBeNull();
     });
 
     it('empty input: handles gracefully', async () => {
@@ -201,6 +222,29 @@ describe('Reverse-Hop Trace Algorithm', () => {
       expect(result.path).toEqual([]);
       expect(result.originatingSenderIp).toBeNull();
       expect(result.injectionDetected).toBe(false);
+    });
+
+    it('P3 Regression Test — Received chain with ::1 loopback followed by public IPs', async () => {
+      const headers = [
+        'Received: from SA3PR19MB7370.namprd19.prod.outlook.com (::1) by MN0PR19MB6312.namprd19.prod.outlook.com',
+        'Received: from BN0PR03CA0023.namprd03.prod.outlook.com (2603:10b6:408:e6::28) by SA3PR19MB7370.namprd19.prod.outlook.com',
+        'Received: from BN8NAM11FT066.eop-nam11.prod.protection.outlook.com (2603:10b6:408:e6:cafe::23) by BN0PR03CA0023.outlook.office365.com',
+        'Received: from ubuntu-s-1vcpu-1gb-35gb-intel-sfo3-06 (137.184.34.4) by BN8NAM11FT066.mail.protection.outlook.com',
+      ];
+
+      vi.mocked(dns.reverse).mockImplementation(async (ip) => {
+        if (ip === '137.184.34.4') return ['ubuntu-s-1vcpu-1gb-35gb-intel-sfo3-06'];
+        if (ip === '2603:10b6:408:e6:cafe::23') return ['BN8NAM11FT066.eop-nam11.prod.protection.outlook.com'];
+        if (ip === '2603:10b6:408:e6::28') return ['BN0PR03CA0023.namprd03.prod.outlook.com'];
+        return [];
+      });
+
+      const result = await traceReverseHops(headers);
+
+      expect(result.originatingSenderIp).toBe('137.184.34.4');
+      expect(result.path[0].ip).toBe('::1');
+      expect(result.path[0].isPrivate).toBe(true);
+      expect(result.path[0].trusted).toBe(true);
     });
   });
 });

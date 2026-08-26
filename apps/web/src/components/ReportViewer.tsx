@@ -1,15 +1,21 @@
 'use client';
 
 import React from 'react';
-import type { AnalysisReport } from '@mailiac/shared-types';
+import type { AnalysisReport, Finding } from '@mailiac/shared-types';
 import ForensicPath from './ForensicPath';
+import NlpSummaryCard from './NlpSummaryCard';
 import { 
   Clock, 
   Lock, 
   UserCheck, 
   Globe2, 
   BrainCircuit, 
-  Fingerprint
+  Fingerprint,
+  AlertTriangle,
+  ShieldAlert,
+  CheckCircle2,
+  FileText,
+  Activity
 } from 'lucide-react';
 
 interface ReportViewerProps {
@@ -32,6 +38,33 @@ export default function ReportViewer({ report }: ReportViewerProps) {
     verdictClass = 'badge-medium';
     verdictColor = '#f59e0b';
   }
+
+  // Collect all findings across pillars and aiSummary
+  const allPillars = report.riskMatrix?.pillars;
+  const authFindings = allPillars?.authentication?.findings || report.authResults?.findings || [];
+  const identityFindings = allPillars?.identity?.findings || [];
+  const infraFindings = allPillars?.infrastructure?.findings || [];
+  const nlpFindings = allPillars?.nlp?.findings || report.aiSummary?.findings || [];
+
+  const allFindings: { pillar: string; finding: Finding }[] = [
+    ...authFindings.map(f => ({ pillar: 'Authentication', finding: f })),
+    ...identityFindings.map(f => ({ pillar: 'Identity', finding: f })),
+    ...infraFindings.map(f => ({ pillar: 'Infrastructure', finding: f })),
+    ...nlpFindings.map(f => ({ pillar: 'NLP & Intent', finding: f })),
+  ];
+
+  const getSeverityBadge = (severity: Finding['severity']) => {
+    switch (severity) {
+      case 'HIGH':
+        return <span className="font-mono badge-high" style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px' }}>HIGH RISK</span>;
+      case 'MEDIUM':
+        return <span className="font-mono badge-medium" style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px' }}>MEDIUM</span>;
+      case 'LOW':
+        return <span className="font-mono badge-low" style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px' }}>LOW</span>;
+      default:
+        return <span className="font-mono" style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', background: 'rgba(148, 163, 184, 0.2)', color: '#94a3b8' }}>INFO</span>;
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -86,6 +119,29 @@ export default function ReportViewer({ report }: ReportViewerProps) {
           </div>
         </div>
       </div>
+
+      {/* Override Alert Banner (if triggered) */}
+      {(report.riskMatrix?.quarantineOverride || report.riskMatrix?.override?.triggered) && (
+        <div style={{
+          background: 'rgba(244, 63, 94, 0.12)',
+          border: '1px solid rgba(244, 63, 94, 0.4)',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px'
+        }}>
+          <ShieldAlert style={{ width: '28px', height: '28px', color: '#f43f5e', flexShrink: 0 }} />
+          <div>
+            <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#f43f5e', marginBottom: '2px' }}>
+              CRITICAL CIRCUIT-BREAKER OVERRIDE TRIGGERED
+            </h4>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+              {report.riskMatrix?.override?.reason || 'Critical security policy violation detected. Forced quarantine applied.'}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* 4-Pillar Risk Score Cards Grid */}
       <div style={{
@@ -185,12 +241,12 @@ export default function ReportViewer({ report }: ReportViewerProps) {
           </div>
         </div>
 
-        {/* 4. NLP & AI Intent Score */}
+        {/* 4. NLP Intent Score */}
         <div className="glass-panel" style={{ padding: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ec4899' }}>
               <BrainCircuit style={{ width: '18px', height: '18px' }} />
-              <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>AI Intent Score</h3>
+              <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>NLP Intent Score</h3>
             </div>
             <span className="font-mono" style={{ fontSize: '18px', fontWeight: 700, color: report.riskMatrix?.nlpScore > 30 ? '#f43f5e' : '#10b981' }}>
               {report.riskMatrix?.nlpScore ?? 0}/100
@@ -214,40 +270,68 @@ export default function ReportViewer({ report }: ReportViewerProps) {
         </div>
       </div>
 
-      {/* AI Intent Details & Payload Hash */}
-      {report.aiSummary && (
-        <div className="glass-panel" style={{ padding: '24px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <BrainCircuit style={{ color: '#ec4899', width: '20px', height: '20px' }} />
-            AI Intent & Cryptographic Payload Analysis
-          </h3>
+      {/* Detailed Forensic & Fraud Detection Reasons */}
+      <div className="glass-panel" style={{ padding: '24px' }}>
+        <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Activity style={{ color: 'var(--accent-cyan)', width: '20px', height: '20px' }} />
+          Forensic Evidence & Threat Vector Reasons ({allFindings.length})
+        </h3>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
-            <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '14px 16px', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Detected Threat Vectors</span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
-                {report.aiSummary.intent && report.aiSummary.intent.length > 0 ? (
-                  report.aiSummary.intent.map((tag, i) => (
-                    <span key={i} className="font-mono badge-high" style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '6px' }}>
-                      ⚠️ {tag}
-                    </span>
-                  ))
-                ) : (
-                  <span className="font-mono badge-low" style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '6px' }}>
-                    ✅ SAFE / BENIGN
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '14px 16px', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Payload Integrity Signature</span>
-              <p className="font-mono" style={{ fontSize: '12px', color: 'var(--accent-cyan)', wordBreak: 'break-all', marginTop: '6px' }}>
-                {report.aiSummary.integrityHash || 'N/A'}
-              </p>
-            </div>
+        {allFindings.length === 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '14px', borderRadius: '8px' }}>
+            <CheckCircle2 style={{ width: '18px', height: '18px' }} />
+            <span style={{ fontSize: '13px' }}>No security violations or fraud triggers detected across all 4 pillars.</span>
           </div>
-        </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {allFindings.map((item, idx) => (
+              <div 
+                key={idx}
+                style={{
+                  background: 'rgba(15, 23, 42, 0.5)',
+                  border: '1px solid var(--border-glass)',
+                  borderRadius: '8px',
+                  padding: '12px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <AlertTriangle style={{ width: '16px', height: '16px', color: item.finding.severity === 'HIGH' ? '#f43f5e' : item.finding.severity === 'MEDIUM' ? '#f59e0b' : 'var(--accent-cyan)' }} />
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                      <span className="font-mono" style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 600 }}>
+                        [{item.pillar.toUpperCase()}]
+                      </span>
+                      <span className="font-mono" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {item.finding.type}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                      {item.finding.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                  {item.finding.source && (
+                    <span className="font-mono" style={{ fontSize: '10px', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                      {item.finding.source}
+                    </span>
+                  )}
+                  {getSeverityBadge(item.finding.severity)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* NLP Intent & Fraud Intelligence Component */}
+      {report.aiSummary && (
+        <NlpSummaryCard summary={report.aiSummary} />
       )}
 
       {/* Reverse Hop Forensic Chain Map */}
@@ -257,6 +341,17 @@ export default function ReportViewer({ report }: ReportViewerProps) {
           Reverse Hop Network Trace & PTR Validation
         </h3>
         <ForensicPath forensicPath={report.forensicPath || []} />
+      </div>
+
+      {/* Basic Testing Raw JSON Dump */}
+      <div className="glass-panel" style={{ padding: '24px', overflowX: 'auto' }}>
+        <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <FileText style={{ width: '18px', height: '18px' }} />
+          Raw Report Payload (Testing)
+        </h3>
+        <pre className="font-mono" style={{ fontSize: '11px', color: 'var(--text-secondary)', background: 'rgba(0,0,0,0.3)', padding: '16px', borderRadius: '8px' }}>
+          {JSON.stringify(report, null, 2)}
+        </pre>
       </div>
     </div>
   );

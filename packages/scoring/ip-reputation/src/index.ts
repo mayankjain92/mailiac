@@ -1,54 +1,70 @@
-import type { IPReputationResult } from '@mailiac/shared-types';
+import { isIP, isIPv4, isIPv6 } from 'node:net';
+import type { IPReputationResult, Finding } from '@mailiac/shared-types';
 
 /**
- * Helper to check if an IP string is a private/reserved address.
+ * Helper to check if an IP string is a private, loopback, link-local, or reserved address.
  */
-function isPrivateIp(ip: string): boolean {
-  if (!ip) return true;
+function isPrivateIp(ip: string | null | undefined): boolean {
+  if (!ip || !isIP(ip)) return true;
 
-  if (
-    ip === '127.0.0.1' ||
-    ip === '::1' ||
-    ip.startsWith('10.') ||
-    ip.startsWith('172.16.') ||
-    ip.startsWith('172.17.') ||
-    ip.startsWith('172.18.') ||
-    ip.startsWith('172.19.') ||
-    ip.startsWith('172.20.') ||
-    ip.startsWith('172.21.') ||
-    ip.startsWith('172.22.') ||
-    ip.startsWith('172.23.') ||
-    ip.startsWith('172.24.') ||
-    ip.startsWith('172.25.') ||
-    ip.startsWith('172.26.') ||
-    ip.startsWith('172.27.') ||
-    ip.startsWith('172.28.') ||
-    ip.startsWith('172.29.') ||
-    ip.startsWith('172.30.') ||
-    ip.startsWith('172.31.') ||
-    ip.startsWith('192.168.') ||
-    ip.startsWith('fc00:') ||
-    ip.startsWith('fd00:') ||
-    ip.startsWith('fe80:')
-  ) {
-    return true;
+  if (isIPv4(ip)) {
+    const parts = ip.split('.').map(Number);
+    if (parts.length !== 4) return true;
+
+    // 0.0.0.0/8 (Current network)
+    if (parts[0] === 0) return true;
+    // 10.0.0.0/8 (Private network)
+    if (parts[0] === 10) return true;
+    // 127.0.0.0/8 (Loopback)
+    if (parts[0] === 127) return true;
+    // 169.254.0.0/16 (Link-local)
+    if (parts[0] === 169 && parts[1] === 254) return true;
+    // 172.16.0.0/12 (Private network: 172.16.0.0 - 172.31.255.255)
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    // 192.168.0.0/16 (Private network)
+    if (parts[0] === 192 && parts[1] === 168) return true;
+
+    return false;
+  } else if (isIPv6(ip)) {
+    const normalized = ip.toLowerCase();
+    // Loopback (::1)
+    if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') return true;
+    // Link-local (fe80::/10 - covers fe80, fe90, fea0, feb0)
+    if (
+      normalized.startsWith('fe8') ||
+      normalized.startsWith('fe9') ||
+      normalized.startsWith('fea') ||
+      normalized.startsWith('feb')
+    ) {
+      return true;
+    }
+    // Unique local (fc00::/7 - covers fc00::/8 and fd00::/8)
+    if (normalized.startsWith('fc') || normalized.startsWith('fd')) {
+      return true;
+    }
+
+    return false;
   }
 
-  return false;
+  return true;
 }
 
 /**
- * Calculates absolute timezone discrepancy in hours between the EML Date header and current time.
+ * Calculates timezone discrepancy in hours.
+ *
+ * NOTE: Per the PRD specification (docs/Backend_PRD_Team_Execution_Plan.md),
+ * timezone discrepancy represents the difference between the email's Date header
+ * timezone and the resolved IP location's geographic timezone.
+ *
+ * Currently, ip-reputation receives only `dateHeader` and `originatingSenderIp`
+ * (without GeoIP geographic timezone data). Comparing against email age (Date.now())
+ * or inventing an unmapped reference timezone (such as UTC or system time) is incorrect.
+ * Until IP geographic timezone context is supplied to this function, this helper returns
+ * 0 to avoid false-positive risk penalties.
  */
 export function getTimezoneDiscrepancyHours(dateHeaderStr: string): number {
   if (!dateHeaderStr) return 0;
-
-  const headerTime = Date.parse(dateHeaderStr);
-  if (isNaN(headerTime)) return 0;
-
-  const now = Date.now();
-  const diffHours = Math.abs(now - headerTime) / (1000 * 60 * 60);
-  return Number(diffHours.toFixed(2));
+  return 0;
 }
 
 /**
@@ -82,21 +98,76 @@ export function calculateIpScore(params: {
 }
 
 /**
+ * Generates structured findings based on IP reputation evidence.
+ */
+export function generateIpFindings(params: {
+  abuseConfidenceScore: number;
+  isProxyOrVpn: boolean;
+  timezoneDiscrepancyHours: number;
+  isPrivate: boolean;
+}): Finding[] {
+  const findings: Finding[] = [];
+
+  if (params.isPrivate) {
+    findings.push({
+      type: 'PRIVATE_IP',
+      severity: 'INFO',
+      description: 'Originating IP is a private or loopback address',
+    });
+    return findings;
+  }
+
+  if (params.abuseConfidenceScore > 0) {
+    findings.push({
+      type: 'ABUSE_REPUTATION',
+      severity: params.abuseConfidenceScore > 50 ? 'HIGH' : 'MEDIUM',
+      description: `IP has an AbuseIPDB confidence score of ${params.abuseConfidenceScore}%`,
+    });
+  }
+
+  if (params.isProxyOrVpn) {
+    findings.push({
+      type: 'PROXY_VPN_DETECTED',
+      severity: 'MEDIUM',
+      description: 'IP is identified as a VPN, Proxy, or Tor exit node',
+    });
+  }
+
+  if (params.timezoneDiscrepancyHours > 4) {
+    findings.push({
+      type: 'TIMEZONE_MISMATCH',
+      severity: 'LOW',
+      description: `IP geolocation timezone differs from email Date header by ${params.timezoneDiscrepancyHours} hours`,
+    });
+  }
+
+  if (findings.length === 0) {
+    findings.push({
+      type: 'CLEAN_IP',
+      severity: 'INFO',
+      description: 'No significant IP reputation risks detected',
+    });
+  }
+
+  return findings;
+}
+
+/**
  * Scores IP reputation by querying AbuseIPDB (or fallback) and evaluating proxy/timezone discrepancies.
  *
- * @param originatingSenderIp IP address string of the originating sender
+ * @param originatingSenderIp IP address string of the originating sender (or null/missing)
  * @param dateHeader Date header string from the EML
  * @returns Promise<IPReputationResult>
  */
 export async function scoreIpReputation(
-  originatingSenderIp: string,
+  originatingSenderIp: string | null,
   dateHeader: string
 ): Promise<IPReputationResult> {
   const timezoneDiscrepancyHours = getTimezoneDiscrepancyHours(dateHeader);
 
   // Return default safe score for missing/invalid or private IPs
   if (!originatingSenderIp || isPrivateIp(originatingSenderIp)) {
-    const fallback: IPReputationResult = {
+    return {
       abuseConfidenceScore: 0,
       isProxyOrVpn: false,
       timezoneDiscrepancyHours,
@@ -105,15 +176,20 @@ export async function scoreIpReputation(
         isProxyOrVpn: false,
         timezoneDiscrepancyHours,
       }),
+      findings: generateIpFindings({
+        abuseConfidenceScore: 0,
+        isProxyOrVpn: false,
+        timezoneDiscrepancyHours,
+        isPrivate: true,
+      }),
     };
-    return fallback;
   }
 
   const apiKey = process.env.ABUSEIPDB_API_KEY;
 
   // If no API key configured, fallback safely without throwing
   if (!apiKey) {
-    const fallback: IPReputationResult = {
+    return {
       abuseConfidenceScore: 0,
       isProxyOrVpn: false,
       timezoneDiscrepancyHours,
@@ -122,13 +198,20 @@ export async function scoreIpReputation(
         isProxyOrVpn: false,
         timezoneDiscrepancyHours,
       }),
+      findings: generateIpFindings({
+        abuseConfidenceScore: 0,
+        isProxyOrVpn: false,
+        timezoneDiscrepancyHours,
+        isPrivate: false,
+      }),
     };
-    return fallback;
   }
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3000);
+    timer = setTimeout(() => controller.abort(), 3000);
 
     const url = `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(originatingSenderIp)}&verbose=true`;
     const response = await fetch(url, {
@@ -139,8 +222,6 @@ export async function scoreIpReputation(
       },
       signal: controller.signal,
     });
-
-    clearTimeout(timer);
 
     if (!response.ok) {
       throw new Error(`AbuseIPDB API returned status ${response.status}`);
@@ -154,10 +235,13 @@ export async function scoreIpReputation(
       };
     };
 
-    const data = json.data || {};
-    const abuseConfidenceScore = typeof data.abuseConfidenceScore === 'number' ? data.abuseConfidenceScore : 0;
+    const data = json && typeof json === 'object' && json.data ? json.data : {};
+    const abuseConfidenceScore =
+      typeof data.abuseConfidenceScore === 'number'
+        ? Math.max(0, Math.min(100, data.abuseConfidenceScore))
+        : 0;
     const isTor = Boolean(data.isTor);
-    const usageType = (data.usageType || '').toLowerCase();
+    const usageType = (typeof data.usageType === 'string' ? data.usageType : '').toLowerCase();
     const isProxyOrVpn = isTor || usageType.includes('proxy') || usageType.includes('vpn') || usageType.includes('tor');
 
     const ipScore = calculateIpScore({
@@ -171,10 +255,16 @@ export async function scoreIpReputation(
       isProxyOrVpn,
       timezoneDiscrepancyHours,
       ipScore,
+      findings: generateIpFindings({
+        abuseConfidenceScore,
+        isProxyOrVpn,
+        timezoneDiscrepancyHours,
+        isPrivate: false,
+      }),
     };
   } catch (_err) {
-    // Return fallback on network error/timeout/API failure
-    const fallback: IPReputationResult = {
+    // Return fallback on network error/timeout/API failure/malformed response
+    return {
       abuseConfidenceScore: 0,
       isProxyOrVpn: false,
       timezoneDiscrepancyHours,
@@ -183,7 +273,17 @@ export async function scoreIpReputation(
         isProxyOrVpn: false,
         timezoneDiscrepancyHours,
       }),
+      findings: generateIpFindings({
+        abuseConfidenceScore: 0,
+        isProxyOrVpn: false,
+        timezoneDiscrepancyHours,
+        isPrivate: false,
+      }),
     };
-    return fallback;
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
 }
+

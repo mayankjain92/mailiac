@@ -104,13 +104,59 @@ export async function parseEmlToMdm(rawEml: Buffer): Promise<MDM> {
     }
   }
 
+/**
+ * Helper to convert HTML content into clean, normalized plain text.
+ */
+function convertHtmlToText(html: string): string {
+  if (!html || typeof html !== 'string') return '';
+
+  let text = html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<(br|p|div|tr|li|h[1-6])\b[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ');
+
+  text = text
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&euro;/gi, '€');
+
+  return text
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
   // 5. Subject & Date
   const subject = parsedEmail.subject ?? '';
   const date = parsedEmail.date ?? '';
 
   // 6. Body Text and HTML Raw
-  const bodyText = parsedEmail.text ?? '';
+  let bodyText = parsedEmail.text?.trim() ?? '';
   const bodyHtmlRaw = parsedEmail.html ?? '';
+
+  if (!bodyText && bodyHtmlRaw) {
+    bodyText = convertHtmlToText(bodyHtmlRaw);
+  }
+
+  // Safe diagnostic logging (NO email body text or PII exposed)
+  const contentTypeHeader = Array.isArray(parsedEmail.headers)
+    ? parsedEmail.headers.find((h) => h.key.toLowerCase() === 'content-type')?.value
+    : undefined;
+
+  console.info(
+    `[MIME Diagnostic] contentType: ${contentTypeHeader || 'unknown'}, attachmentsCount: ${
+      parsedEmail.attachments?.length ?? 0
+    }, hasTextPlain: ${Boolean(parsedEmail.text?.trim())}, hasTextHtml: ${Boolean(
+      parsedEmail.html
+    )}, decodedBodyLength: ${(parsedEmail.text || parsedEmail.html || '').length}, normalizedBodyLength: ${bodyText.length}`
+  );
 
   // 7. Attachments with SHA-256 hashing
   const attachments: ParsedAttachment[] = [];

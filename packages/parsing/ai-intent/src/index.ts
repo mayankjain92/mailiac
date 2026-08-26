@@ -1,10 +1,58 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { GoogleGenAI } from '@google/genai';
-import type { NLPResult } from '@mailiac/shared-types';
+import type { NLPResult, Finding } from '@mailiac/shared-types';
 
-const DEFAULT_TIMEOUT_MS = 5000;
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+function loadEnvFallback(): void {
+  if (process.env['VITEST'] || process.env['NODE_ENV'] === 'test') return;
+  if (process.env['GEMINI_API_KEY']) return;
+  try {
+    let currentDir = process.cwd();
+    while (currentDir && currentDir !== path.parse(currentDir).root) {
+      const candidate = path.join(currentDir, '.env');
+      if (fs.existsSync(candidate)) {
+        const content = fs.readFileSync(candidate, 'utf-8');
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const eqIdx = trimmed.indexOf('=');
+          if (eqIdx > 0) {
+            const key = trimmed.slice(0, eqIdx).trim();
+            const val = trimmed.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+            if (key && !process.env[key]) {
+              process.env[key] = val;
+            }
+          }
+        }
+        break;
+      }
+      currentDir = path.dirname(currentDir);
+    }
+  } catch {
+    // Ignore fallback loading errors
+  }
+}
+
+const DEFAULT_TIMEOUT_MS = 15000;
+const DEFAULT_MODEL = process.env['GEMINI_MODEL'] ?? 'gemini-3.1-flash-lite';
 
 const ZERO_WIDTH_REGEX = /[\u200B-\u200D\uFEFF\u00AD\u200E\u200F\u202A-\u202E\u2060-\u2064\u180E]/g;
+
+export interface ExtractedUrlInfo {
+  href: string;
+  text?: string;
+  domain?: string;
+}
+
+export interface ScoreIntentOptions {
+  text: string;
+  subject?: string;
+  sender?: string;
+  senderDomain?: string;
+  urls?: ExtractedUrlInfo[];
+  timeoutMs?: number;
+}
 
 interface RawGeminiNLPResponse {
   intentLabels?: string[];
@@ -15,23 +63,67 @@ interface RawGeminiNLPResponse {
   financialRequestScore?: number;
   credentialHarvestingScore?: number;
   nlpScore?: number;
+  confidence?: number;
+  findings?: Finding[];
+}
+
+const VALID_INTENTS = new Set([
+  'FINANCIAL_COERCION',
+  'CREDENTIAL_HARVESTING',
+  'URGENCY',
+  'AUTHORITY_TRAP',
+  'EXTORTION',
+  'MALWARE_LURE',
+  'BENIGN',
+  'MARKETING',
+  'UNKNOWN',
+  'UNCLASSIFIED'
+]);
+
+function normalizeScore(value: unknown): number {
+  const num = Number(value);
+  if (Number.isNaN(num) || !Number.isFinite(num)) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, Math.round(num)));
 }
 
 /**
- * Fallback heuristic analysis if Gemini API is unavailable or unconfigured.
+ * Deterministic local heuristic analysis for English email bodies.
+ * Used exclusively as a fallback when Gemini AI is unavailable or fails.
  */
-function heuristicFallback(
-  text: string,
-  zeroWidthCount: number,
-  glassworm: boolean
-): NLPResult {
-  const lower = text.toLowerCase();
+function heuristicFallback(options: ScoreIntentOptions, zeroWidthCount: number, glassworm: boolean): NLPResult {
+  const text = options.text || '';
+  const subject = options.subject || '';
+  const senderDomain = (options.senderDomain || '').toLowerCase();
+  const urls = options.urls || [];
+  const lower = `${subject} ${text}`.toLowerCase();
+
   const intents: string[] = [];
+  const findings: Finding[] = [];
+
   let finScore = 0;
   let credScore = 0;
   let urgencyScore = 0;
   let authorityScore = 0;
 
+  // English Urgency & Scarcity Indicators
+  const urgencyKeywords = [
+    'expiring today',
+    'expires today',
+    'expiring soon',
+    'action required immediately',
+    'immediate action',
+    'urgent action required',
+    'account suspended in 24 hours',
+    '24 hours to respond',
+    '48 hours to respond',
+    'final notice',
+    'act now',
+    'immediate response required',
+  ];
+
+  // English Financial & Reward Lure Indicators
   const finKeywords = [
     'wire transfer',
     'bank account',
@@ -42,75 +134,177 @@ function heuristicFallback(
     'payroll direct deposit',
     'swift code',
     'routing number',
+    'points reward',
+    'claim reward',
+    'unclaimed funds',
   ];
 
+  // English Credential & Harvesting Indicators
   const credKeywords = [
+    'password',
     'password reset',
     'verify your account',
     'account suspended',
+    'login',
     'login immediately',
     'confirm your identity',
-    'security alert',
+    'sign in',
     'sign in to review',
     'update your credentials',
+    'credentials',
+    'authentication information',
+    'one-time passcode',
+    'otp',
   ];
 
-  const urgencyKeywords = [
-    'urgent',
-    'immediate action',
-    'asap',
-    'short duration',
-    'deadline',
-    'window closes',
-    'action required',
-    'must verify immediately',
+  // English Call-To-Action Keywords
+  const ctaKeywords = [
+    'click here',
+    'redeem now',
+    'access portal',
+    'click below',
+    'sign in now',
+    'verify now',
   ];
 
+  // English Authority / Brand Trap Indicators
   const authorityKeywords = [
-    'iit',
     'academic cell',
     'placement cell',
     'cfo',
     'dean',
     'director',
-    'univox',
     'official notice',
+    'human resources',
+    'it helpdesk',
+    'helpdesk',
+    'security team',
   ];
 
-  if (finKeywords.some((kw) => lower.includes(kw))) {
-    intents.push('FINANCIAL_COERCION');
-    finScore = 80;
+  const hasUrgency = urgencyKeywords.some((kw) => lower.includes(kw));
+  if (hasUrgency) {
+    intents.push('URGENCY');
+    urgencyScore = 80;
+    findings.push({
+      type: 'HEURISTIC_URGENCY',
+      severity: 'HIGH',
+      description: 'Urgency detected: message claims immediate action or deadline is required',
+    });
   }
 
-  if (credKeywords.some((kw) => lower.includes(kw))) {
+  const hasFinancial = finKeywords.some((kw) => lower.includes(kw));
+  if (hasFinancial) {
+    intents.push('FINANCIAL_COERCION');
+    finScore = 85;
+    findings.push({
+      type: 'HEURISTIC_FINANCIAL',
+      severity: 'HIGH',
+      description: 'Reward or financial lure detected in email text',
+    });
+  }
+
+  const hasCred = credKeywords.some((kw) => lower.includes(kw));
+  if (hasCred) {
     intents.push('CREDENTIAL_HARVESTING');
     credScore = 85;
+    findings.push({
+      type: 'HEURISTIC_CREDENTIAL',
+      severity: 'HIGH',
+      description: 'Explicit credential harvesting or account verification keywords detected',
+    });
   }
 
-  if (urgencyKeywords.some((kw) => lower.includes(kw))) {
-    intents.push('URGENCY');
-    urgencyScore = 60;
+  const matchedCta = ctaKeywords.filter((kw) => lower.includes(kw));
+  if (matchedCta.length > 0 && !hasCred) {
+    findings.push({
+      type: 'SUSPICIOUS_CALL_TO_ACTION',
+      severity: 'MEDIUM',
+      description: 'Generic high-risk call-to-action detected in email payload',
+    });
   }
 
-  if (authorityKeywords.some((kw) => lower.includes(kw))) {
+  const hasAuthority = authorityKeywords.some((kw) => lower.includes(kw));
+  if (hasAuthority) {
     intents.push('AUTHORITY_TRAP');
-    authorityScore = 50;
+    authorityScore = 75;
+    findings.push({
+      type: 'HEURISTIC_AUTHORITY',
+      severity: 'HIGH',
+      description: 'Authority or executive impersonation keywords detected',
+    });
+  }
+
+  // URL Domain Mismatch / Suspicious External Link Detection (deduplicated per destination domain)
+  const domainUrlMap = new Map<string, { domain: string; href: string; anchorTexts: Set<string> }>();
+  for (const u of urls) {
+    const domain = (u.domain || '').toLowerCase();
+    const key = domain || u.href;
+    if (!key) continue;
+
+    if (!domainUrlMap.has(key)) {
+      domainUrlMap.set(key, { domain, href: u.href, anchorTexts: new Set<string>() });
+    }
+    if (u.text) {
+      domainUrlMap.get(key)!.anchorTexts.add(u.text.trim());
+    }
+  }
+
+  let linkScore = 0;
+  for (const [, urlInfo] of domainUrlMap) {
+    const domain = urlInfo.domain;
+    if (domain) {
+      const isSenderDomainMatch = senderDomain && (domain.endsWith(senderDomain) || senderDomain.endsWith(domain));
+      if (!isSenderDomainMatch) {
+        if (!intents.includes('SUSPICIOUS_LINK') && !intents.includes('CREDENTIAL_HARVESTING')) {
+          intents.push('SUSPICIOUS_LINK');
+        }
+        linkScore = Math.max(linkScore, 90);
+        const anchorList = Array.from(urlInfo.anchorTexts).filter(Boolean);
+        const anchorLabel = anchorList.length > 0 ? ` [Anchors: "${anchorList.join('", "')}"]` : '';
+        findings.push({
+          type: 'SUSPICIOUS_EXTERNAL_LINK',
+          severity: 'HIGH',
+          description: `Redemption link points to an unrelated external domain (${domain})${anchorLabel}`,
+        });
+      }
+    }
   }
 
   if (intents.length === 0) {
-    intents.push('BENIGN');
+    intents.push('UNKNOWN');
+    findings.push({ type: 'HEURISTIC_UNKNOWN', severity: 'INFO', description: 'No heuristic intent detected' });
   }
 
-  const baseNlp = Math.max(finScore, credScore, urgencyScore, authorityScore);
+  const baseNlp = Math.max(finScore, credScore, urgencyScore, authorityScore, linkScore);
   const nlpScore = Math.min(100, Math.max(0, baseNlp + (glassworm ? 20 : 0)));
 
+  const taggedFindings: Finding[] = findings.map((f) => ({
+    ...f,
+    source: f.source || 'heuristic',
+  }));
+
   return {
+    provider: 'heuristic',
+    providerStatus: 'fallback',
+    model: DEFAULT_MODEL,
+    fallbackReason: 'Gemini API not invoked (heuristic baseline)',
     intentLabels: intents,
     financialRequestScore: finScore,
     credentialHarvestingScore: credScore,
     glasswormFlag: glassworm,
     zeroWidthCharCount: zeroWidthCount,
     nlpScore,
+    confidence: 0.85,
+    findings: taggedFindings,
+    aiDiagnostics: {
+      provider: 'heuristic',
+      model: DEFAULT_MODEL,
+      requestAttempted: false,
+      requestSucceeded: false,
+      responseParsed: false,
+      latencyMs: 0,
+      fallbackUsed: true,
+    },
   };
 }
 
@@ -120,89 +314,143 @@ function heuristicFallback(
 function parseGeminiJson(rawText: string): RawGeminiNLPResponse | null {
   try {
     let clean = rawText.trim();
-    // Strip markdown code block wrappers if present
-    if (clean.startsWith('```')) {
-      clean = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    const jsonMatch = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (jsonMatch && jsonMatch[1]) {
+      clean = jsonMatch[1];
+    } else {
+      const start = clean.indexOf('{');
+      const end = clean.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && end > start) {
+        clean = clean.slice(start, end + 1);
+      }
     }
-    return JSON.parse(clean) as RawGeminiNLPResponse;
+    return JSON.parse(clean.trim()) as RawGeminiNLPResponse;
   } catch {
     return null;
   }
 }
 
 /**
- * Evaluates the intent and risk score of email body text using Google Gemini AI.
- *
- * - Performs deep semantic audit across 4 parameters: Urgency & Scarcity, Financial Coercion, Authority Trap, Harvesting Risk.
- * - Extracts scores and composite nlpScore (0-100).
- * - Detects zero-width character count and glassworm flag.
- * - Enforces explicit timeout and graceful fallback on API/network failure.
+ * Evaluates the intent and risk score of email body text and metadata using Google Gemini AI and/or Heuristic Engine.
+ * Implements a hybrid fusion pipeline:
+ * Local Heuristics -> Gemini Semantic Analysis -> Fusion Layer -> Fused Result
  */
 export async function scoreIntent(
-  cleanedBodyText: string,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS
+  textOrOptions: string | ScoreIntentOptions,
+  timeoutMsOverride?: number
 ): Promise<NLPResult> {
-  const text = typeof cleanedBodyText === 'string' ? cleanedBodyText : '';
-  const zeroWidthMatches = text.match(ZERO_WIDTH_REGEX);
+  const options: ScoreIntentOptions =
+    textOrOptions && typeof textOrOptions === 'object' && !Array.isArray(textOrOptions)
+      ? (textOrOptions as ScoreIntentOptions)
+      : { text: typeof textOrOptions === 'string' ? textOrOptions : '', timeoutMs: timeoutMsOverride };
+
+  const timeoutMs = options.timeoutMs ?? timeoutMsOverride ?? DEFAULT_TIMEOUT_MS;
+  const text = typeof options.text === 'string' ? options.text : '';
+  const subject = options.subject || '';
+  const urls = options.urls || [];
+
+  const combinedInput = [subject, text, urls.map((u) => `${u.text || ''} ${u.href}`).join(' ')].join('\n\n').trim();
+
+  const zeroWidthMatches = combinedInput.match(ZERO_WIDTH_REGEX);
   const zeroWidthCharCount = zeroWidthMatches ? zeroWidthMatches.length : 0;
   const glasswormFlag = zeroWidthCharCount > 50;
 
-  if (!text.trim()) {
+  const intentInputHash = crypto.createHash('sha256').update(combinedInput).digest('hex').slice(0, 12);
+
+  // Safe Diagnostic Logging (NO body text or PII logged)
+  console.info(
+    `[ai-intent] Safe Diagnostic: intentInputLength=${combinedInput.length}, intentInputHash=${intentInputHash}, subjectLength=${subject.length}, urlCount=${urls.length}`
+  );
+
+  // 1. ALWAYS run deterministic local heuristics
+  const heuristicResult = heuristicFallback(options, zeroWidthCharCount, glasswormFlag);
+
+  if (!combinedInput) {
     return {
-      intentLabels: ['BENIGN'],
+      provider: 'heuristic',
+      providerStatus: 'fallback',
+      fallbackReason: 'Empty payload provided',
+      model: DEFAULT_MODEL,
+      intentLabels: ['UNKNOWN'],
       financialRequestScore: 0,
       credentialHarvestingScore: 0,
       glasswormFlag,
       zeroWidthCharCount,
       nlpScore: 0,
+      confidence: 1.0,
+      findings: [
+        { type: 'EMPTY_PAYLOAD', severity: 'INFO', description: 'Email body text was empty', source: 'heuristic' },
+      ],
+      aiDiagnostics: {
+        provider: 'heuristic',
+        model: DEFAULT_MODEL,
+        requestAttempted: false,
+        requestSucceeded: false,
+        responseParsed: false,
+        latencyMs: 0,
+        fallbackUsed: true,
+      },
     };
   }
 
+  loadEnvFallback();
   const apiKey = process.env['GEMINI_API_KEY'];
   if (!apiKey) {
-    // Graceful fallback to heuristic classification if API key is not configured
-    return heuristicFallback(text, zeroWidthCharCount, glasswormFlag);
+    console.warn('[ai-intent] GEMINI_API_KEY missing from process.env, falling back to heuristic classification');
+    return {
+      ...heuristicResult,
+      provider: 'heuristic',
+      providerStatus: 'fallback',
+      fallbackReason: 'GEMINI_API_KEY missing from process.env',
+      aiDiagnostics: {
+        provider: 'heuristic',
+        model: DEFAULT_MODEL,
+        requestAttempted: false,
+        requestSucceeded: false,
+        responseParsed: false,
+        latencyMs: 0,
+        fallbackUsed: true,
+      },
+    };
   }
+
+  const startMs = Date.now();
+  const requestAttempted = true;
+  let requestSucceeded = false;
+  let responseParsed = false;
+  let fallbackReason = '';
 
   try {
     const ai = new GoogleGenAI({ apiKey });
 
-    const prompt = `You are a Lead Cybersecurity Forensic Linguist and threat intelligence analyst. Your job is to perform a deep-level semantic audit on an incoming email payload to identify signs of Business Email Compromise (BEC), spear phishing, financial coercion, authority traps, or credential harvesting.
+    const prompt = `You are a Lead Cybersecurity Forensic Linguist and threat intelligence analyst. Perform a deep semantic audit on this email (multilingual, including Portuguese/English) to detect Business Email Compromise (BEC), phishing, financial coercion, urgency, reward scams, or credential harvesting.
 
-You must ignore the visual quality of the email and focus strictly on cognitive manipulation tactics and unverified payload redirects.
+Subject: ${subject}
+Sender Claim: ${options.sender || 'Unknown'}
+Sender Domain: ${options.senderDomain || 'Unknown'}
+Extracted URLs: ${JSON.stringify(urls)}
 
-Analyze the provided email content against these FOUR psychological and structural parameters (score each from 0 to 100):
+Analyze against:
+1. URGENCY & SCARCITY (urgency_score): Deadlines, points expiring ("expiram hoje", 24-48h).
+2. FINANCIAL COERCION & REWARD LURE (financial_score): Points, miles, wire transfers, discounts ("pontos Livelo", "resgatar").
+3. AUTHORITY TRAP & IMPERSONATION (authority_score): Claiming brands (Bradesco, Livelo) from unrelated sender domains.
+4. HARVESTING RISK & SUSPICIOUS LINKS (harvesting_score): External links pointing to unrelated third-party domains.
 
-1. URGENCY & SCARCITY (urgency_score):
-   - Detect artificial deadlines demanding action within 24–48 hours (e.g., "window closes tomorrow", "must verify immediately", "short duration", "immediate action required").
-   - Identify high-pressure language exploiting fear of negative consequences (loss of placement, account suspension, credit loss, missed opportunities).
-
-2. FINANCIAL COERCION (financial_score):
-   - Identify wire transfer demands, banking detail changes, invoice updates, or unexpected billing issues.
-   - Detect offers of high monetary value, "giveaways," or instant corporate rewards to bypass suspicion.
-
-3. AUTHORITY TRAP (authority_score):
-   - Look for references to prestigious organizations, brands, or administrative entities to establish trust (e.g., "IIT Kharagpur", "JECRC Academic Cell", "Univox Academy", "CFO").
-   - Detect external senders claiming to be internal leadership or administrative coordinators.
-
-4. HARVESTING RISK (harvesting_score):
-   - Detect instructions directing users to input credentials, PII, or security codes on unverified external forms.
-   - Heavily penalize the use of free third-party collection platforms (such as Google Forms, Typeform, bit.ly links) or unverified external portals.
-
-Respond with a single JSON object strictly matching this schema:
+Respond with a single JSON object strictly matching:
 {
-  "intentLabels": string[], // Choose applicable from: "FINANCIAL_COERCION", "CREDENTIAL_HARVESTING", "URGENCY", "AUTHORITY_TRAP", "EXTORTION", "MALWARE_LURE", "BENIGN", "MARKETING"
+  "intentLabels": string[], // Applicable from: "FINANCIAL_COERCION", "CREDENTIAL_HARVESTING", "URGENCY", "AUTHORITY_TRAP", "EXTORTION", "MALWARE_LURE", "BENIGN", "MARKETING", "UNKNOWN"
   "urgency_score": number, // 0 to 100
   "financial_score": number, // 0 to 100
   "authority_score": number, // 0 to 100
   "harvesting_score": number, // 0 to 100
-  "nlpScore": number // 0 to 100 composite risk score (highest risk level identified)
+  "nlpScore": number, // 0 to 100 composite risk score
+  "confidence": number, // 0.0 to 1.0 AI confidence score
+  "findings": [{"type": string, "severity": "INFO" | "LOW" | "MEDIUM" | "HIGH", "description": string}]
 }
 
-Email Body:
-"""
+<EMAIL_BODY>
 ${text.slice(0, 8000)}
-"""`;
+</EMAIL_BODY>`;
 
     const apiPromise = ai.models.generateContent({
       model: DEFAULT_MODEL,
@@ -212,55 +460,122 @@ ${text.slice(0, 8000)}
       },
     });
 
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Gemini API call timed out')), timeoutMs)
-    );
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('Gemini API call timed out')), timeoutMs);
+    });
 
-    const response = await Promise.race([apiPromise, timeoutPromise]);
+    const response = await Promise.race([apiPromise, timeoutPromise]).finally(() => {
+      clearTimeout(timeoutId);
+    });
+
+    requestSucceeded = true;
     const responseText = response.text || '';
     const parsed = parseGeminiJson(responseText);
 
     if (!parsed) {
-      return heuristicFallback(text, zeroWidthCharCount, glasswormFlag);
+      fallbackReason = 'Failed to parse Gemini API JSON response';
+      console.warn(`[ai-intent] ${fallbackReason}, falling back to heuristic fusion`);
+      const latencyMs = Date.now() - startMs;
+      return {
+        ...heuristicResult,
+        provider: 'heuristic',
+        providerStatus: 'fallback',
+        fallbackReason,
+        aiDiagnostics: {
+          provider: 'heuristic',
+          model: DEFAULT_MODEL,
+          requestAttempted,
+          requestSucceeded,
+          responseParsed: false,
+          latencyMs,
+          fallbackUsed: true,
+        },
+      };
     }
 
-    const intentLabels = Array.isArray(parsed.intentLabels) && parsed.intentLabels.length > 0
+    responseParsed = true;
+    const latencyMs = Date.now() - startMs;
+
+    const rawLabels = Array.isArray(parsed.intentLabels) && parsed.intentLabels.length > 0
       ? parsed.intentLabels.map(String)
       : ['UNKNOWN'];
 
-    const urgencyScore = Math.min(100, Math.max(0, Number(parsed.urgency_score) || 0));
-    const financialScore = Math.min(
-      100,
-      Math.max(0, Number(parsed.financial_score) || Number(parsed.financialRequestScore) || 0)
-    );
-    const authorityScore = Math.min(100, Math.max(0, Number(parsed.authority_score) || 0));
-    const harvestingScore = Math.min(
-      100,
-      Math.max(0, Number(parsed.harvesting_score) || Number(parsed.credentialHarvestingScore) || 0)
-    );
-
-    let calculatedNlpScore = typeof parsed.nlpScore === 'number'
-      ? parsed.nlpScore
-      : Math.max(urgencyScore, financialScore, authorityScore, harvestingScore);
-
-    calculatedNlpScore = Math.max(calculatedNlpScore, urgencyScore, financialScore, authorityScore, harvestingScore);
-
-    if (glasswormFlag) {
-      calculatedNlpScore = Math.min(100, calculatedNlpScore + 20);
+    let geminiLabels = Array.from(new Set(rawLabels.map(label => 
+      VALID_INTENTS.has(label) ? label : 'UNKNOWN'
+    )));
+    if (geminiLabels.length > 1) {
+      geminiLabels = geminiLabels.filter(label => label !== 'UNKNOWN');
     }
 
-    const nlpScore = Math.min(100, Math.max(0, Math.round(calculatedNlpScore)));
+    const urgencyScore = normalizeScore(parsed.urgency_score);
+    const financialScore = normalizeScore(parsed.financial_score ?? parsed.financialRequestScore);
+    const authorityScore = normalizeScore(parsed.authority_score);
+    const harvestingScore = normalizeScore(parsed.harvesting_score ?? parsed.credentialHarvestingScore);
+
+    let calculatedGeminiNlpScore = typeof parsed.nlpScore !== 'undefined'
+      ? normalizeScore(parsed.nlpScore)
+      : Math.max(urgencyScore, financialScore, authorityScore, harvestingScore);
+
+    calculatedGeminiNlpScore = Math.max(calculatedGeminiNlpScore, urgencyScore, financialScore, authorityScore, harvestingScore);
+
+    const geminiConfidence = typeof parsed.confidence === 'number'
+      ? Math.min(1.0, Math.max(0.0, parsed.confidence))
+      : 0.85;
+
+    const geminiRawFindings: Finding[] = Array.isArray(parsed.findings) 
+      ? parsed.findings 
+      : [{ type: 'AI_INTENT_EVALUATION', severity: calculatedGeminiNlpScore > 50 ? 'HIGH' : 'LOW', description: `AI intent classified as ${geminiLabels.join(', ')}` }];
+
+    const geminiFindings: Finding[] = geminiRawFindings.map((f) => ({
+      ...f,
+      source: 'gemini',
+    }));
+
+    // AI-FIRST ARCHITECTURE: Use Gemini API results directly when available
+    const finalNlpScore = glasswormFlag ? normalizeScore(calculatedGeminiNlpScore + 20) : calculatedGeminiNlpScore;
 
     return {
-      intentLabels,
+      provider: 'gemini',
+      providerStatus: 'success',
+      model: DEFAULT_MODEL,
+      intentLabels: geminiLabels,
       financialRequestScore: financialScore,
       credentialHarvestingScore: harvestingScore,
       glasswormFlag,
       zeroWidthCharCount,
-      nlpScore,
+      nlpScore: finalNlpScore,
+      confidence: geminiConfidence,
+      findings: geminiFindings,
+      aiDiagnostics: {
+        provider: 'gemini',
+        model: DEFAULT_MODEL,
+        requestAttempted,
+        requestSucceeded,
+        responseParsed,
+        latencyMs,
+        fallbackUsed: false,
+      },
     };
-  } catch {
-    // On timeout, network error, or rate limits, fallback gracefully without throwing
-    return heuristicFallback(text, zeroWidthCharCount, glasswormFlag);
+  } catch (err) {
+    const latencyMs = Date.now() - startMs;
+    fallbackReason = err instanceof Error ? err.message : String(err);
+    console.error('[ai-intent] Gemini API call failed:', fallbackReason);
+
+    return {
+      ...heuristicResult,
+      provider: 'heuristic',
+      providerStatus: 'fallback',
+      fallbackReason,
+      aiDiagnostics: {
+        provider: 'heuristic',
+        model: DEFAULT_MODEL,
+        requestAttempted,
+        requestSucceeded: false,
+        responseParsed: false,
+        latencyMs,
+        fallbackUsed: true,
+      },
+    };
   }
 }

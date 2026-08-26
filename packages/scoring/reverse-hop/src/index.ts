@@ -146,6 +146,19 @@ export function parseReceivedHeader(header: string): { ip: string | null; claime
 }
 
 /**
+ * Checks if a given IP address is a local loopback address (::1 or 127.0.0.0/8).
+ */
+export function isLoopbackIP(ip: string): boolean {
+  if (isIPv4(ip)) {
+    return ip.startsWith('127.');
+  } else if (isIPv6(ip)) {
+    const norm = ip.toLowerCase();
+    return norm === '::1' || norm === '0:0:0:0:0:0:0:1';
+  }
+  return false;
+}
+
+/**
  * Traces reverse hops from received headers, performing DNS PTR validation.
  * Stops trusting hops on the first private IP or PTR mismatch (Evidence Boundary).
  */
@@ -175,12 +188,13 @@ export async function traceReverseHops(receivedHeadersRaw: string[]): Promise<Re
 
   let trustBroken = false;
   let boundaryIndex = -1;
+  let hasPtrMismatch = false;
 
   for (let i = 0; i < parsedHops.length; i++) {
     const { ip, claimedHostname } = parsedHops[i];
     const isPrivate = isPrivateIP(ip);
+    const isLoopback = isLoopbackIP(ip);
     const ptrs = await resolvePtrWithTimeout(ip);
-
     let ptrValid = false;
     if (claimedHostname && ptrs.length > 0) {
       const normalizedClaimed = claimedHostname.toLowerCase().replace(/\.$/, '');
@@ -191,10 +205,16 @@ export async function traceReverseHops(receivedHeadersRaw: string[]): Promise<Re
 
     let trusted = false;
     if (!trustBroken) {
-      if (isPrivate || !ptrValid) {
+      if (isLoopback && i === 0) {
+        // Initial recipient loopback hop (local MTA/proxy delivery) is trusted local relay
+        trusted = true;
+      } else if (isPrivate || !ptrValid) {
         trustBroken = true;
         boundaryIndex = i;
         trusted = false;
+        if (!isPrivate && !ptrValid) {
+          hasPtrMismatch = true;
+        }
       } else {
         trusted = true;
       }
@@ -212,20 +232,19 @@ export async function traceReverseHops(receivedHeadersRaw: string[]): Promise<Re
   }
 
   const evidenceBoundaryIndex = boundaryIndex !== -1 ? boundaryIndex : path.length;
-  const injectionDetected = boundaryIndex !== -1;
+  const injectionDetected = hasPtrMismatch;
 
+  // Candidate originating public IP is the last public IP before the evidence boundary
   let originatingSenderIp: string | null = null;
-  if (injectionDetected) {
-    // Find the first public IP at or below the boundary
-    for (let i = evidenceBoundaryIndex; i < path.length; i++) {
-      if (!path[i].isPrivate) {
-        originatingSenderIp = path[i].ip;
-        break;
-      }
-    }
-  } else if (path.length > 0) {
-    // All hops trusted, originating sender is the last hop
-    originatingSenderIp = path[path.length - 1].ip;
+  const validPathSection = path.slice(0, evidenceBoundaryIndex);
+  const publicHopsBeforeBoundary = validPathSection.filter((h) => !h.isPrivate);
+
+  if (publicHopsBeforeBoundary.length > 0) {
+    originatingSenderIp = publicHopsBeforeBoundary[publicHopsBeforeBoundary.length - 1].ip;
+  } else {
+    // Fallback: if boundary occurred at private hop 0, look for any public IP in path
+    const anyPublicHop = path.find((h) => !h.isPrivate);
+    originatingSenderIp = anyPublicHop ? anyPublicHop.ip : null;
   }
 
   return {

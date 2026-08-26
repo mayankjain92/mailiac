@@ -1,3 +1,21 @@
+import dotenv from 'dotenv';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+if (!process.env['GEMINI_API_KEY'] || !process.env['MONGODB_URI']) {
+  const __filename = fileURLToPath(import.meta.url);
+  let currentDir = path.dirname(__filename);
+  while (currentDir !== path.parse(currentDir).root) {
+    const envCandidate = path.join(currentDir, '.env');
+    if (fs.existsSync(envCandidate)) {
+      dotenv.config({ path: envCandidate });
+      break;
+    }
+    currentDir = path.dirname(currentDir);
+  }
+}
+
 import express, { type Application } from 'express';
 import { uploadRouter } from './routes/upload.js';
 import { jobsRouter } from './routes/jobs.js';
