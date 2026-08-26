@@ -415,7 +415,7 @@ export async function scoreIntent(
   }
 
   const startMs = Date.now();
-  let requestAttempted = true;
+  const requestAttempted = true;
   let requestSucceeded = false;
   let responseParsed = false;
   let fallbackReason = '';
