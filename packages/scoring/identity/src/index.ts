@@ -192,16 +192,71 @@ function cleanDomain(domainStr: string): string {
   return (parsed.domain || domainStr).toLowerCase().trim();
 }
 
+export interface DisplayNameMismatchResult {
+  isMismatch: boolean;
+  claimedBrand?: string;
+  jaroWinklerScore: number;
+  levenshteinDistance: number;
+}
+
+/**
+ * Evaluates whether a sender's display name claims an organization or brand
+ * that does not match the actual sender domain using regex and string distance metrics.
+ *
+ * @param displayName The 'From' display name (e.g. "PayPal Security")
+ * @param senderDomain The actual From email domain (e.g. "scam-domain.com")
+ * @param protectedDomains List of protected brand domains (e.g. ["paypal.com"])
+ */
+export function detectDisplayNameMismatch(
+  displayName: string,
+  senderDomain: string,
+  protectedDomains: string[]
+): DisplayNameMismatchResult {
+  if (!displayName || !senderDomain || !protectedDomains || protectedDomains.length === 0) {
+    return { isMismatch: false, jaroWinklerScore: 0, levenshteinDistance: 0 };
+  }
+
+  const cleanDisplayName = displayName.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+  const normalizedSender = cleanDomain(senderDomain);
+
+  for (const rawProtected of protectedDomains) {
+    const protectedNorm = cleanDomain(rawProtected);
+    const brandName = protectedNorm.split('.')[0];
+
+    if (!brandName || brandName.length < 3) continue;
+
+    // Check if display name mentions the brand name or resembles it
+    const brandRegex = new RegExp(`\\b${brandName}\\b`, 'i');
+    const containsBrand = brandRegex.test(cleanDisplayName) || cleanDisplayName.includes(brandName);
+    const jaroWinkler = calculateJaroWinkler(cleanDisplayName, brandName);
+    const lev = calculateLevenshtein(cleanDisplayName, brandName);
+
+    // If display name claims the brand but actual sender domain is NOT the protected domain
+    if ((containsBrand || jaroWinkler >= 0.85) && normalizedSender !== protectedNorm) {
+      return {
+        isMismatch: true,
+        claimedBrand: rawProtected,
+        jaroWinklerScore: jaroWinkler,
+        levenshteinDistance: lev,
+      };
+    }
+  }
+
+  return { isMismatch: false, jaroWinklerScore: 0, levenshteinDistance: 0 };
+}
+
 /**
  * Scores domain identity and typosquatting risk against a list of protected domains.
  *
  * @param senderDomain Sender's domain string (e.g. "target-corp.com" or "paypаl.com")
  * @param protectedDomains List of protected organization domains (e.g. ["target-corp.com", "paypal.com"])
+ * @param displayName Optional From display name (e.g. "PayPal Support")
  * @returns IdentityResult
  */
 export function scoreIdentity(
   senderDomain: string,
-  protectedDomains: string[]
+  protectedDomains: string[],
+  displayName?: string
 ): IdentityResult {
   if (!senderDomain || !protectedDomains || protectedDomains.length === 0) {
     return {
@@ -216,6 +271,23 @@ export function scoreIdentity(
   const normalizedSender = cleanDomain(senderDomain);
   const senderSkeleton = getHomoglyphSkeleton(normalizedSender);
   const containsNonAscii = isHomoglyph(senderDomain);
+
+  // Check Display Name Mismatch / Brand Impersonation first
+  if (displayName) {
+    const mismatch = detectDisplayNameMismatch(displayName, senderDomain, protectedDomains);
+    if (mismatch.isMismatch && mismatch.claimedBrand) {
+      const lev = calculateLevenshtein(normalizedSender, cleanDomain(mismatch.claimedBrand));
+      const damerau = calculateDamerauLevenshtein(normalizedSender, cleanDomain(mismatch.claimedBrand));
+      return {
+        levenshteinDistance: lev,
+        damerauLevenshteinDistance: damerau,
+        jaroWinklerScore: mismatch.jaroWinklerScore,
+        homoglyphMatch: containsNonAscii,
+        matchedProtectedDomain: mismatch.claimedBrand,
+        identityScore: 100,
+      };
+    }
+  }
 
   let bestMatchDomain: string | undefined = undefined;
   let minLevenshtein = Infinity;

@@ -8,6 +8,10 @@ const ZERO_WIDTH_REGEX = /[\u200B-\u200D\uFEFF\u00AD\u200E\u200F\u202A-\u202E\u2
 
 interface RawGeminiNLPResponse {
   intentLabels?: string[];
+  urgency_score?: number;
+  financial_score?: number;
+  authority_score?: number;
+  harvesting_score?: number;
   financialRequestScore?: number;
   credentialHarvestingScore?: number;
   nlpScore?: number;
@@ -25,6 +29,8 @@ function heuristicFallback(
   const intents: string[] = [];
   let finScore = 0;
   let credScore = 0;
+  let urgencyScore = 0;
+  let authorityScore = 0;
 
   const finKeywords = [
     'wire transfer',
@@ -49,27 +55,53 @@ function heuristicFallback(
     'update your credentials',
   ];
 
-  const hasFinancial = finKeywords.some((kw) => lower.includes(kw));
-  if (hasFinancial) {
+  const urgencyKeywords = [
+    'urgent',
+    'immediate action',
+    'asap',
+    'short duration',
+    'deadline',
+    'window closes',
+    'action required',
+    'must verify immediately',
+  ];
+
+  const authorityKeywords = [
+    'iit',
+    'academic cell',
+    'placement cell',
+    'cfo',
+    'dean',
+    'director',
+    'univox',
+    'official notice',
+  ];
+
+  if (finKeywords.some((kw) => lower.includes(kw))) {
     intents.push('FINANCIAL_COERCION');
     finScore = 80;
   }
 
-  const hasCred = credKeywords.some((kw) => lower.includes(kw));
-  if (hasCred) {
+  if (credKeywords.some((kw) => lower.includes(kw))) {
     intents.push('CREDENTIAL_HARVESTING');
     credScore = 85;
   }
 
-  if (lower.includes('urgent') || lower.includes('immediate action') || lower.includes('asap')) {
+  if (urgencyKeywords.some((kw) => lower.includes(kw))) {
     intents.push('URGENCY');
+    urgencyScore = 60;
+  }
+
+  if (authorityKeywords.some((kw) => lower.includes(kw))) {
+    intents.push('AUTHORITY_TRAP');
+    authorityScore = 50;
   }
 
   if (intents.length === 0) {
     intents.push('BENIGN');
   }
 
-  const baseNlp = Math.max(finScore, credScore);
+  const baseNlp = Math.max(finScore, credScore, urgencyScore, authorityScore);
   const nlpScore = Math.min(100, Math.max(0, baseNlp + (glassworm ? 20 : 0)));
 
   return {
@@ -101,8 +133,8 @@ function parseGeminiJson(rawText: string): RawGeminiNLPResponse | null {
 /**
  * Evaluates the intent and risk score of email body text using Google Gemini AI.
  *
- * - Detects financial coercion, credential harvesting, urgency, and benign intents.
- * - Extracts financialRequestScore, credentialHarvestingScore, and composite nlpScore (0-100).
+ * - Performs deep semantic audit across 4 parameters: Urgency & Scarcity, Financial Coercion, Authority Trap, Harvesting Risk.
+ * - Extracts scores and composite nlpScore (0-100).
  * - Detects zero-width character count and glassworm flag.
  * - Enforces explicit timeout and graceful fallback on API/network failure.
  */
@@ -135,13 +167,36 @@ export async function scoreIntent(
   try {
     const ai = new GoogleGenAI({ apiKey });
 
-    const prompt = `Analyze this email body for cyber threat and social engineering intent.
+    const prompt = `You are a Lead Cybersecurity Forensic Linguist and threat intelligence analyst. Your job is to perform a deep-level semantic audit on an incoming email payload to identify signs of Business Email Compromise (BEC), spear phishing, financial coercion, authority traps, or credential harvesting.
+
+You must ignore the visual quality of the email and focus strictly on cognitive manipulation tactics and unverified payload redirects.
+
+Analyze the provided email content against these FOUR psychological and structural parameters (score each from 0 to 100):
+
+1. URGENCY & SCARCITY (urgency_score):
+   - Detect artificial deadlines demanding action within 24–48 hours (e.g., "window closes tomorrow", "must verify immediately", "short duration", "immediate action required").
+   - Identify high-pressure language exploiting fear of negative consequences (loss of placement, account suspension, credit loss, missed opportunities).
+
+2. FINANCIAL COERCION (financial_score):
+   - Identify wire transfer demands, banking detail changes, invoice updates, or unexpected billing issues.
+   - Detect offers of high monetary value, "giveaways," or instant corporate rewards to bypass suspicion.
+
+3. AUTHORITY TRAP (authority_score):
+   - Look for references to prestigious organizations, brands, or administrative entities to establish trust (e.g., "IIT Kharagpur", "JECRC Academic Cell", "Univox Academy", "CFO").
+   - Detect external senders claiming to be internal leadership or administrative coordinators.
+
+4. HARVESTING RISK (harvesting_score):
+   - Detect instructions directing users to input credentials, PII, or security codes on unverified external forms.
+   - Heavily penalize the use of free third-party collection platforms (such as Google Forms, Typeform, bit.ly links) or unverified external portals.
+
 Respond with a single JSON object strictly matching this schema:
 {
-  "intentLabels": string[], // Choose relevant from: "FINANCIAL_COERCION", "CREDENTIAL_HARVESTING", "URGENCY", "EXTORTION", "MALWARE_LURE", "BENIGN", "MARKETING"
-  "financialRequestScore": number, // 0 to 100
-  "credentialHarvestingScore": number, // 0 to 100
-  "nlpScore": number // 0 to 100 composite risk score
+  "intentLabels": string[], // Choose applicable from: "FINANCIAL_COERCION", "CREDENTIAL_HARVESTING", "URGENCY", "AUTHORITY_TRAP", "EXTORTION", "MALWARE_LURE", "BENIGN", "MARKETING"
+  "urgency_score": number, // 0 to 100
+  "financial_score": number, // 0 to 100
+  "authority_score": number, // 0 to 100
+  "harvesting_score": number, // 0 to 100
+  "nlpScore": number // 0 to 100 composite risk score (highest risk level identified)
 }
 
 Email Body:
@@ -173,18 +228,22 @@ ${text.slice(0, 8000)}
       ? parsed.intentLabels.map(String)
       : ['UNKNOWN'];
 
-    const financialRequestScore = Math.min(
+    const urgencyScore = Math.min(100, Math.max(0, Number(parsed.urgency_score) || 0));
+    const financialScore = Math.min(
       100,
-      Math.max(0, Number(parsed.financialRequestScore) || 0)
+      Math.max(0, Number(parsed.financial_score) || Number(parsed.financialRequestScore) || 0)
     );
-    const credentialHarvestingScore = Math.min(
+    const authorityScore = Math.min(100, Math.max(0, Number(parsed.authority_score) || 0));
+    const harvestingScore = Math.min(
       100,
-      Math.max(0, Number(parsed.credentialHarvestingScore) || 0)
+      Math.max(0, Number(parsed.harvesting_score) || Number(parsed.credentialHarvestingScore) || 0)
     );
 
     let calculatedNlpScore = typeof parsed.nlpScore === 'number'
       ? parsed.nlpScore
-      : Math.max(financialRequestScore, credentialHarvestingScore);
+      : Math.max(urgencyScore, financialScore, authorityScore, harvestingScore);
+
+    calculatedNlpScore = Math.max(calculatedNlpScore, urgencyScore, financialScore, authorityScore, harvestingScore);
 
     if (glasswormFlag) {
       calculatedNlpScore = Math.min(100, calculatedNlpScore + 20);
@@ -194,8 +253,8 @@ ${text.slice(0, 8000)}
 
     return {
       intentLabels,
-      financialRequestScore,
-      credentialHarvestingScore,
+      financialRequestScore: financialScore,
+      credentialHarvestingScore: harvestingScore,
       glasswormFlag,
       zeroWidthCharCount,
       nlpScore,

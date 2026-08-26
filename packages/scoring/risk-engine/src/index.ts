@@ -24,9 +24,13 @@ function sanitizeScore(score: unknown): number {
   return Math.min(100, Math.max(0, score));
 }
 
+export const THREAT_LEVEL_QUARANTINE = 'HIGH_RISK_QUARANTINE';
+
 /**
  * Aggregates individual scores from all 4 risk pillars (Auth, Identity, IP Reputation, NLP Intent)
  * into a consolidated RiskMatrix with the weighted finalScore (0-100).
+ *
+ * Circuit Breaker: If authScore is 100 OR nlpScore >= 80, finalScore is overridden to 100 (HIGH_RISK_QUARANTINE).
  *
  * @param auth AuthResult from @mailiac/scoring-auth
  * @param identity IdentityResult from @mailiac/scoring-identity
@@ -51,7 +55,12 @@ export function aggregateRisk(
     ipScore * PILLAR_WEIGHTS.IP +
     nlpScore * PILLAR_WEIGHTS.NLP;
 
-  const finalScore = Math.min(100, Math.max(0, Math.round(weightedSum)));
+  let finalScore = Math.min(100, Math.max(0, Math.round(weightedSum)));
+
+  // Circuit Breaker Override: If authScore is 100 OR AI intent score >= 80, override final score to 100
+  if (authScore === 100 || nlpScore >= 80) {
+    finalScore = 100;
+  }
 
   return {
     authScore,

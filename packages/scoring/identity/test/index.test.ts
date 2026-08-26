@@ -56,6 +56,13 @@ describe('scoreIdentity', () => {
     expect(result.homoglyphMatch).toBe(false);
   });
 
+  it('display name spoofing: display name claiming protected brand with unmatching domain returns identityScore 100', () => {
+    const result = scoreIdentity('scam-phish.com', protectedDomains, 'PayPal Security Team');
+
+    expect(result.identityScore).toBe(100);
+    expect(result.matchedProtectedDomain).toBe('paypal.com');
+  });
+
   it('malformed input: empty sender domain or empty protected list handles gracefully', () => {
     const result1 = scoreIdentity('', protectedDomains);
     expect(result1.identityScore).toBe(0);

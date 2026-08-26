@@ -55,7 +55,8 @@ describe('POST /api/upload', () => {
       'process-email',
       expect.objectContaining({
         messageId: data.jobId,
-      })
+      }),
+      { jobId: data.jobId }
     );
   });
 

@@ -26,7 +26,8 @@
     "@mailiac/scoring-ip-reputation": "workspace:*",
     "@mailiac/scoring-risk-engine": "workspace:*",
     "@mailiac/webhooks": "workspace:*",
-    "@mailiac/reporting-pdf": "workspace:*"
+    "@mailiac/reporting-pdf": "workspace:*",
+    "@mailiac/db": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

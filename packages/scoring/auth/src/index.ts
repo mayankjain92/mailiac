@@ -22,18 +22,69 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
+export interface CalculateAuthInput {
+  spf: AuthResult['spf'];
+  dkim: AuthResult['dkim'];
+  dmarcAlignment: AuthResult['dmarcAlignment'];
+  arcPass?: boolean;
+  instanceCount?: number;
+  finalSealCv?: string;
+}
+
+export interface ArcProperties {
+  instanceCount: number;
+  finalSealCv: string;
+}
+
+/**
+ * Extracts highest ARC instanceCount (i=) and finalSealCv (cv=) from EML headers or mailauth result.
+ */
+export function extractArcProperties(rawEmlStr: string, resArc?: any): ArcProperties {
+  let instanceCount = 0;
+  let finalSealCv = 'none';
+
+  const headerMatch = rawEmlStr.match(/^[\s\S]*?(?=\r?\n\r?\n|$)/);
+  const headerText = headerMatch ? headerMatch[0] : rawEmlStr;
+
+  const arcSealBlocks = headerText.split(/ARC-Seal:/i).slice(1);
+  for (const block of arcSealBlocks) {
+    const iMatch = block.match(/i=(\d+)/i);
+    const cvMatch = block.match(/cv=([a-z]+)/i);
+
+    if (iMatch) {
+      const iVal = parseInt(iMatch[1], 10);
+      const cvVal = cvMatch ? cvMatch[1].toLowerCase() : 'none';
+
+      if (iVal >= instanceCount) {
+        instanceCount = iVal;
+        finalSealCv = cvVal;
+      }
+    }
+  }
+
+  if (resArc && instanceCount === 0) {
+    if (typeof resArc.chainLength === 'number') {
+      instanceCount = resArc.chainLength;
+    }
+    if (resArc.status?.result) {
+      finalSealCv = resArc.status.result.toLowerCase();
+    }
+  }
+
+  return { instanceCount, finalSealCv };
+}
+
 /**
  * Parses raw EML headers manually for Authentication-Results, Received-SPF, DKIM-Signature, ARC-Seal
  * as a secondary fallback if DNS/live resolution is missing or returns 'none'.
  */
-function parseHeaderFallback(rawEmlStr: string): Partial<AuthResult> {
+function parseHeaderFallback(rawEmlStr: string): Partial<AuthResult> & ArcProperties {
   const match = rawEmlStr.match(/^[\s\S]*?(?=\r?\n\r?\n|$)/);
   const headerText = match ? match[0] : rawEmlStr;
 
   let spf: AuthResult['spf'] = 'none';
   let dkim: AuthResult['dkim'] = 'none';
   let dmarcAlignment: AuthResult['dmarcAlignment'] = 'fail';
-  let arcPass = false;
 
   // Check Received-SPF
   if (/Received-SPF:\s*pass/i.test(headerText)) {
@@ -44,7 +95,7 @@ function parseHeaderFallback(rawEmlStr: string): Partial<AuthResult> {
     spf = 'neutral';
   }
 
-  // Check Authentication-Results for spf / dkim / dmarc / arc
+  // Check Authentication-Results for spf / dkim / dmarc
   if (/Authentication-Results:[\s\S]*?spf=pass/i.test(headerText)) {
     spf = 'pass';
   } else if (/Authentication-Results:[\s\S]*?spf=fail/i.test(headerText)) {
@@ -65,67 +116,61 @@ function parseHeaderFallback(rawEmlStr: string): Partial<AuthResult> {
     }
   }
 
-  if (/ARC-Seal:[\s\S]*?cv=pass/i.test(headerText) || /Authentication-Results:[\s\S]*?\barc=pass/i.test(headerText)) {
-    arcPass = true;
-  }
+  const arcProps = extractArcProperties(rawEmlStr);
+  const isLegitimateForwardedPass = arcProps.instanceCount > 1 && arcProps.finalSealCv === 'pass';
 
-  return { spf, dkim, dmarcAlignment, arcPass };
+  return { spf, dkim, dmarcAlignment, arcPass: isLegitimateForwardedPass, ...arcProps };
 }
 
 /**
- * Calculates authScore (0-100) based on SPF, DKIM, DMARC alignment, and ARC pass.
- * 0 = Fully authenticated / safe
- * 100 = Total authentication failure / high risk
- * An ARC seal pass (`arcPass === true`) overrides penalties to 0 for legitimate mailing lists.
+ * Calculates authScore (0-100) based on SPF, DKIM, DMARC alignment, and strict Multi-Hop ARC pass.
+ *
+ * Rules:
+ * 1. Base Authentication Penalty:
+   *    - spf === 'none' | 'fail' -> +50 points
+   *    - dmarcAlignment === 'fail' -> +50 points
+   *    - dkim === 'fail' -> immediately cap base score at 100 (tampering threat)
+ * 2. Multi-Hop ARC Verification:
+ *    - isLegitimateForwardedPass = instanceCount > 1 AND finalSealCv === 'pass'
+ * 3. Circuit-Breaker Override:
+ *    - If isLegitimateForwardedPass === true: authScore = 0
+ *    - Else: authScore = baseAuthScore (capped at 100)
  */
-export function calculateAuthScore(result: Omit<AuthResult, 'authScore'>): number {
-  if (result.arcPass) {
+export function calculateAuthScore(result: CalculateAuthInput): number {
+  // 1. Calculate Base Authentication Penalty
+  let baseAuthScore = 0;
+
+  if (result.spf === 'none' || result.spf === 'fail') {
+    baseAuthScore += 50;
+  }
+
+  if (result.dmarcAlignment === 'fail') {
+    baseAuthScore += 50;
+  }
+
+  if (result.dkim === 'fail') {
+    baseAuthScore = 100;
+  }
+
+  baseAuthScore = Math.min(100, Math.max(0, baseAuthScore));
+
+  // 2. Evaluate ARC Chain Validity (Strict Rules)
+  const instanceCount = typeof result.instanceCount === 'number'
+    ? result.instanceCount
+    : (result.arcPass ? 2 : 0);
+
+  const finalSealCv = (
+    result.finalSealCv !== undefined ? result.finalSealCv : (result.arcPass ? 'pass' : 'none')
+  ).toLowerCase();
+
+  const isLegitimateForwardedPass = instanceCount > 1 && finalSealCv === 'pass';
+
+  // 3. Apply Circuit-Breaker Override
+  if (isLegitimateForwardedPass) {
     return 0;
   }
 
-  let score = 0;
-
-  // SPF penalty
-  switch (result.spf) {
-    case 'pass':
-      score += 0;
-      break;
-    case 'neutral':
-    case 'none':
-      score += 20;
-      break;
-    case 'fail':
-      score += 40;
-      break;
-  }
-
-  // DKIM penalty
-  switch (result.dkim) {
-    case 'pass':
-      score += 0;
-      break;
-    case 'none':
-      score += 20;
-      break;
-    case 'fail':
-      score += 40;
-      break;
-  }
-
-  // DMARC alignment penalty
-  switch (result.dmarcAlignment) {
-    case 'strict':
-      score += 0;
-      break;
-    case 'relaxed':
-      score += 10;
-      break;
-    case 'fail':
-      score += 20;
-      break;
-  }
-
-  return Math.min(100, Math.max(0, score));
+  return baseAuthScore;
 }
 
 /**
@@ -141,9 +186,14 @@ export async function verifyAuth(rawEml: Buffer): Promise<AuthResult> {
       dkim: 'none' as const,
       dmarcAlignment: 'fail' as const,
       arcPass: false,
+      instanceCount: 0,
+      finalSealCv: 'none',
     };
     return {
-      ...fallback,
+      spf: fallback.spf,
+      dkim: fallback.dkim,
+      dmarcAlignment: fallback.dmarcAlignment,
+      arcPass: false,
       authScore: calculateAuthScore(fallback),
     };
   }
@@ -196,31 +246,46 @@ export async function verifyAuth(rawEml: Buffer): Promise<AuthResult> {
       dmarcAlignment = 'relaxed';
     }
 
-    // Map ARC pass
-    let arcPass = headerFallback.arcPass || false;
-    if (res.arc && res.arc.status) {
-      if (res.arc.status.result === 'pass' || res.arc.status.comment?.includes('cv=pass')) {
-        arcPass = true;
-      }
-    }
+    // Extract ARC chain properties (instanceCount and finalSealCv)
+    const arcProps = extractArcProperties(rawEmlStr, res.arc);
+    const isLegitimateForwardedPass = arcProps.instanceCount > 1 && arcProps.finalSealCv === 'pass';
 
-    const partial = { spf, dkim, dmarcAlignment, arcPass };
+    const input: CalculateAuthInput = {
+      spf,
+      dkim,
+      dmarcAlignment,
+      arcPass: isLegitimateForwardedPass,
+      ...arcProps,
+    };
+
+    const finalAuthScore = calculateAuthScore(input);
+
     return {
-      ...partial,
-      authScore: calculateAuthScore(partial),
+      spf,
+      dkim,
+      dmarcAlignment,
+      arcPass: isLegitimateForwardedPass,
+      authScore: finalAuthScore,
     };
   } catch (_error) {
     // If mailauth fails or times out, fallback to header analysis
-    const partial = {
+    const arcProps = extractArcProperties(rawEmlStr);
+    const isLegitimateForwardedPass = arcProps.instanceCount > 1 && arcProps.finalSealCv === 'pass';
+
+    const input: CalculateAuthInput = {
       spf: headerFallback.spf || 'none',
       dkim: headerFallback.dkim || 'none',
       dmarcAlignment: headerFallback.dmarcAlignment || 'fail',
-      arcPass: headerFallback.arcPass || false,
+      arcPass: isLegitimateForwardedPass,
+      ...arcProps,
     };
 
     return {
-      ...partial,
-      authScore: calculateAuthScore(partial),
+      spf: input.spf,
+      dkim: input.dkim,
+      dmarcAlignment: input.dmarcAlignment,
+      arcPass: isLegitimateForwardedPass,
+      authScore: calculateAuthScore(input),
     };
   }
 }

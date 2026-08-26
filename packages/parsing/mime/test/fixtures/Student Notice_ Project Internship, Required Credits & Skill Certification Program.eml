@@ -1,0 +1,307 @@
+Delivered-To: mayank.23bcon0443@jecrcu.edu.in
+Received: by 2002:a05:6918:678:b0:48c:fb5d:4e6c with SMTP id e56csp1036256ysb;
+        Wed, 5 Aug 2026 08:36:35 -0700 (PDT)
+X-Received: by 2002:a05:6a00:240f:b0:84f:3dc2:31c3 with SMTP id d2e1a72fcca58-84f41d3866fmr22734b3a.15.1785944194856;
+        Wed, 05 Aug 2026 08:36:34 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1785944194; cv=none;
+        d=google.com; s=arc-20260327;
+        b=opOy/eIBQ0mpVts8ky/c3HSdfSvNo5bXAU1PnFTkvxGFEgnbU6a9H64dBs6XuKlha3
+         NSJpbM0BqBlHzd6YwVj0u4e7+l/TSyHAg1M7wy1t1mCGZMZKQyapRrAseCTUful5M/uS
+         2op9t/9DbfPuV8NXE4Yq50wb6dcyeZCFirwt9vLwXVePpFk+NMXxIeG6x26k+pplppGp
+         v0grMhczNfU7XPwWZtNCzi1yfpmP+3RC0hFdnHLAOmp4wPzHJmtsAbRG2jOm4u78lcEf
+         feFSTlIvmt0JCor/ogKz8N8sj3svX11M2WziUw5LFB6hduONViyGvZh27wGOzAPZjYji
+         F1yw==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20260327;
+        h=to:from:subject:date:message-id:mime-version:dkim-signature;
+        bh=TeohWniutZhlkVtjFT96VvSw4qLjTR0aKGV1Me7h6ps=;
+        fh=k4M2xx7V/x1K1EL4UoSSjIjLwuZNTaaU5VGXc1+ziwM=;
+        b=dwejbXdLTNh096RZbwzY42y9u3tO8e+8RCdOukwivWRkLaAO9XjiDDhSxGdbWvgSCv
+         yuBN+eU1GQ26xvCdjJY92Mw/Nmydclo16N5bXGSnvPnV+k0TlKttnI1wzwxNarIhEl+Y
+         /OJU0nM/DBkjmWoxb5Wyz4gzbTIR0C3Pfvf7k70HwZiClLuNUaTBaYqHwevcnuIHvELQ
+         8xUQFlEA+3Dz3UPAyYD0DR15gyrcdxyu52cZhNvroGF3756sdlX3CYfzYoyCGxNagESK
+         ds3Q90/SbEXU2AbvmjcAOCGFAPQMBEZytkSdGdMFOaBy9LLJhSGv9h1ZTXJLp6m+Ll2A
+         D7wg==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@sairamtap-edu-in.20251104.gappssmtp.com header.s=20251104 header.b=b99GJL+7;
+       spf=none (google.com: sce26cs024@sairamtap.edu.in does not designate permitted sender hosts) smtp.mailfrom=sce26cs024@sairamtap.edu.in;
+       dara=neutral header.i=@jecrcu.edu.in
+Return-Path: <sce26cs024@sairamtap.edu.in>
+Received: from mail-sor-f77.google.com (mail-sor-f77.google.com. [209.85.220.77])
+        by mx.google.com with SMTPS id d2e1a72fcca58-84f2e2c7948sor1354857b3a.2.2026.08.05.08.36.34
+        for <mayank.23bcon0443@jecrcu.edu.in>
+        (Google Transport Security);
+        Wed, 05 Aug 2026 08:36:34 -0700 (PDT)
+Received-SPF: none (google.com: sce26cs024@sairamtap.edu.in does not designate permitted sender hosts) client-ip=209.85.220.77;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@sairamtap-edu-in.20251104.gappssmtp.com header.s=20251104 header.b=b99GJL+7;
+       spf=none (google.com: sce26cs024@sairamtap.edu.in does not designate permitted sender hosts) smtp.mailfrom=sce26cs024@sairamtap.edu.in;
+       dara=neutral header.i=@jecrcu.edu.in
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=sairamtap-edu-in.20251104.gappssmtp.com; s=20251104; t=1785944194; x=1786548994; darn=jecrcu.edu.in;
+        h=content-type:to:from:subject:date:message-id:mime-version:from:to
+         :cc:subject:date:message-id:reply-to:content-type;
+        bh=TeohWniutZhlkVtjFT96VvSw4qLjTR0aKGV1Me7h6ps=;
+        b=b99GJL+7NEDDUl7d6tgtsLB1QgwV7q42yvPHmUMOYloWhKlVo9VauYE8mJtPzQtuyZ
+         OeCiMwfGfrSn6yvhT0ss3pef83nzZa1Okejsytjs2pExa3XBaQU/DkfuUpQPrrEHxRHL
+         7xw9LZpMU8aIrAWtqdW92AF0F/rmdjtjIUgPST/BOLCLdnF/knecy3ZE6+9IWyjXY7ot
+         7tClMeIhiP/O6CorgawHC5gcRLTUuooiglpjQcLJjW5JM2vHv544KWfje8aztX0OATSp
+         R+GwgwkRb8t86fgVS+EQ+q2hBCuXQzVyRbU2DH4YNoOz6xvxoICP3n69XFIY7K9xzN59
+         gckA==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=1e100.net; s=20251104; t=1785944194; x=1786548994;
+        h=content-type:to:from:subject:date:message-id:mime-version
+         :x-gm-message-state:from:to:cc:subject:date:message-id:reply-to
+         :content-type;
+        bh=TeohWniutZhlkVtjFT96VvSw4qLjTR0aKGV1Me7h6ps=;
+        b=ocOFr8Br/vD/2NWqPpBrMZNFr1JcuBHP251rphpxl9LMpss/E3tuJcHlQEWg+RY9o/
+         tzmDbI5iAIinYDc6fkCzfr7A3DDus9DL9YpcdE6/CSZ1kSjF3chH03+oTm1ektkofjaM
+         Z68hSrYWa7dWSaAkSPqz3hcmCM9PN1j+OHGYJWrfhv1a3r0EWLuuzwL3h9bsWXZuyk2q
+         r/cNsXzVEbXBRN6v9CNa+bJo4/MKXb6k2NnhQCEn8ZsC4lT3fMyXI/T5gFH+zLYiCBeS
+         jY1qYX4l0/lUw5eZVmw1EO4uz/+U62ktvXm5/yr7epwuDCLUUyVRGIEPU+5dykNPAL8L
+         jm3Q==
+X-Gm-Message-State: AOJu0YyEazc5c3PKARpXLB7bJZd3PNDee3T1AEboN5OuQnXmbSRHy+ep
+	SFNiStVE7bA7S5Uf0kc41RlBWTP+PEJ/Ayo3r8XennhKlqq4RlorTExHSLwEM67VL1cxYPIO3cN
+	SJEnOL4jGUoSxKys4qmavKsZI
+MIME-Version: 1.0
+X-Received: by 2002:a05:6a00:808e:b0:84e:cd14:aeba with SMTP id
+ d2e1a72fcca58-84f41bc3becmr75012b3a.6.1785944194222; Wed, 05 Aug 2026
+ 08:36:34 -0700 (PDT)
+Message-ID: <autogen-java-6d4f4367-5fa1-4ff7-823f-4de686338175@google.com>
+Date: Wed, 05 Aug 2026 15:36:34 +0000
+Subject: Student Notice: Project Internship, Required Credits & Skill
+ Certification Program
+From: "JECRC | Academic Cell" <sce26cs024@sairamtap.edu.in>
+To: mayank.23bcon0443@jecrcu.edu.in
+Content-Type: multipart/alternative; boundary="0000000000004918dc06584e8901"
+
+--0000000000004918dc06584e8901
+Content-Type: text/plain; charset="UTF-8"; format=flowed; delsp=yes
+Content-Transfer-Encoding: base64
+
+SkVDUkMgVW5pdmVyc2l0eQ0KDQpBY2FkZW1pYyBDcmVkaXRzICYgUGxhY2VtZW50IENlbGwNCg0K
+DQoNCkhlbGxvIG1heWFuaywNCg0KVGhpcyBlbWFpbCBpcyByZWdhcmRpbmcgdGhlIDMtTW9udGgg
+SW50ZWdyYXRlZCBUcmFpbmluZyBhbmQgSW50ZXJuc2hpcCAgDQpQcm9ncmFtIGZvciBzdHVkZW50
+cyBzZWVraW5nIHByYWN0aWNhbCBleHBlcmllbmNlIGFuZCBhY2FkZW1pYyBjcmVkaXQgIA0KZXZh
+bHVhdGlvbi4NCg0KSWYgeW91IGNvdWxkIG5vdCBzdWJtaXQgeW91ciBjaG9pY2UgaW4gdGhlIHBy
+aW1hcnkgcm91bmQsIHRoZSBhcHBsaWNhdGlvbiAgDQpwb3J0YWwgaXMgY3VycmVudGx5IG9wZW4g
+YWdhaW4gZm9yIGEgc2hvcnQgZHVyYXRpb24uDQoNCg0KUHJvZ3JhbSBCcmVha2Rvd24gKDMgTW9u
+dGhzIFRvdGFsKQ0KDQoNClBoYXNlIDE6IFNraWxsIFRyYWluaW5nICgxLjUgTW9udGhzKQ0KTGVh
+cm4gY29yZSBwcmFjdGljYWwgdG9vbHMgdGhyb3VnaCBmbGV4aWJsZSBvbmxpbmUgbW9kdWxlcyBk
+ZXNpZ25lZCBub3QgdG8gIA0KY2xhc2ggd2l0aCB5b3VyIGRhaWx5IGNvbGxlZ2Ugc2NoZWR1bGUu
+DQoNClBoYXNlIDI6IExpdmUgQ29ycG9yYXRlIFByb2plY3QgKDEuNSBNb250aHMpDQpXb3JrIGRp
+cmVjdGx5IG9uIGxpdmUgY29tcGFueSB0YXNrcyBhc3NpZ25lZCBieSBvdXIgcGFydG5lciBNTkNz
+Lg0KDQoNCk9mZmljaWFsIENlcnRpZmljYXRlcyAmIENhcmVlciBTdXBwb3J0DQoNCg0K4oCiIFNr
+aWxsIEJ1aWxkaW5nIENlcnRpZmljYXRlOiBJc3N1ZWQgam9pbnRseSBieSBVbml2b3ggQWNhZGVt
+eSBhbmQgSUlUICANCktoYXJhZ3B1ciBLc2hpdGlqLg0KDQrigKIgSW50ZXJuc2hpcCBDb21wbGV0
+aW9uIENlcnRpZmljYXRlOiBPZmZpY2lhbCBjZXJ0aWZpY2F0ZSBwcm92aWRlZCB1cG9uICANCnN1
+Y2Nlc3NmdWwgY29tcGxldGlvbiBvZiB0aGUgaW50ZXJuc2hpcCBwaGFzZS4NCg0K4oCiIFdvcmsg
+RXhwZXJpZW5jZSBMZXR0ZXI6IERpcmVjdGx5IGZyb20gdGhlIGhvc3RpbmcgTU5DIHVwb24gY29t
+cGxldGluZyAgDQp5b3VyIHByb2plY3QuDQoNCuKAoiBMZXR0ZXIgb2YgUmVjb21tZW5kYXRpb24g
+KExPUik6IFNwZWNpYWwgcmVjb2duaXRpb24gcHJvdmlkZWQgdG8gdG9wICANCnBlcmZvcm1lcnMu
+DQoNCuKAoiBQbGFjZW1lbnQgQ2VsbCBHdWlkYW5jZTogUmVzdW1lIGJ1aWxkaW5nIGFzc2lzdGFu
+Y2UgYW5kIHRlY2huaWNhbCAgDQppbnRlcnZpZXcgdGlwcyBiZWZvcmUgY2FtcHVzIGRyaXZlcyBz
+dGFydC4NCg0KDQpBcHBsaWNhdGlvbiB3aW5kb3cgY2xvc2VzIG9uOiA2dGggQXVndXN0DQpPcGVu
+IEFwcGxpY2F0aW9uIEZvcm0NCg0KTm90ZTogU2xvdHMgYXJlIHJlY29yZGVkIGluIG9yZGVyIG9m
+IHN1Ym1pc3Npb24gdGltZS4gUGxlYXNlIGZpbGwgb3V0IHlvdXIgIA0KcHJlZmVyZW5jZXMgYXMg
+c29vbiBhcyBwb3NzaWJsZS4NCg0KDQoNCkFjYWRlbWljIENyZWRpdHMgJiBQbGFjZW1lbnQgRGl2
+aXNpb24NCkpFQ1JDIFVuaXZlcnNpdHkNCk9mZmljaWFsIGNvbW11bmljYXRpb24gc2VudCB0byBl
+bnJvbGxlZCBzdHVkZW50cy4NCg0KDQoNCg0K
+--0000000000004918dc06584e8901
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset=3D"utf-8">
+    <meta name=3D"viewport" content=3D"width=3Ddevice-width, initial-scale=
+=3D1.0">
+  </head>
+  <body style=3D"margin: 0; padding: 0; background-color: #f1f5f9; font-fam=
+ily: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Aria=
+l, sans-serif; color: #334155;">
+   =20
+    <table role=3D"presentation" width=3D"100%" cellspacing=3D"0" cellpaddi=
+ng=3D"0" style=3D"background-color: #f1f5f9; padding: 30px 12px;">
+      <tr>
+        <td align=3D"center">
+         =20
+          <!-- Outer Main Container -->
+          <table role=3D"presentation" width=3D"100%" style=3D"max-width: 6=
+00px; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2=
+e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+           =20
+            <!-- Header Section -->
+            <tr>
+              <td style=3D"background-color: #0f172a; border-top: 5px solid=
+ #2563eb; padding: 24px 32px;">
+                <h1 style=3D"color: #ffffff; margin: 0; font-size: 19px; fo=
+nt-weight: 700; letter-spacing: 0.2px;">
+                  JECRC University
+                </h1>
+                <p style=3D"color: #94a3b8; margin: 4px 0 0 0; font-size: 1=
+3px; font-weight: 500;">
+                  Academic Credits & Placement Cell
+                </p>
+              </td>
+            </tr>
+
+            <!-- Body Content -->
+            <tr>
+              <td style=3D"padding: 32px 32px 24px 32px;">
+               =20
+                <p style=3D"font-size: 16px; font-weight: 700; color: #0f17=
+2a; margin-top: 0; margin-bottom: 16px;">
+                  Hello mayank,
+                </p>
+
+                <p style=3D"font-size: 14px; line-height: 1.6; color: #3341=
+55; margin-bottom: 12px;">
+                  This email is regarding the <strong>3-Month Integrated Tr=
+aining and Internship Program</strong> for students seeking practical exper=
+ience and academic credit evaluation.
+                </p>
+
+                <p style=3D"font-size: 14px; line-height: 1.6; color: #3341=
+55; margin-bottom: 24px;">
+                  If you could not submit your choice in the primary round,=
+ the application portal is currently open again for a short duration.
+                </p>
+
+                <!-- Program Structure Section -->
+                <div style=3D"background-color: #f8fafc; border-left: 4px s=
+olid #2563eb; border-radius: 0 8px 8px 0; padding: 20px; margin-bottom: 24p=
+x;">
+                  <h3 style=3D"font-size: 14px; text-transform: uppercase; =
+letter-spacing: 0.5px; color: #1e40af; margin: 0 0 14px 0; font-weight: 700=
+;">
+                    Program Breakdown (3 Months Total)
+                  </h3>
+                 =20
+                  <table role=3D"presentation" width=3D"100%" cellspacing=
+=3D"0" cellpadding=3D"0">
+                    <tr>
+                      <td style=3D"padding-bottom: 12px; font-size: 13.5px;=
+ line-height: 1.5; color: #334155;">
+                        <strong style=3D"color: #0f172a;">Phase 1: Skill Tr=
+aining (1.5 Months)</strong><br>
+                        Learn core practical tools through flexible online =
+modules designed not to clash with your daily college schedule.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style=3D"font-size: 13.5px; line-height: 1.5; col=
+or: #334155;">
+                        <strong style=3D"color: #0f172a;">Phase 2: Live Cor=
+porate Project (1.5 Months)</strong><br>
+                        Work directly on live company tasks assigned by our=
+ partner MNCs.
+                      </td>
+                    </tr>
+                  </table>
+                </div>
+
+                <!-- Verified Credentials Section -->
+                <div style=3D"background-color: #ffffff; border: 1px solid =
+#e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                  <h3 style=3D"margin: 0 0 12px 0; font-size: 14px; color: =
+#0f172a; font-weight: 700;">
+                    Official Certificates & Career Support
+                  </h3>
+                 =20
+                  <table role=3D"presentation" width=3D"100%" cellspacing=
+=3D"0" cellpadding=3D"0">
+                    <tr>
+                      <td style=3D"padding: 6px 0; font-size: 13.5px; line-=
+height: 1.5; color: #334155;">
+                        =E2=80=A2 <strong>Skill Building Certificate:</stro=
+ng> Issued jointly by Univox Academy and IIT Kharagpur Kshitij.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style=3D"padding: 6px 0; font-size: 13.5px; line-=
+height: 1.5; color: #334155;">
+                        =E2=80=A2 <strong>Internship Completion Certificate=
+:</strong> Official certificate provided upon successful completion of the =
+internship phase.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style=3D"padding: 6px 0; font-size: 13.5px; line-=
+height: 1.5; color: #334155;">
+                        =E2=80=A2 <strong>Work Experience Letter:</strong> =
+Directly from the hosting MNC upon completing your project.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style=3D"padding: 6px 0; font-size: 13.5px; line-=
+height: 1.5; color: #334155;">
+                        =E2=80=A2 <strong>Letter of Recommendation (LOR):</=
+strong> Special recognition provided to top performers.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style=3D"padding: 6px 0; font-size: 13.5px; line-=
+height: 1.5; color: #334155;">
+                        =E2=80=A2 <strong>Placement Cell Guidance:</strong>=
+ Resume building assistance and technical interview tips before campus driv=
+es start.
+                      </td>
+                    </tr>
+                  </table>
+                </div>
+
+                <!-- Application Box / Call to Action -->
+                <div style=3D"text-align: center; background-color: #f8fafc=
+; border: 1px dashed #cbd5e1; padding: 24px 20px; border-radius: 8px; margi=
+n-bottom: 20px;">
+                  <p style=3D"font-size: 13.5px; color: #475569; margin: 0 =
+0 16px 0;">
+                    Application window closes on: <strong style=3D"color: #=
+dc2626;">6th August</strong>
+                  </p>
+                 =20
+                  <a href=3D"https://forms.gle/9rocB596hnmnsCUb9" target=3D=
+"_blank" style=3D"background-color: #2563eb; color: #ffffff; text-decoratio=
+n: none; padding: 12px 30px; font-size: 14px; font-weight: 600; border-radi=
+us: 6px; display: inline-block;">
+                    Open Application Form
+                  </a>
+                </div>
+
+                <p style=3D"font-size: 12px; color: #64748b; line-height: 1=
+.5; margin: 0;">
+                  <em>Note: Slots are recorded in order of submission time.=
+ Please fill out your preferences as soon as possible.</em>
+                </p>
+
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style=3D"background-color: #f8fafc; padding: 20px 32px; b=
+order-top: 1px solid #e2e8f0; text-align: left;">
+                <p style=3D"font-size: 12px; color: #64748b; margin: 0; lin=
+e-height: 1.5;">
+                  <strong style=3D"color: #334155;">Academic Credits & Plac=
+ement Division</strong><br>
+                  JECRC University<br>
+                  <span style=3D"font-size: 11px; color: #94a3b8;">Official=
+ communication sent to enrolled students.</span>
+                </p>
+              </td>
+            </tr>
+
+          </table>
+         =20
+        </td>
+      </tr>
+    </table>
+   =20
+  </body>
+  </html>
+ 
+--0000000000004918dc06584e8901--

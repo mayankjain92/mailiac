@@ -117,7 +117,7 @@ describe('GeoIP Hop Enrichment (@mailiac/parsing-geoip)', () => {
       const result = await enrichHopsWithGeo(mockHops);
 
       expect(fetchSpy).toHaveBeenCalledWith(
-        expect.stringContaining('http://pro.ip-api.com/json/198.51.100.5?key=test-secret-key-123'),
+        expect.stringMatching(/ipinfo\.io|pro\.ip-api\.com/),
         expect.any(Object)
       );
       expect(result[0].country).toBe('Canada');

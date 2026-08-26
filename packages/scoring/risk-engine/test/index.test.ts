@@ -86,16 +86,40 @@ describe('aggregateRisk', () => {
     const auth = { authScore: 40 } as AuthResult;
     const identity = { identityScore: 100 } as IdentityResult;
     const ip = { ipScore: 50 } as IPReputationResult;
-    const nlp = { nlpScore: 80 } as NLPResult;
+    const nlp = { nlpScore: 60 } as NLPResult;
 
-    // Expected: 40*0.30 + 100*0.20 + 50*0.20 + 80*0.30 = 12 + 20 + 10 + 24 = 66
+    // Expected: 40*0.30 + 100*0.20 + 50*0.20 + 60*0.30 = 12 + 20 + 10 + 18 = 60
     const matrix = aggregateRisk(auth, identity, ip, nlp);
 
     expect(matrix.authScore).toBe(40);
     expect(matrix.identityScore).toBe(100);
     expect(matrix.ipScore).toBe(50);
-    expect(matrix.nlpScore).toBe(80);
-    expect(matrix.finalScore).toBe(66);
+    expect(matrix.nlpScore).toBe(60);
+    expect(matrix.finalScore).toBe(60);
+  });
+
+  it('circuit breaker: overrides finalScore to 100 if authScore === 100', () => {
+    const auth = { authScore: 100 } as AuthResult;
+    const identity = { identityScore: 0 } as IdentityResult;
+    const ip = { ipScore: 0 } as IPReputationResult;
+    const nlp = { nlpScore: 0 } as NLPResult;
+
+    const matrix = aggregateRisk(auth, identity, ip, nlp);
+
+    expect(matrix.authScore).toBe(100);
+    expect(matrix.finalScore).toBe(100);
+  });
+
+  it('circuit breaker: overrides finalScore to 100 if nlpScore >= 80', () => {
+    const auth = { authScore: 0 } as AuthResult;
+    const identity = { identityScore: 0 } as IdentityResult;
+    const ip = { ipScore: 0 } as IPReputationResult;
+    const nlp = { nlpScore: 85 } as NLPResult;
+
+    const matrix = aggregateRisk(auth, identity, ip, nlp);
+
+    expect(matrix.nlpScore).toBe(85);
+    expect(matrix.finalScore).toBe(100);
   });
 
   it('edge case: null/undefined/NaN pillar scores default to 0 safely', () => {

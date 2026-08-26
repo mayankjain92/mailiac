@@ -35,10 +35,14 @@ uploadRouter.post('/upload', upload.single('eml'), async (req, res, next) => {
 
     const messageId = randomUUID();
 
-    await emailQueue.add('process-email', {
-      messageId,
-      buffer: req.file.buffer,
-    });
+    await emailQueue.add(
+      'process-email',
+      {
+        messageId,
+        buffer: req.file.buffer,
+      },
+      { jobId: messageId }
+    );
 
     res.status(202).json({ jobId: messageId });
   } catch (err) {

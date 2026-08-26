@@ -79,15 +79,83 @@ async function fetchGeoForIpInternal(
   timeoutMs: number
 ): Promise<Partial<ForensicHop>> {
   const apiKey = process.env['GEOIP_API_KEY'];
-  const url = apiKey
-    ? `http://pro.ip-api.com/json/${encodeURIComponent(ip)}?key=${encodeURIComponent(apiKey)}&fields=status,message,country,city,lat,lon,as`
-    : `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,message,country,city,lat,lon,as`;
 
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    const response = await fetch(url, {
+    if (apiKey) {
+      const ipinfoUrl = `https://ipinfo.io/${encodeURIComponent(ip)}?token=${encodeURIComponent(apiKey)}`;
+      const ipinfoRes = await fetch(ipinfoUrl, {
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      if (ipinfoRes.ok) {
+        const data = (await ipinfoRes.json()) as {
+          status?: string;
+          city?: string;
+          country?: string;
+          loc?: string;
+          org?: string;
+          as?: string;
+          lat?: number;
+          lon?: number;
+        };
+
+        if (data.city || data.country || data.loc || data.org) {
+          clearTimeout(timer);
+          let coordinates: [number, number] | undefined = undefined;
+          if (data.loc && data.loc.includes(',')) {
+            const [latStr, lonStr] = data.loc.split(',');
+            const lat = parseFloat(latStr || '');
+            const lon = parseFloat(lonStr || '');
+            if (!isNaN(lat) && !isNaN(lon)) {
+              coordinates = [lat, lon];
+            }
+          } else if (typeof data.lat === 'number' && typeof data.lon === 'number') {
+            coordinates = [data.lat, data.lon];
+          }
+
+          return {
+            city: data.city || undefined,
+            country: data.country || undefined,
+            coordinates,
+            asn: data.org || data.as || undefined,
+          };
+        }
+      }
+
+      const proUrl = `http://pro.ip-api.com/json/${encodeURIComponent(ip)}?key=${encodeURIComponent(apiKey)}&fields=status,message,country,city,lat,lon,as`;
+      const proRes = await fetch(proUrl, {
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      if (proRes.ok) {
+        clearTimeout(timer);
+        const data = (await proRes.json()) as GeoIpResponse;
+
+        if (data.status === 'success') {
+          return {
+            city: data.city || undefined,
+            country: data.country || undefined,
+            coordinates:
+              typeof data.lat === 'number' && typeof data.lon === 'number'
+                ? [data.lat, data.lon]
+                : undefined,
+            asn: data.as || undefined,
+          };
+        }
+      }
+    }
+
+    const fallbackUrl = `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,message,country,city,lat,lon,as`;
+    const response = await fetch(fallbackUrl, {
       signal: controller.signal,
       headers: {
         Accept: 'application/json',
@@ -97,7 +165,6 @@ async function fetchGeoForIpInternal(
     clearTimeout(timer);
 
     if (!response.ok) {
-      // Non-200 response (e.g. 429 Rate Limit, 500 Server Error) -> graceful fallback
       return {};
     }
 
@@ -117,7 +184,6 @@ async function fetchGeoForIpInternal(
 
     return {};
   } catch {
-    // Network error, DNS resolution error, or request timeout -> graceful fallback
     return {};
   }
 }

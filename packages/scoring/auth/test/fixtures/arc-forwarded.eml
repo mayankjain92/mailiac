@@ -2,11 +2,12 @@ Received-SPF: fail (google.com: domain of user@example.com does not designate 19
 Authentication-Results: mx.google.com;
        dkim=fail;
        spf=fail;
-       arc=pass (i=1 speed=cv=pass)
-ARC-Seal: i=1; a=rsa-sha256; cv=pass; d=mailinglist.org; s=2023; b=xyz123==
+       arc=pass (i=2 cv=pass)
+ARC-Seal: i=1; a=rsa-sha256; cv=none; d=original-sender.org; s=2023; b=abc123==
+ARC-Seal: i=2; a=rsa-sha256; cv=pass; d=mailinglist.org; s=2023; b=xyz123==
 From: "Alice Member" <user@example.com>
 To: "Mailing List" <list@mailinglist.org>
 Subject: Forwarded Discussion Topic
 Date: Tue, 25 Aug 2026 12:00:00 +0000
 
-This email was forwarded through a mailing list with ARC seal cv=pass.
+This email was forwarded through a mailing list with multi-hop ARC seal cv=pass.

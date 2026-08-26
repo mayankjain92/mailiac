@@ -66,6 +66,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@mailiac/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@mailiac/parsing-ai-intent':
         specifier: workspace:*
         version: link:../../packages/parsing/ai-intent
