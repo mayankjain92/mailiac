@@ -39,7 +39,7 @@ export interface ArcProperties {
 /**
  * Extracts highest ARC instanceCount (i=) and finalSealCv (cv=) from EML headers or mailauth result.
  */
-export function extractArcProperties(rawEmlStr: string, resArc?: any): ArcProperties {
+export function extractArcProperties(rawEmlStr: string, resArc?: unknown): ArcProperties {
   let instanceCount = 0;
   let finalSealCv = 'none';
 
@@ -62,12 +62,14 @@ export function extractArcProperties(rawEmlStr: string, resArc?: any): ArcProper
     }
   }
 
-  if (resArc && instanceCount === 0) {
-    if (typeof resArc.chainLength === 'number') {
-      instanceCount = resArc.chainLength;
+  if (resArc && typeof resArc === 'object' && instanceCount === 0) {
+    const resArcObj = resArc as Record<string, unknown>;
+    if (typeof resArcObj.chainLength === 'number') {
+      instanceCount = resArcObj.chainLength;
     }
-    if (resArc.status?.result) {
-      finalSealCv = resArc.status.result.toLowerCase();
+    const statusObj = resArcObj.status as { result?: string } | undefined;
+    if (statusObj && typeof statusObj.result === 'string') {
+      finalSealCv = statusObj.result.toLowerCase();
     }
   }
 

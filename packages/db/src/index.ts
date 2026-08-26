@@ -69,6 +69,7 @@ const analysisReportSchema = new Schema<AnalysisReportDocument>(
     messageId: { type: String, required: true, index: true },
     senderDomain: { type: String, required: true, index: true },
     timestamp: { type: String, required: true },
+    executionTimeMs: { type: Number },
     forensicPath: { type: [forensicHopSchema], required: true },
     authResults: { type: authResultSchema, required: true },
     riskMatrix: { type: riskMatrixSchema, required: true },

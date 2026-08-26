@@ -34,6 +34,7 @@ const connection = new Redis(redisUrl, {
 
 async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
   const { messageId } = job.data;
+  const startTime = Date.now();
 
   try {
     await connectDb(mongoUri);
@@ -46,43 +47,36 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
     console.info(`[${messageId}] stage: mime-parse`);
     const mdm = await parseEmlToMdm(rawEmlBuffer);
 
-    // Stage 2: Reverse-Hop Trace
-    console.info(`[${messageId}] stage: reverse-hop`);
-    const reverseHopResult = await traceReverseHops(mdm.receivedHeadersRaw);
-
-    // Stage 3: Crypto Auth Verification
-    console.info(`[${messageId}] stage: auth`);
-    const authResults = await verifyAuth(rawEmlBuffer);
-
-    // Stage 4: GeoIP Enrich
-    console.info(`[${messageId}] stage: geoip`);
-    const forensicPath = await enrichHopsWithGeo(reverseHopResult.path);
-
-    // Stage 5: HTML De-cloak
-    console.info(`[${messageId}] stage: decloak`);
-    const decloakResult = decloakHtml(mdm.bodyHtmlRaw);
-
-    // Stage 6: AI Intent Score
-    console.info(`[${messageId}] stage: ai-intent`);
-    const nlpResult = await scoreIntent(mdm.bodyText);
-    nlpResult.glasswormFlag = decloakResult.glasswormFlag;
-    nlpResult.zeroWidthCharCount = decloakResult.zeroWidthCharCount;
-
-    // Stage 7: Identity Score
-    console.info(`[${messageId}] stage: identity`);
     const senderDomain = mdm.from.address.includes('@')
       ? (mdm.from.address.split('@').pop() ?? mdm.from.address)
       : mdm.from.address;
-    const identityResult = scoreIdentity(senderDomain, protectedDomains);
 
-    // Stage 8: IP Reputation
-    console.info(`[${messageId}] stage: ip-reputation`);
+    // Phase 1: Parallel Execution of Independent Analysis Stages
+    console.info(`[${messageId}] stage: parallel-phase-1 (reverse-hop, auth, decloak, ai-intent)`);
+    const [reverseHopResult, authResults, decloakResult, nlpResult] = await Promise.all([
+      traceReverseHops(mdm.receivedHeadersRaw),
+      verifyAuth(rawEmlBuffer),
+      Promise.resolve(decloakHtml(mdm.bodyHtmlRaw)),
+      scoreIntent(mdm.bodyText),
+    ]);
+
+    // Attach decloak results to NLP intent model
+    nlpResult.glasswormFlag = decloakResult.glasswormFlag;
+    nlpResult.zeroWidthCharCount = decloakResult.zeroWidthCharCount;
+
+    // Phase 2: Parallel Execution of Dependent Enrichment & Scoring Stages
+    console.info(`[${messageId}] stage: parallel-phase-2 (geoip, ip-reputation, identity)`);
     const originatingIp = reverseHopResult.originatingSenderIp ?? '';
-    const ipReputationResult = await scoreIpReputation(originatingIp, mdm.date);
+    const [forensicPath, ipReputationResult, identityResult] = await Promise.all([
+      enrichHopsWithGeo(reverseHopResult.path),
+      scoreIpReputation(originatingIp, mdm.date),
+      Promise.resolve(scoreIdentity(senderDomain, protectedDomains, mdm.from.name)),
+    ]);
 
     // Stage 9: Aggregate Risk
     console.info(`[${messageId}] stage: risk-engine`);
     const riskMatrix = aggregateRisk(authResults, identityResult, ipReputationResult, nlpResult);
+    const executionTimeMs = Date.now() - startTime;
 
     // Stage 10: Persist + Notify
     console.info(`[${messageId}] stage: persist-notify`);
@@ -90,6 +84,7 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
       messageId: messageId,
       senderDomain: senderDomain || 'unknown',
       timestamp: new Date().toISOString(),
+      executionTimeMs,
       forensicPath,
       authResults,
       riskMatrix,
@@ -110,7 +105,7 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
       console.info(`[${messageId}] PDF report stage deferred`);
     }
 
-    console.info(`[${messageId}] pipeline completed successfully. Final Risk Score: ${riskMatrix.finalScore}/100`);
+    console.info(`[${messageId}] pipeline completed successfully in ${executionTimeMs}ms. Final Risk Score: ${riskMatrix.finalScore}/100`);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.error(`[${messageId}] pipeline failed: ${reason}`);

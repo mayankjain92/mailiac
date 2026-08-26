@@ -87,6 +87,7 @@ export interface AnalysisReport {
   messageId: string;
   senderDomain: string;
   timestamp: string;
+  executionTimeMs?: number;
   forensicPath: ForensicHop[];
   authResults: AuthResult;
   riskMatrix: RiskMatrix;
