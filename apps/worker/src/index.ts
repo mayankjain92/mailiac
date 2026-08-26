@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-if (!process.env['GEMINI_API_KEY'] && !process.env['MONGODB_URI']) {
+if (!process.env['GEMINI_API_KEY'] || !process.env['MONGODB_URI']) {
   const __filename = fileURLToPath(import.meta.url);
   let currentDir = path.dirname(__filename);
   while (currentDir !== path.parse(currentDir).root) {
@@ -70,13 +70,22 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
       : mdm.from.address;
 
     // Phase 1: Parallel Execution of Independent Analysis Stages
-    console.info(`[${messageId}] stage: parallel-phase-1 (reverse-hop, auth, decloak, ai-intent)`);
-    const [reverseHopResult, authResults, decloakResult, nlpResult] = await Promise.all([
+    console.info(`[${messageId}] stage: parallel-phase-1 (reverse-hop, auth, decloak)`);
+    const [reverseHopResult, authResults, decloakResult] = await Promise.all([
       traceReverseHops(mdm.receivedHeadersRaw),
       verifyAuth(rawEmlBuffer),
       Promise.resolve(decloakHtml(mdm.bodyHtmlRaw)),
-      scoreIntent(mdm.bodyText),
     ]);
+
+    // Stage: AI / NLP Intent Scoring
+    console.info(`[${messageId}] stage: ai-intent`);
+    const nlpResult = await scoreIntent({
+      text: mdm.bodyText || decloakResult.extractedText,
+      subject: mdm.subject,
+      sender: mdm.from.name ? `${mdm.from.name} <${mdm.from.address}>` : mdm.from.address,
+      senderDomain,
+      urls: decloakResult.extractedUrls,
+    });
 
     // Attach decloak results to NLP intent model
     nlpResult.glasswormFlag = decloakResult.glasswormFlag;
@@ -107,9 +116,16 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
       authResults,
       riskMatrix,
       aiSummary: {
+        provider: nlpResult.provider || 'heuristic',
+        providerStatus: nlpResult.providerStatus || 'fallback',
+        fallbackReason: nlpResult.fallbackReason,
+        model: nlpResult.model,
         urgency: nlpResult.nlpScore,
         intent: nlpResult.intentLabels,
         integrityHash: signPayload(JSON.stringify(riskMatrix), webhookSigningSecret, Date.now()),
+        confidence: nlpResult.confidence || 0,
+        findings: nlpResult.findings || [],
+        aiDiagnostics: nlpResult.aiDiagnostics,
       },
     };
 

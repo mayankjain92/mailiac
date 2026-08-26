@@ -120,6 +120,7 @@ export function aggregateRisk(
     ipScore * PILLAR_WEIGHTS.IP +
     nlpScore * PILLAR_WEIGHTS.NLP;
 
+  const baseScore = Math.round(baseWeightedScore * 100) / 100;
   const strongSignalCount = countStrongSignals([authScore, identityScore, ipScore, nlpScore], 70);
   const corroborationBonus = calculateCorroborationBonus(strongSignalCount);
 
@@ -128,11 +129,52 @@ export function aggregateRisk(
   const isQuarantined = shouldQuarantine(authScore, identityScore, ipScore, nlpScore);
   const finalScore = isQuarantined ? 100 : Math.round(totalCalculatedScore);
 
+  const nlpFindings = [...(nlp?.findings || [])];
+  if (isQuarantined) {
+    nlpFindings.push({
+      type: 'HIGH_RISK_QUARANTINE',
+      severity: 'HIGH',
+      description: 'High-risk quarantine override triggered: Multiple elevated threat signals require immediate quarantine',
+    });
+  }
+
   return {
     authScore,
     identityScore,
     ipScore,
     nlpScore,
+    baseScore,
+    corroborationBonus,
+    quarantineOverride: isQuarantined,
+    override: {
+      triggered: isQuarantined,
+      type: isQuarantined ? 'HIGH_RISK_QUARANTINE' : 'NONE',
+      reason: isQuarantined
+        ? 'High-risk quarantine override triggered: Multiple elevated threat indicators require immediate quarantine'
+        : 'Standard weighted aggregation applied without override',
+    },
     finalScore,
+    pillars: {
+      authentication: {
+        score: authScore,
+        weight: PILLAR_WEIGHTS.AUTH,
+        findings: auth?.findings || [],
+      },
+      identity: {
+        score: identityScore,
+        weight: PILLAR_WEIGHTS.IDENTITY,
+        findings: identity?.findings || [],
+      },
+      infrastructure: {
+        score: ipScore,
+        weight: PILLAR_WEIGHTS.IP,
+        findings: ip?.findings || [],
+      },
+      nlp: {
+        score: nlpScore,
+        weight: PILLAR_WEIGHTS.NLP,
+        findings: nlpFindings,
+      },
+    },
   };
 }

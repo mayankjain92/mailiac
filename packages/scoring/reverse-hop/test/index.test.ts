@@ -223,5 +223,28 @@ describe('Reverse-Hop Trace Algorithm', () => {
       expect(result.originatingSenderIp).toBeNull();
       expect(result.injectionDetected).toBe(false);
     });
+
+    it('P3 Regression Test — Received chain with ::1 loopback followed by public IPs', async () => {
+      const headers = [
+        'Received: from SA3PR19MB7370.namprd19.prod.outlook.com (::1) by MN0PR19MB6312.namprd19.prod.outlook.com',
+        'Received: from BN0PR03CA0023.namprd03.prod.outlook.com (2603:10b6:408:e6::28) by SA3PR19MB7370.namprd19.prod.outlook.com',
+        'Received: from BN8NAM11FT066.eop-nam11.prod.protection.outlook.com (2603:10b6:408:e6:cafe::23) by BN0PR03CA0023.outlook.office365.com',
+        'Received: from ubuntu-s-1vcpu-1gb-35gb-intel-sfo3-06 (137.184.34.4) by BN8NAM11FT066.mail.protection.outlook.com',
+      ];
+
+      vi.mocked(dns.reverse).mockImplementation(async (ip) => {
+        if (ip === '137.184.34.4') return ['ubuntu-s-1vcpu-1gb-35gb-intel-sfo3-06'];
+        if (ip === '2603:10b6:408:e6:cafe::23') return ['BN8NAM11FT066.eop-nam11.prod.protection.outlook.com'];
+        if (ip === '2603:10b6:408:e6::28') return ['BN0PR03CA0023.namprd03.prod.outlook.com'];
+        return [];
+      });
+
+      const result = await traceReverseHops(headers);
+
+      expect(result.originatingSenderIp).toBe('137.184.34.4');
+      expect(result.path[0].ip).toBe('::1');
+      expect(result.path[0].isPrivate).toBe(true);
+      expect(result.path[0].trusted).toBe(true);
+    });
   });
 });

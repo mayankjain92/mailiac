@@ -141,6 +141,17 @@ describe('AI Intent Scoring (@mailiac/parsing-ai-intent)', () => {
       const result = await scoreIntent(bodyText);
 
       expect(result).toBeDefined();
+      expect(result.provider).toBe('heuristic');
+      expect(result.providerStatus).toBe('fallback');
+      expect(result.fallbackReason).toContain('Rate limit exceeded 429');
+      expect(result.aiDiagnostics).toEqual(
+        expect.objectContaining({
+          provider: 'heuristic',
+          requestAttempted: true,
+          requestSucceeded: false,
+          fallbackUsed: true,
+        })
+      );
       expect(result.intentLabels).toContain('CREDENTIAL_HARVESTING');
       expect(result.credentialHarvestingScore).toBeGreaterThan(0);
       expect(result.nlpScore).toBeGreaterThan(0);
@@ -152,33 +163,33 @@ describe('AI Intent Scoring (@mailiac/parsing-ai-intent)', () => {
       const bodyText = 'Please execute the wire transfer of $10,000 to our bank account.';
       const result = await scoreIntent(bodyText);
 
+      expect(result.provider).toBe('heuristic');
+      expect(result.providerStatus).toBe('fallback');
+      expect(result.fallbackReason).toBe('GEMINI_API_KEY missing from process.env');
+      expect(result.aiDiagnostics?.requestAttempted).toBe(false);
       expect(result.intentLabels).toContain('FINANCIAL_COERCION');
-      expect(result.financialRequestScore).toBe(80);
-      expect(result.nlpScore).toBe(80);
+      expect(result.financialRequestScore).toBe(85);
+      expect(result.nlpScore).toBe(85);
     });
   });
 
   describe('Edge Cases', () => {
     it('handles empty or whitespace text gracefully', async () => {
       const result = await scoreIntent('');
-      expect(result).toEqual({
-        intentLabels: ['BENIGN'],
-        financialRequestScore: 0,
-        credentialHarvestingScore: 0,
-        glasswormFlag: false,
-        zeroWidthCharCount: 0,
-        nlpScore: 0,
-      });
+      expect(result.intentLabels).toEqual(['UNKNOWN']);
+      expect(result.providerStatus).toBe('fallback');
+      expect(result.fallbackReason).toBe('Empty payload provided');
+      expect(result.nlpScore).toBe(0);
 
       const whitespaceResult = await scoreIntent('   \n\t  ');
-      expect(whitespaceResult.intentLabels).toEqual(['BENIGN']);
+      expect(whitespaceResult.intentLabels).toEqual(['UNKNOWN']);
       expect(whitespaceResult.nlpScore).toBe(0);
     });
 
     it('handles non-string / null / undefined input gracefully', async () => {
       // @ts-expect-error Testing runtime invalid input
       const nullResult = await scoreIntent(null);
-      expect(nullResult.intentLabels).toEqual(['BENIGN']);
+      expect(nullResult.intentLabels).toEqual(['UNKNOWN']);
       expect(nullResult.nlpScore).toBe(0);
     });
   });
@@ -239,6 +250,126 @@ describe('AI Intent Scoring (@mailiac/parsing-ai-intent)', () => {
       const result = await scoreIntent('Test email');
       expect(result.nlpScore).toBe(10);
       expect(result.intentLabels).toEqual(['BENIGN']);
+    });
+  });
+
+  describe('P3 Regression Test Suite — English & Format Coverage', () => {
+    it('1. English Phishing sample with external URL mismatch', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const result = await scoreIntent({
+        subject: 'URGENT: Corporate Account Expiration Notice',
+        sender: 'Security Team <security@unrelated-domain.com>',
+        senderDomain: 'unrelated-domain.com',
+        text: 'Your corporate access expires today. Please click here immediately to redeem your security credentials and confirm identity.',
+        urls: [
+          {
+            href: 'https://phishing-portal-login.xyz/verify',
+            text: 'Redeem Now',
+            domain: 'phishing-portal-login.xyz',
+          },
+        ],
+      });
+
+      expect(result.nlpScore).toBeGreaterThan(0);
+      expect(result.intentLabels).not.toContain('UNKNOWN');
+      expect(result.intentLabels).toContain('CREDENTIAL_HARVESTING');
+      expect(result.findings).toContainEqual(
+        expect.objectContaining({
+          type: 'SUSPICIOUS_EXTERNAL_LINK',
+          severity: 'HIGH',
+        })
+      );
+    });
+
+    it('2. Benign HTML email — returns low/benign score', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const result = await scoreIntent({
+        subject: 'Weekly Team Sync Notes',
+        text: 'Hi everyone, here are the action items from our weekly sync meeting. Thanks!',
+      });
+
+      expect(result.nlpScore).toBe(0);
+      expect(result.intentLabels).toEqual(['UNKNOWN']);
+    });
+
+    it('3. English phishing email — detects credential harvesting', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const result = await scoreIntent({
+        subject: 'Urgent: Password Reset Required',
+        text: 'Your corporate account has been suspended. Please verify your account and login immediately.',
+      });
+
+      expect(result.nlpScore).toBeGreaterThanOrEqual(80);
+      expect(result.intentLabels).toContain('CREDENTIAL_HARVESTING');
+    });
+
+    it('4. English urgency email — detects English urgency keywords', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const result = await scoreIntent({
+        subject: 'Account Expiration Notice - Action Required Immediately',
+        text: 'Attention: your account expires today. Immediate action required!',
+      });
+
+      expect(result.nlpScore).toBeGreaterThan(0);
+      expect(result.intentLabels).toContain('URGENCY');
+    });
+
+    it('5. Plain-text phishing email — scores correctly from plain text', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const result = await scoreIntent('URGENT: Please execute wire transfer of $25,000 to invoice account.');
+
+      expect(result.nlpScore).toBeGreaterThan(0);
+      expect(result.intentLabels).toContain('FINANCIAL_COERCION');
+    });
+
+    it('6. Multipart email — correctly handles input from options object', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const result = await scoreIntent({
+        subject: 'Invoice Payment Due',
+        text: 'Attached is the invoice payment request for swift code transfer.',
+      });
+
+      expect(result.nlpScore).toBeGreaterThan(0);
+      expect(result.intentLabels).toContain('FINANCIAL_COERCION');
+    });
+
+    it('7. HTML-only email — handles extracted text and URLs correctly', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const result = await scoreIntent({
+        text: 'Visual HTML email with click here link',
+        urls: [{ href: 'https://phishing-domain.xyz/login', text: 'click here', domain: 'phishing-domain.xyz' }],
+      });
+
+      expect(result.nlpScore).toBeGreaterThan(0);
+      expect(result.findings).toContainEqual(
+        expect.objectContaining({
+          type: 'SUSPICIOUS_EXTERNAL_LINK',
+        })
+      );
+    });
+
+    it('8. Malformed / empty body — returns empty payload finding gracefully', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const result = await scoreIntent({
+        text: '',
+        subject: '',
+      });
+
+      expect(result.nlpScore).toBe(0);
+      expect(result.intentLabels).toEqual(['UNKNOWN']);
+      expect(result.findings).toContainEqual(
+        expect.objectContaining({
+          type: 'EMPTY_PAYLOAD',
+        })
+      );
     });
   });
 });

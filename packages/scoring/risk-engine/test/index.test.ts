@@ -277,18 +277,25 @@ describe('aggregateRisk - @mailiac/scoring-risk-engine', () => {
       expect(matrix.finalScore).toBe(10); // 100*0.1 = 10
     });
 
-    it('25. Missing pillar values handle safely', () => {
+    it('26. Exact score math verification (auth=100, id=50, ip=0, nlp=90)', () => {
       const matrix = aggregateRisk(
-        null as unknown as AuthResult,
-        undefined as unknown as IdentityResult,
-        { ipScore: 50 } as IPReputationResult,
-        null as unknown as NLPResult
+        { authScore: 100 } as AuthResult,
+        { identityScore: 50 } as IdentityResult,
+        { ipScore: 0 } as IPReputationResult,
+        { nlpScore: 90 } as NLPResult
       );
-      expect(matrix.authScore).toBe(0);
-      expect(matrix.identityScore).toBe(0);
-      expect(matrix.ipScore).toBe(50);
-      expect(matrix.nlpScore).toBe(0);
-      expect(matrix.finalScore).toBe(5); // 50*0.1 = 5
+
+      // Math verification: 100 * 0.20 + 50 * 0.35 + 0 * 0.10 + 90 * 0.35 = 20 + 17.5 + 0 + 31.5 = 69
+      expect(matrix.baseScore).toBe(69);
+
+      // Corroboration bonus: 2 strong signals (auth=100 >= 70, nlp=90 >= 70) => +10
+      expect(matrix.corroborationBonus).toBe(10);
+
+      // Quarantine override: C3 triggered (nlp >= 90 AND auth >= 70) => true
+      expect(matrix.quarantineOverride).toBe(true);
+
+      // Final score: Quarantined to 100
+      expect(matrix.finalScore).toBe(100);
     });
   });
 });

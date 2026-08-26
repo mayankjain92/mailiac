@@ -27,6 +27,15 @@ export type AnalysisReportDocument = AnalysisReport &
     expireAt?: Date;
   };
 
+const findingSchema = new Schema(
+  {
+    type: { type: String, required: true },
+    severity: { type: String, enum: ['INFO', 'LOW', 'MEDIUM', 'HIGH'], required: true },
+    description: { type: String, required: true },
+  },
+  { _id: false }
+);
+
 const forensicHopSchema = new Schema(
   {
     ip: { type: String, required: true },
@@ -49,6 +58,7 @@ const authResultSchema = new Schema(
     dmarcAlignment: { type: String, enum: ['strict', 'relaxed', 'fail'], required: true },
     arcPass: { type: Boolean, required: true },
     authScore: { type: Number, required: true },
+    findings: { type: [findingSchema] },
   },
   { _id: false }
 );
@@ -60,6 +70,31 @@ const riskMatrixSchema = new Schema(
     ipScore: { type: Number, required: true },
     nlpScore: { type: Number, required: true },
     finalScore: { type: Number, required: true },
+    pillars: {
+      type: new Schema({
+        authentication: {
+          score: { type: Number, required: true },
+          weight: { type: Number, required: true },
+          findings: { type: [findingSchema], required: true },
+        },
+        identity: {
+          score: { type: Number, required: true },
+          weight: { type: Number, required: true },
+          findings: { type: [findingSchema], required: true },
+        },
+        infrastructure: {
+          score: { type: Number, required: true },
+          weight: { type: Number, required: true },
+          findings: { type: [findingSchema], required: true },
+        },
+        nlp: {
+          score: { type: Number, required: true },
+          weight: { type: Number, required: true },
+          findings: { type: [findingSchema], required: true },
+        },
+      }, { _id: false }),
+      required: false, // Optional for backwards compatibility with old records if needed, but worker always provides it now
+    }
   },
   { _id: false }
 );
@@ -77,6 +112,8 @@ const analysisReportSchema = new Schema<AnalysisReportDocument>(
       urgency: { type: Number, required: true },
       intent: { type: [String], required: true },
       integrityHash: { type: String, required: true },
+      confidence: { type: Number },
+      findings: { type: [findingSchema] },
     },
     // TTL field: document is automatically removed 24 h after expireAt
     expireAt: {

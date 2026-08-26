@@ -124,6 +124,8 @@ function parseHeaderFallback(rawEmlStr: string): Partial<AuthResult> & ArcProper
   return { spf, dkim, dmarcAlignment, arcPass: isLegitimateForwardedPass, ...arcProps };
 }
 
+import type { Finding } from '@mailiac/shared-types';
+
 /**
  * Calculates authScore (0-100) based on SPF, DKIM, DMARC alignment, and strict Multi-Hop ARC pass.
  *
@@ -176,6 +178,47 @@ export function calculateAuthScore(result: CalculateAuthInput): number {
 }
 
 /**
+ * Generates structured findings explaining the authentication results.
+ */
+function generateAuthFindings(input: CalculateAuthInput): Finding[] {
+  const findings: Finding[] = [];
+
+  if (input.spf === 'fail' || input.spf === 'none') {
+    findings.push({
+      type: 'SPF_FAILURE',
+      severity: 'HIGH',
+      description: `SPF authentication ${input.spf === 'none' ? 'is missing' : 'failed'}`,
+    });
+  }
+
+  if (input.dkim === 'fail' || input.dkim === 'none') {
+    findings.push({
+      type: 'DKIM_FAILURE',
+      severity: input.dkim === 'fail' ? 'HIGH' : 'MEDIUM',
+      description: `DKIM signature ${input.dkim === 'none' ? 'is missing' : 'failed validation'}`,
+    });
+  }
+
+  if (input.dmarcAlignment === 'fail') {
+    findings.push({
+      type: 'DMARC_ALIGNMENT_FAILURE',
+      severity: 'HIGH',
+      description: 'DMARC alignment failed (domain mismatch between From and SPF/DKIM)',
+    });
+  }
+
+  if (input.arcPass) {
+    findings.push({
+      type: 'ARC_PASS',
+      severity: 'INFO',
+      description: 'Multi-hop ARC chain validation passed',
+    });
+  }
+
+  return findings;
+}
+
+/**
  * Verifies SPF, DKIM, DMARC, and ARC authentication status for a raw EML buffer.
  *
  * @param rawEml Raw EML message Buffer
@@ -197,6 +240,7 @@ export async function verifyAuth(rawEml: Buffer): Promise<AuthResult> {
       dmarcAlignment: fallback.dmarcAlignment,
       arcPass: false,
       authScore: calculateAuthScore(fallback),
+      findings: generateAuthFindings(fallback),
     };
   }
 
@@ -268,6 +312,7 @@ export async function verifyAuth(rawEml: Buffer): Promise<AuthResult> {
       dmarcAlignment,
       arcPass: isLegitimateForwardedPass,
       authScore: finalAuthScore,
+      findings: generateAuthFindings(input),
     };
   } catch (_error) {
     // If mailauth fails or times out, fallback to header analysis
@@ -288,6 +333,7 @@ export async function verifyAuth(rawEml: Buffer): Promise<AuthResult> {
       dmarcAlignment: input.dmarcAlignment,
       arcPass: isLegitimateForwardedPass,
       authScore: calculateAuthScore(input),
+      findings: generateAuthFindings(input),
     };
   }
 }

@@ -1,5 +1,5 @@
 import { isIP, isIPv4, isIPv6 } from 'node:net';
-import type { IPReputationResult } from '@mailiac/shared-types';
+import type { IPReputationResult, Finding } from '@mailiac/shared-types';
 
 /**
  * Helper to check if an IP string is a private, loopback, link-local, or reserved address.
@@ -98,6 +98,61 @@ export function calculateIpScore(params: {
 }
 
 /**
+ * Generates structured findings based on IP reputation evidence.
+ */
+export function generateIpFindings(params: {
+  abuseConfidenceScore: number;
+  isProxyOrVpn: boolean;
+  timezoneDiscrepancyHours: number;
+  isPrivate: boolean;
+}): Finding[] {
+  const findings: Finding[] = [];
+
+  if (params.isPrivate) {
+    findings.push({
+      type: 'PRIVATE_IP',
+      severity: 'INFO',
+      description: 'Originating IP is a private or loopback address',
+    });
+    return findings;
+  }
+
+  if (params.abuseConfidenceScore > 0) {
+    findings.push({
+      type: 'ABUSE_REPUTATION',
+      severity: params.abuseConfidenceScore > 50 ? 'HIGH' : 'MEDIUM',
+      description: `IP has an AbuseIPDB confidence score of ${params.abuseConfidenceScore}%`,
+    });
+  }
+
+  if (params.isProxyOrVpn) {
+    findings.push({
+      type: 'PROXY_VPN_DETECTED',
+      severity: 'MEDIUM',
+      description: 'IP is identified as a VPN, Proxy, or Tor exit node',
+    });
+  }
+
+  if (params.timezoneDiscrepancyHours > 4) {
+    findings.push({
+      type: 'TIMEZONE_MISMATCH',
+      severity: 'LOW',
+      description: `IP geolocation timezone differs from email Date header by ${params.timezoneDiscrepancyHours} hours`,
+    });
+  }
+
+  if (findings.length === 0) {
+    findings.push({
+      type: 'CLEAN_IP',
+      severity: 'INFO',
+      description: 'No significant IP reputation risks detected',
+    });
+  }
+
+  return findings;
+}
+
+/**
  * Scores IP reputation by querying AbuseIPDB (or fallback) and evaluating proxy/timezone discrepancies.
  *
  * @param originatingSenderIp IP address string of the originating sender (or null/missing)
@@ -121,6 +176,12 @@ export async function scoreIpReputation(
         isProxyOrVpn: false,
         timezoneDiscrepancyHours,
       }),
+      findings: generateIpFindings({
+        abuseConfidenceScore: 0,
+        isProxyOrVpn: false,
+        timezoneDiscrepancyHours,
+        isPrivate: true,
+      }),
     };
   }
 
@@ -136,6 +197,12 @@ export async function scoreIpReputation(
         abuseConfidenceScore: 0,
         isProxyOrVpn: false,
         timezoneDiscrepancyHours,
+      }),
+      findings: generateIpFindings({
+        abuseConfidenceScore: 0,
+        isProxyOrVpn: false,
+        timezoneDiscrepancyHours,
+        isPrivate: false,
       }),
     };
   }
@@ -188,6 +255,12 @@ export async function scoreIpReputation(
       isProxyOrVpn,
       timezoneDiscrepancyHours,
       ipScore,
+      findings: generateIpFindings({
+        abuseConfidenceScore,
+        isProxyOrVpn,
+        timezoneDiscrepancyHours,
+        isPrivate: false,
+      }),
     };
   } catch (_err) {
     // Return fallback on network error/timeout/API failure/malformed response
@@ -199,6 +272,12 @@ export async function scoreIpReputation(
         abuseConfidenceScore: 0,
         isProxyOrVpn: false,
         timezoneDiscrepancyHours,
+      }),
+      findings: generateIpFindings({
+        abuseConfidenceScore: 0,
+        isProxyOrVpn: false,
+        timezoneDiscrepancyHours,
+        isPrivate: false,
       }),
     };
   } finally {

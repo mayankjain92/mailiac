@@ -20,8 +20,16 @@ const ZERO_WIDTH_REGEX = /[\u200B-\u200D\uFEFF\u00AD\u200E\u200F\u202A-\u202E\u2
  */
 const GLASSWORM_ZERO_WIDTH_THRESHOLD = 50;
 
+export interface ExtractedUrl {
+  href: string;
+  text: string;
+  domain?: string;
+}
+
 export interface DecloakResult {
   cleanedHtml: string;
+  extractedText: string;
+  extractedUrls: ExtractedUrl[];
   zeroWidthCharCount: number;
   glasswormFlag: boolean;
 }
@@ -37,6 +45,8 @@ export function decloakHtml(rawHtml: string): DecloakResult {
   if (!rawHtml || typeof rawHtml !== 'string') {
     return {
       cleanedHtml: '',
+      extractedText: '',
+      extractedUrls: [],
       zeroWidthCharCount: 0,
       glasswormFlag: false,
     };
@@ -85,6 +95,37 @@ export function decloakHtml(rawHtml: string): DecloakResult {
     }
   });
 
+  // Extract anchor href URLs and visible text before tag stripping
+  const extractedUrls: ExtractedUrl[] = [];
+  $('a[href]').each((_, el) => {
+    const $el = $(el);
+    const href = ($el.attr('href') || '').trim();
+    const text = $el.text().trim();
+    if (href && !href.toLowerCase().startsWith('javascript:')) {
+      try {
+        const parsedUrl = new URL(href);
+        extractedUrls.push({
+          href,
+          text: text || href,
+          domain: parsedUrl.hostname.toLowerCase(),
+        });
+      } catch {
+        extractedUrls.push({
+          href,
+          text: text || href,
+        });
+      }
+    }
+  });
+
+  // Extract clean visible text
+  const rawText = $('body').length > 0 ? $('body').text() : $.text();
+  const extractedText = rawText
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
+
   // 5. Strip dangerous executable / embedding tags
   $('script, noscript, iframe, object, embed, applet, meta[http-equiv="refresh"]').remove();
 
@@ -120,6 +161,8 @@ export function decloakHtml(rawHtml: string): DecloakResult {
 
   return {
     cleanedHtml,
+    extractedText,
+    extractedUrls,
     zeroWidthCharCount,
     glasswormFlag,
   };

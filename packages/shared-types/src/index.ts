@@ -42,12 +42,20 @@ export interface ReverseHopResult {
   injectionDetected: boolean;
 }
 
+export interface Finding {
+  type: string;
+  severity: 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH';
+  description: string;
+  source?: 'heuristic' | 'gemini' | 'hybrid';
+}
+
 export interface AuthResult {
   spf: 'pass' | 'fail' | 'neutral' | 'none';
   dkim: 'pass' | 'fail' | 'none';
   dmarcAlignment: 'strict' | 'relaxed' | 'fail';
   arcPass: boolean;
   authScore: number;
+  findings: Finding[];
 }
 
 export interface IdentityResult {
@@ -57,6 +65,7 @@ export interface IdentityResult {
   homoglyphMatch: boolean;
   matchedProtectedDomain?: string;
   identityScore: number;
+  findings: Finding[];
 }
 
 export interface IPReputationResult {
@@ -64,15 +73,33 @@ export interface IPReputationResult {
   isProxyOrVpn: boolean;
   timezoneDiscrepancyHours: number;
   ipScore: number;
+  findings: Finding[];
+}
+
+export interface AIDiagnostics {
+  provider: 'gemini' | 'heuristic' | 'hybrid';
+  model: string;
+  requestAttempted: boolean;
+  requestSucceeded: boolean;
+  responseParsed: boolean;
+  latencyMs: number;
+  fallbackUsed: boolean;
 }
 
 export interface NLPResult {
+  provider: 'gemini' | 'heuristic' | 'hybrid';
+  providerStatus: 'success' | 'fallback';
+  fallbackReason?: string;
+  model?: string;
   intentLabels: string[];
   financialRequestScore: number;
   credentialHarvestingScore: number;
   glasswormFlag: boolean;
   zeroWidthCharCount: number;
   nlpScore: number;
+  confidence?: number;
+  findings: Finding[];
+  aiDiagnostics?: AIDiagnostics;
 }
 
 export interface RiskMatrix {
@@ -80,7 +107,37 @@ export interface RiskMatrix {
   identityScore: number;
   ipScore: number;
   nlpScore: number;
+  baseScore?: number;
+  corroborationBonus?: number;
+  quarantineOverride?: boolean;
+  override?: {
+    triggered: boolean;
+    type?: string;
+    reason?: string;
+  };
   finalScore: number;
+  pillars: {
+    authentication: {
+      score: number;
+      weight: number;
+      findings: Finding[];
+    };
+    identity: {
+      score: number;
+      weight: number;
+      findings: Finding[];
+    };
+    infrastructure: {
+      score: number;
+      weight: number;
+      findings: Finding[];
+    };
+    nlp: {
+      score: number;
+      weight: number;
+      findings: Finding[];
+    };
+  };
 }
 
 export interface AnalysisReport {
@@ -92,8 +149,15 @@ export interface AnalysisReport {
   authResults: AuthResult;
   riskMatrix: RiskMatrix;
   aiSummary: {
+    provider: 'gemini' | 'heuristic' | 'hybrid';
+    providerStatus: 'success' | 'fallback';
+    fallbackReason?: string;
+    model?: string;
     urgency: number;
     intent: string[];
     integrityHash: string;
+    confidence: number;
+    findings: Finding[];
+    aiDiagnostics?: AIDiagnostics;
   };
 }

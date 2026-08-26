@@ -145,4 +145,71 @@ describe('MIME Parser (@mailiac/parsing-mime)', () => {
       expect(mdm.attachments).toEqual([]);
     });
   });
+
+  describe('P3 Regression Tests — MIME & Body Extraction', () => {
+    it('1. HTML-only email — successfully converts HTML to normalized text when text/plain is missing', async () => {
+      const emlBuffer = loadFixture('sample-1.eml');
+      const mdm = await parseEmlToMdm(emlBuffer);
+
+      expect(mdm.bodyHtmlRaw).toContain('<html');
+      expect(mdm.bodyText).not.toBe('');
+      expect(mdm.bodyText).toContain('Banco do Bradesco (Livelo)');
+      expect(mdm.bodyText).toContain('Resgatar Agora');
+    });
+
+    it('2. text/plain email — extracts plain text body directly', async () => {
+      const eml = Buffer.from(
+        'From: user@example.com\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nThis is a pure plain text email.'
+      );
+      const mdm = await parseEmlToMdm(eml);
+      expect(mdm.bodyText.trim()).toBe('This is a pure plain text email.');
+    });
+
+    it('3. multipart/alternative email — prefers text/plain when present', async () => {
+      const eml = Buffer.from(
+        'From: sender@example.com\r\n' +
+          'Content-Type: multipart/alternative; boundary="boundary123"\r\n\r\n' +
+          '--boundary123\r\n' +
+          'Content-Type: text/plain; charset=utf-8\r\n\r\n' +
+          'Plain text content\r\n' +
+          '--boundary123\r\n' +
+          'Content-Type: text/html; charset=utf-8\r\n\r\n' +
+          '<b>HTML content</b>\r\n' +
+          '--boundary123--\r\n'
+      );
+      const mdm = await parseEmlToMdm(eml);
+      expect(mdm.bodyText.trim()).toBe('Plain text content');
+      expect(mdm.bodyHtmlRaw.trim()).toBe('<b>HTML content</b>');
+    });
+
+    it('4. quoted-printable body — decodes quoted-printable encoding correctly', async () => {
+      const eml = Buffer.from(
+        'From: sender@example.com\r\n' +
+          'Content-Type: text/plain; charset=utf-8\r\n' +
+          'Content-Transfer-Encoding: quoted-printable\r\n\r\n' +
+          'Hello=20World=3D100'
+      );
+      const mdm = await parseEmlToMdm(eml);
+      expect(mdm.bodyText.trim()).toBe('Hello World=100');
+    });
+
+    it('5. base64 body — decodes base64 body correctly', async () => {
+      const base64Content = Buffer.from('Base64 decoded body text').toString('base64');
+      const eml = Buffer.from(
+        'From: sender@example.com\r\n' +
+          'Content-Type: text/plain; charset=utf-8\r\n' +
+          'Content-Transfer-Encoding: base64\r\n\r\n' +
+          base64Content
+      );
+      const mdm = await parseEmlToMdm(eml);
+      expect(mdm.bodyText.trim()).toBe('Base64 decoded body text');
+    });
+
+    it('6. empty body — handles empty email body without throwing', async () => {
+      const eml = Buffer.from('From: sender@example.com\r\nSubject: No body\r\n\r\n');
+      const mdm = await parseEmlToMdm(eml);
+      expect(mdm.bodyText).toBe('');
+      expect(mdm.bodyHtmlRaw).toBe('');
+    });
+  });
 });

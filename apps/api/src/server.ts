@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-if (!process.env['GEMINI_API_KEY'] && !process.env['MONGODB_URI']) {
+if (!process.env['GEMINI_API_KEY'] || !process.env['MONGODB_URI']) {
   const __filename = fileURLToPath(import.meta.url);
   let currentDir = path.dirname(__filename);
   while (currentDir !== path.parse(currentDir).root) {

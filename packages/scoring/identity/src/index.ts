@@ -1,4 +1,4 @@
-import type { IdentityResult } from '@mailiac/shared-types';
+import type { IdentityResult, Finding } from '@mailiac/shared-types';
 import { parse } from 'tldts';
 
 /**
@@ -269,6 +269,7 @@ export function scoreIdentity(
       jaroWinklerScore: 0,
       homoglyphMatch: false,
       identityScore: 0,
+      findings: [],
     };
   }
 
@@ -286,6 +287,7 @@ export function scoreIdentity(
         homoglyphMatch: false,
         matchedProtectedDomain: rawProtected,
         identityScore: 0,
+        findings: [],
       };
     }
   }
@@ -303,6 +305,13 @@ export function scoreIdentity(
         homoglyphMatch: false,
         matchedProtectedDomain: mismatch.claimedBrand,
         identityScore: 100,
+        findings: [
+          {
+            type: 'BRAND_IMPERSONATION',
+            severity: 'HIGH',
+            description: `Display name claims brand '${mismatch.claimedBrand}', but sender domain is '${senderDomain}'`,
+          }
+        ],
       };
     }
   }
@@ -345,20 +354,89 @@ export function scoreIdentity(
   // Jaro-Winkler >= 0.85 -> 100 pts (combosquatting)
   // Jaro-Winkler >= 0.75 -> 50 pts
   let identityScore = 0;
+  const findings: Finding[] = [];
 
   if (homoglyphMatchDetected) {
     identityScore = 100;
+    findings.push({
+      type: 'HOMOGLYPH_DETECTED',
+      severity: 'HIGH',
+      description: 'Domain contains confusable non-ASCII characters visually identical to a protected brand',
+    });
   } else if (minDamerauLevenshtein <= 2) {
     identityScore = 100;
+    findings.push({
+      type: 'TYPOSQUATTING',
+      severity: 'HIGH',
+      description: `Domain is highly similar to protected brand: ${bestMatchDomain} (Distance: ${minDamerauLevenshtein})`,
+    });
   } else if (maxJaroWinkler >= 0.85) {
     identityScore = 100;
+    findings.push({
+      type: 'COMBOSQUATTING',
+      severity: 'HIGH',
+      description: `Domain string strongly resembles protected brand: ${bestMatchDomain} (Similarity: ${(maxJaroWinkler * 100).toFixed(1)}%)`,
+    });
   } else if (minDamerauLevenshtein === 3) {
     identityScore = 75;
+    findings.push({
+      type: 'TYPOSQUATTING_MODERATE',
+      severity: 'MEDIUM',
+      description: `Domain is somewhat similar to protected brand: ${bestMatchDomain} (Distance: 3)`,
+    });
   } else if (maxJaroWinkler >= 0.75) {
     identityScore = 50;
+    findings.push({
+      type: 'COMBOSQUATTING_MODERATE',
+      severity: 'MEDIUM',
+      description: `Domain partially resembles protected brand: ${bestMatchDomain} (Similarity: ${(maxJaroWinkler * 100).toFixed(1)}%)`,
+    });
   } else {
     identityScore = 0;
     bestMatchDomain = undefined;
+  }
+
+  // Generic mismatch check if no protected brand was matched
+  if (identityScore === 0 && displayName) {
+    const cleanDisplay = displayName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanSender = normalizedSender.replace(/[^a-z0-9]/g, '');
+    
+    // If display name is substantial and doesn't appear anywhere in the sender domain
+    if (cleanDisplay.length > 5 && cleanSender.length > 0) {
+      // Split display name into words and see if any meaningful word matches the domain
+      const displayWords = displayName.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3);
+      let wordMatchesDomain = false;
+      
+      for (const word of displayWords) {
+        if (cleanSender.includes(word) || calculateJaroWinkler(word, normalizedSender.split('.')[0] || '') > 0.8) {
+          wordMatchesDomain = true;
+          break;
+        }
+      }
+      
+      if (!wordMatchesDomain && !cleanDisplay.includes(cleanSender)) {
+        findings.push({
+          type: 'DISPLAY_NAME_MISMATCH',
+          severity: 'MEDIUM',
+          description: `Display name '${displayName}' has no obvious relationship with sender domain '${senderDomain}'`,
+        });
+      }
+    }
+  }
+
+  // Ensure identityScore is consistent with generated findings
+  if (identityScore === 0 && findings.length > 0) {
+    const hasHigh = findings.some((f) => f.severity === 'HIGH');
+    const hasMedium = findings.some((f) => f.severity === 'MEDIUM');
+    const hasLow = findings.some((f) => f.severity === 'LOW');
+
+    if (hasHigh) {
+      identityScore = 100;
+    } else if (hasMedium) {
+      identityScore = 50;
+    } else if (hasLow) {
+      identityScore = 25;
+    }
   }
 
   return {
@@ -368,5 +446,6 @@ export function scoreIdentity(
     homoglyphMatch: homoglyphMatchDetected,
     ...(bestMatchDomain ? { matchedProtectedDomain: bestMatchDomain } : {}),
     identityScore,
+    findings,
   };
 }

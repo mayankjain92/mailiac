@@ -131,6 +131,8 @@ describe('HTML De-cloaking (@mailiac/parsing-decloak)', () => {
       const result = decloakHtml('');
       expect(result).toEqual({
         cleanedHtml: '',
+        extractedText: '',
+        extractedUrls: [],
         zeroWidthCharCount: 0,
         glasswormFlag: false,
       });
@@ -140,18 +142,24 @@ describe('HTML De-cloaking (@mailiac/parsing-decloak)', () => {
       // @ts-expect-error Testing runtime invalid inputs
       expect(decloakHtml(null)).toEqual({
         cleanedHtml: '',
+        extractedText: '',
+        extractedUrls: [],
         zeroWidthCharCount: 0,
         glasswormFlag: false,
       });
       // @ts-expect-error Testing runtime invalid inputs
       expect(decloakHtml(undefined)).toEqual({
         cleanedHtml: '',
+        extractedText: '',
+        extractedUrls: [],
         zeroWidthCharCount: 0,
         glasswormFlag: false,
       });
       // @ts-expect-error Testing runtime invalid inputs
       expect(decloakHtml(12345)).toEqual({
         cleanedHtml: '',
+        extractedText: '',
+        extractedUrls: [],
         zeroWidthCharCount: 0,
         glasswormFlag: false,
       });

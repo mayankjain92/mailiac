@@ -128,6 +128,17 @@ describe('scoreIdentity', () => {
     expect(() => calculateJaroWinkler('ab', 'a')).not.toThrow();
     expect(calculateJaroWinkler('ab', 'a')).toBeGreaterThan(0);
   });
+
+  it('15. generic display-name mismatch: BANCO DO BRADESCO LIVELO with atendimento.com.br returns non-zero score (50) and DISPLAY_NAME_MISMATCH finding', () => {
+    const result = scoreIdentity('atendimento.com.br', protectedDomains, 'BANCO DO BRADESCO LIVELO');
+    expect(result.identityScore).toBe(50);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        type: 'DISPLAY_NAME_MISMATCH',
+        severity: 'MEDIUM',
+      })
+    );
+  });
 });
 
 describe('String distance algorithms', () => {
