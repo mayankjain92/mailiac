@@ -182,4 +182,63 @@ describe('AI Intent Scoring (@mailiac/parsing-ai-intent)', () => {
       expect(nullResult.nlpScore).toBe(0);
     });
   });
+
+  describe('Validation & Hardening', () => {
+    it('normalizes out-of-bounds, NaN, and Infinity scores', async () => {
+      const mockGenerate = vi.fn().mockResolvedValueOnce({
+        text: JSON.stringify({
+          intentLabels: ['BENIGN'],
+          urgency_score: -50,
+          financial_score: Infinity,
+          authority_score: NaN,
+          harvesting_score: 150,
+          nlpScore: null,
+        }),
+      });
+
+      vi.mocked(GoogleGenAI).mockImplementationOnce(() => ({
+        models: {
+          generateContent: mockGenerate,
+        },
+      } as unknown as GoogleGenAI));
+
+      const result = await scoreIntent('Test email');
+      expect(result.financialRequestScore).toBe(0); // Infinity -> 0
+      expect(result.credentialHarvestingScore).toBe(100); // 150 -> clamped to 100
+      expect(result.nlpScore).toBe(100); // Max of components (0, 0, 0, 100)
+    });
+
+    it('filters invalid intent labels and defaults to UNKNOWN', async () => {
+      const mockGenerate = vi.fn().mockResolvedValueOnce({
+        text: JSON.stringify({
+          intentLabels: ['RANDOM_LABEL', 'FINANCIAL_COERCION'],
+        }),
+      });
+
+      vi.mocked(GoogleGenAI).mockImplementationOnce(() => ({
+        models: {
+          generateContent: mockGenerate,
+        },
+      } as unknown as GoogleGenAI));
+
+      const result = await scoreIntent('Test email');
+      expect(result.intentLabels).toEqual(['FINANCIAL_COERCION']); // RANDOM_LABEL gets filtered out when mixed with valid ones
+    });
+
+    it('extracts JSON surrounded by conversational text', async () => {
+      const mockGenerate = vi.fn().mockResolvedValueOnce({
+        text: 'Here is the analysis:\n\n```\n{\n  "intentLabels": ["BENIGN"],\n  "nlpScore": 10\n}\n```\n\nHope this helps!',
+      });
+
+      vi.mocked(GoogleGenAI).mockImplementationOnce(() => ({
+        models: {
+          generateContent: mockGenerate,
+        },
+      } as unknown as GoogleGenAI));
+
+      const result = await scoreIntent('Test email');
+      expect(result.nlpScore).toBe(10);
+      expect(result.intentLabels).toEqual(['BENIGN']);
+    });
+  });
 });

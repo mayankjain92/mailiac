@@ -5,6 +5,8 @@ import { parse } from 'tldts';
  * Homoglyph character map (UTS #39 confusable characters mapped to Latin ASCII)
  */
 const HOMOGLYPH_MAP: Record<string, string> = {
+  // Roman numeral & Latin lookalikes
+  'ⅼ': 'l', 'І': 'i', 'і': 'i', 'I': 'i',
   // Cyrillic lookalikes
   'а': 'a', 'А': 'a',
   'В': 'b',
@@ -12,7 +14,6 @@ const HOMOGLYPH_MAP: Record<string, string> = {
   'ԁ': 'd', 'Ԁ': 'd',
   'е': 'e', 'Е': 'e',
   'Ѕ': 's', 'ѕ': 's',
-  'і': 'i', 'І': 'i',
   'ј': 'j', 'Ј': 'j',
   'К': 'k',
   'М': 'm',
@@ -132,10 +133,10 @@ export function calculateDamerauLevenshtein(a: string, b: string): number {
  * Calculates Jaro-Winkler similarity score (0.0 to 1.0).
  */
 export function calculateJaroWinkler(s1: string, s2: string): number {
-  if (s1 === s2) return 1.0;
   if (s1.length === 0 || s2.length === 0) return 0.0;
+  if (s1 === s2) return 1.0;
 
-  const matchWindow = Math.floor(Math.max(s1.length, s2.length) / 2) - 1;
+  const matchWindow = Math.max(0, Math.floor(Math.max(s1.length, s2.length) / 2) - 1);
   const s1Matches = new Array(s1.length).fill(false);
   const s2Matches = new Array(s2.length).fill(false);
 
@@ -221,8 +222,11 @@ export function detectDisplayNameMismatch(
 
   for (const rawProtected of protectedDomains) {
     const protectedNorm = cleanDomain(rawProtected);
-    const brandName = protectedNorm.split('.')[0];
+    if (normalizedSender === protectedNorm) {
+      continue;
+    }
 
+    const brandName = protectedNorm.split('.')[0];
     if (!brandName || brandName.length < 3) continue;
 
     // Check if display name mentions the brand name or resembles it
@@ -270,9 +274,23 @@ export function scoreIdentity(
 
   const normalizedSender = cleanDomain(senderDomain);
   const senderSkeleton = getHomoglyphSkeleton(normalizedSender);
-  const containsNonAscii = isHomoglyph(senderDomain);
 
-  // Check Display Name Mismatch / Brand Impersonation first
+  // 1. Exact protected domain match check FIRST (legitimate sender gets score 0)
+  for (const rawProtected of protectedDomains) {
+    const protectedNorm = cleanDomain(rawProtected);
+    if (normalizedSender === protectedNorm) {
+      return {
+        levenshteinDistance: 0,
+        damerauLevenshteinDistance: 0,
+        jaroWinklerScore: 1.0,
+        homoglyphMatch: false,
+        matchedProtectedDomain: rawProtected,
+        identityScore: 0,
+      };
+    }
+  }
+
+  // 2. Check Display Name Mismatch / Brand Impersonation for non-matching domains
   if (displayName) {
     const mismatch = detectDisplayNameMismatch(displayName, senderDomain, protectedDomains);
     if (mismatch.isMismatch && mismatch.claimedBrand) {
@@ -282,7 +300,7 @@ export function scoreIdentity(
         levenshteinDistance: lev,
         damerauLevenshteinDistance: damerau,
         jaroWinklerScore: mismatch.jaroWinklerScore,
-        homoglyphMatch: containsNonAscii,
+        homoglyphMatch: false,
         matchedProtectedDomain: mismatch.claimedBrand,
         identityScore: 100,
       };
@@ -299,24 +317,10 @@ export function scoreIdentity(
     const protectedNorm = cleanDomain(rawProtected);
     const protectedSkeleton = getHomoglyphSkeleton(protectedNorm);
 
-    // Check exact match
-    if (normalizedSender === protectedNorm) {
-      return {
-        levenshteinDistance: 0,
-        damerauLevenshteinDistance: 0,
-        jaroWinklerScore: 1.0,
-        homoglyphMatch: false,
-        matchedProtectedDomain: rawProtected,
-        identityScore: 0, // Legitimate sender, 0 risk
-      };
-    }
-
-    // Check homoglyph skeleton match
+    // Check homoglyph / confusable skeleton match
     const isSkeletonMatch = senderSkeleton === protectedSkeleton;
-    if (containsNonAscii || isSkeletonMatch) {
-      if (isSkeletonMatch) {
-        homoglyphMatchDetected = true;
-      }
+    if (isSkeletonMatch && normalizedSender !== protectedNorm) {
+      homoglyphMatchDetected = true;
     }
 
     const lev = calculateLevenshtein(normalizedSender, protectedNorm);
@@ -354,7 +358,6 @@ export function scoreIdentity(
     identityScore = 50;
   } else {
     identityScore = 0;
-    // If no meaningful similarity or threat detected, clear matched domain
     bestMatchDomain = undefined;
   }
 
@@ -362,7 +365,7 @@ export function scoreIdentity(
     levenshteinDistance: minLevenshtein === Infinity ? 0 : minLevenshtein,
     damerauLevenshteinDistance: minDamerauLevenshtein === Infinity ? 0 : minDamerauLevenshtein,
     jaroWinklerScore: maxJaroWinkler,
-    homoglyphMatch: homoglyphMatchDetected || containsNonAscii,
+    homoglyphMatch: homoglyphMatchDetected,
     ...(bestMatchDomain ? { matchedProtectedDomain: bestMatchDomain } : {}),
     identityScore,
   };

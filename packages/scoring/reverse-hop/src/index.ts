@@ -175,12 +175,12 @@ export async function traceReverseHops(receivedHeadersRaw: string[]): Promise<Re
 
   let trustBroken = false;
   let boundaryIndex = -1;
+  let hasPtrMismatch = false;
 
   for (let i = 0; i < parsedHops.length; i++) {
     const { ip, claimedHostname } = parsedHops[i];
     const isPrivate = isPrivateIP(ip);
     const ptrs = await resolvePtrWithTimeout(ip);
-
     let ptrValid = false;
     if (claimedHostname && ptrs.length > 0) {
       const normalizedClaimed = claimedHostname.toLowerCase().replace(/\.$/, '');
@@ -195,6 +195,9 @@ export async function traceReverseHops(receivedHeadersRaw: string[]): Promise<Re
         trustBroken = true;
         boundaryIndex = i;
         trusted = false;
+        if (!isPrivate && !ptrValid) {
+          hasPtrMismatch = true;
+        }
       } else {
         trusted = true;
       }
@@ -212,20 +215,13 @@ export async function traceReverseHops(receivedHeadersRaw: string[]): Promise<Re
   }
 
   const evidenceBoundaryIndex = boundaryIndex !== -1 ? boundaryIndex : path.length;
-  const injectionDetected = boundaryIndex !== -1;
+  const injectionDetected = hasPtrMismatch;
 
   let originatingSenderIp: string | null = null;
-  if (injectionDetected) {
-    // Find the first public IP at or below the boundary
-    for (let i = evidenceBoundaryIndex; i < path.length; i++) {
-      if (!path[i].isPrivate) {
-        originatingSenderIp = path[i].ip;
-        break;
-      }
-    }
-  } else if (path.length > 0) {
-    // All hops trusted, originating sender is the last hop
-    originatingSenderIp = path[path.length - 1].ip;
+  if (evidenceBoundaryIndex > 0) {
+    originatingSenderIp = path[evidenceBoundaryIndex - 1].ip;
+  } else {
+    originatingSenderIp = null;
   }
 
   return {
