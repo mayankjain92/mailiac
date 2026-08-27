@@ -18,7 +18,8 @@
     "bullmq": "^5.13.0",
     "ioredis": "^5.4.1",
     "@mailiac/shared-types": "workspace:*",
-    "@mailiac/db": "workspace:*"
+    "@mailiac/db": "workspace:*",
+    "@mailiac/reporting-pdf": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
