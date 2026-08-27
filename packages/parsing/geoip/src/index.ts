@@ -79,10 +79,11 @@ async function fetchGeoForIpInternal(
   timeoutMs: number
 ): Promise<Partial<ForensicHop>> {
   const apiKey = process.env['GEOIP_API_KEY'];
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    timer = setTimeout(() => controller.abort(), timeoutMs);
 
     if (apiKey) {
       const ipinfoUrl = `https://ipinfo.io/${encodeURIComponent(ip)}?token=${encodeURIComponent(apiKey)}`;
@@ -106,7 +107,6 @@ async function fetchGeoForIpInternal(
         };
 
         if (data.city || data.country || data.loc || data.org) {
-          clearTimeout(timer);
           let coordinates: [number, number] | undefined = undefined;
           if (data.loc && data.loc.includes(',')) {
             const [latStr, lonStr] = data.loc.split(',');
@@ -128,7 +128,7 @@ async function fetchGeoForIpInternal(
         }
       }
 
-      const proUrl = `http://pro.ip-api.com/json/${encodeURIComponent(ip)}?key=${encodeURIComponent(apiKey)}&fields=status,message,country,city,lat,lon,as`;
+      const proUrl = `https://pro.ip-api.com/json/${encodeURIComponent(ip)}?key=${encodeURIComponent(apiKey)}&fields=status,message,country,city,lat,lon,as`;
       const proRes = await fetch(proUrl, {
         signal: controller.signal,
         headers: {
@@ -137,7 +137,6 @@ async function fetchGeoForIpInternal(
       });
 
       if (proRes.ok) {
-        clearTimeout(timer);
         const data = (await proRes.json()) as GeoIpResponse;
 
         if (data.status === 'success') {
@@ -162,8 +161,6 @@ async function fetchGeoForIpInternal(
       },
     });
 
-    clearTimeout(timer);
-
     if (!response.ok) {
       return {};
     }
@@ -185,6 +182,10 @@ async function fetchGeoForIpInternal(
     return {};
   } catch {
     return {};
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
 }
 
@@ -196,7 +197,13 @@ function fetchGeoForIp(
     return geoLookupCache.get(ip)!;
   }
 
-  const lookupPromise = fetchGeoForIpInternal(ip, timeoutMs);
+  const lookupPromise = fetchGeoForIpInternal(ip, timeoutMs).then((result) => {
+    if (!result || Object.keys(result).length === 0) {
+      geoLookupCache.delete(ip);
+    }
+    return result;
+  });
+
   geoLookupCache.set(ip, lookupPromise);
   return lookupPromise;
 }
