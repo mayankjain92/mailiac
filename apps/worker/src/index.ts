@@ -77,28 +77,25 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
       Promise.resolve(decloakHtml(mdm.bodyHtmlRaw)),
     ]);
 
-    // Stage: AI / NLP Intent Scoring
-    console.info(`[${messageId}] stage: ai-intent`);
-    const nlpResult = await scoreIntent({
-      text: mdm.bodyText || decloakResult.extractedText,
-      subject: mdm.subject,
-      sender: mdm.from.name ? `${mdm.from.name} <${mdm.from.address}>` : mdm.from.address,
-      senderDomain,
-      urls: decloakResult.extractedUrls,
-    });
-
-    // Attach decloak results to NLP intent model
-    nlpResult.glasswormFlag = decloakResult.glasswormFlag;
-    nlpResult.zeroWidthCharCount = decloakResult.zeroWidthCharCount;
-
-    // Phase 2: Parallel Execution of Dependent Enrichment & Scoring Stages
-    console.info(`[${messageId}] stage: parallel-phase-2 (geoip, ip-reputation, identity)`);
+    // Phase 2: Parallel Execution of AI Intent & Enrichment Stages
+    console.info(`[${messageId}] stage: parallel-phase-2 (ai-intent, geoip, ip-reputation, identity)`);
     const originatingIp = reverseHopResult.originatingSenderIp ?? '';
-    const [forensicPath, ipReputationResult, identityResult] = await Promise.all([
+    const [nlpResult, forensicPath, ipReputationResult, identityResult] = await Promise.all([
+      scoreIntent({
+        text: mdm.bodyText || decloakResult.extractedText,
+        subject: mdm.subject,
+        sender: mdm.from.name ? `${mdm.from.name} <${mdm.from.address}>` : mdm.from.address,
+        senderDomain,
+        urls: decloakResult.extractedUrls,
+      }),
       enrichHopsWithGeo(reverseHopResult.path),
       scoreIpReputation(originatingIp, mdm.date),
       Promise.resolve(scoreIdentity(senderDomain, protectedDomains, mdm.from.name)),
     ]);
+
+    // Attach decloak results to NLP intent model
+    nlpResult.glasswormFlag = decloakResult.glasswormFlag;
+    nlpResult.zeroWidthCharCount = decloakResult.zeroWidthCharCount;
 
     // Stage 9: Aggregate Risk
     console.info(`[${messageId}] stage: risk-engine`);
