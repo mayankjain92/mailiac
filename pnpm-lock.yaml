@@ -36,6 +36,9 @@ importers:
       '@mailiac/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@mailiac/reporting-pdf':
+        specifier: workspace:*
+        version: link:../../packages/reporting/pdf
       '@mailiac/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types

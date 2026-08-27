@@ -29,6 +29,7 @@ describe('GET /api/reports/:id', () => {
       dmarcAlignment: 'strict',
       arcPass: true,
       authScore: 100,
+      findings: [],
     },
     riskMatrix: {
       authScore: 100,
@@ -36,11 +37,21 @@ describe('GET /api/reports/:id', () => {
       ipScore: 100,
       nlpScore: 100,
       finalScore: 100,
+      pillars: {
+        authentication: { score: 100, weight: 0.2, findings: [] },
+        identity: { score: 100, weight: 0.35, findings: [] },
+        infrastructure: { score: 100, weight: 0.1, findings: [] },
+        nlp: { score: 100, weight: 0.35, findings: [] },
+      },
     },
     aiSummary: {
+      provider: 'heuristic',
+      providerStatus: 'fallback',
       urgency: 0,
       intent: ['legitimate'],
       integrityHash: 'hash123',
+      confidence: 1,
+      findings: [],
     },
   };
 
@@ -95,5 +106,32 @@ describe('GET /api/reports/:id', () => {
 
     const data = (await res.json()) as { error: string };
     expect(data.error).toBe('Report not found.');
+  });
+
+  it('happy path: GET /api/reports/:id/pdf returns PDF binary with application/pdf header', async () => {
+    (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+      lean: vi.fn().mockResolvedValue({
+        _id: 'mongo-id-1',
+        ...mockReport,
+      }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/reports/${encodeURIComponent('<msg-123@example.com>')}/pdf`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/pdf');
+    expect(res.headers.get('content-disposition')).toContain('inline;');
+
+    const pdfText = await res.text();
+    expect(pdfText).toContain('%PDF-1.4');
+    expect(pdfText).toContain('MAILIAC FORENSIC REPORT');
+  });
+
+  it('PDF endpoint returns 404 when report does not exist', async () => {
+    (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    });
+
+    const res = await fetch(`${baseUrl}/api/reports/non-existent-msg-id/pdf`);
+    expect(res.status).toBe(404);
   });
 });

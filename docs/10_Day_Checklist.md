@@ -187,10 +187,9 @@ Simple rule for every module, every time:
 
 ### Mayank
 
-- [ ] `/implement-module` → `generateForensicPdf(report: AnalysisReport): Promise<Buffer>`
+- [x] `/implement-module` → `generateForensicPdf(report: AnalysisReport): Promise<Buffer>`
   - **Where:** `packages/reporting/pdf/src/index.ts`
-  - **Scaffold:** typed signature, throws `TODO`
-  - **What to implement:** PDF generation library (e.g. pdfkit), layout the forensic report
+  - **Status:** ✅ Implemented zero-dependency PDF 1.4 generator & added `GET /api/reports/:id/pdf` route in `apps/api`
 - [ ] Tidy up API docs / OpenAPI spec
 
 ### Praneet
@@ -233,5 +232,5 @@ Simple rule for every module, every time:
 | `packages/scoring/ip-reputation` | `scoreIpReputation` | Vivek | 🔲 Stub only |
 | `packages/scoring/risk-engine` | `aggregateRisk` | Vivek | 🔲 Stub only |
 | `packages/webhooks` | `signPayload` | Vivek | 🔲 Stub only |
-| `packages/reporting/pdf` | `generateForensicPdf` | Mayank | 🔲 Stub only |
+| `packages/reporting/pdf` | `generateForensicPdf` | Mayank | ✅ Implemented & Tested |
 
