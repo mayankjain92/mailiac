@@ -76,12 +76,18 @@ This runs `turbo run dev` which starts `apps/api` and `apps/worker` concurrently
 
 ## Pipeline Stages
 
+The pipeline utilizes parallel execution phases for maximum performance:
+
 1. **MIME Parse** — EML → MDM (structured email object)
-2. **Reverse-Hop Trace** — Received headers → forensic hop path
-3. **Crypto Auth** — SPF / DKIM / DMARC / ARC verification
-4. **GeoIP Enrich** — IP hops → city/country/ASN annotations
-5. **HTML De-cloak** — Remove obfuscation, count zero-width chars
-6. **AI Intent Score** — Gemini-powered NLP classification
-7. **4-Pillar Risk Score** — auth + identity + IP + NLP → finalScore
-8. **Persist + Notify** — MongoDB write + webhook dispatch
-9. **PDF Report** — Forensic PDF generation
+2. **Phase 1 (Parallel)**:
+   - **Reverse-Hop Trace** — Received headers → forensic hop path
+   - **Crypto Auth** — SPF / DKIM / DMARC / ARC verification
+   - **HTML De-cloak** — Remove obfuscation, count zero-width chars
+3. **Phase 2 (Parallel)**:
+   - **AI Intent Score** — Semantic NLP classification (Gemini 3.6-flash + local heuristics)
+   - **GeoIP Enrich** — IP hops → city/country/ASN annotations
+   - **IP Reputation** — Proxy/VPN and AbuseIPDB checks
+   - **Identity Score** — Sender domain and display name spoofing checks
+4. **Deterministic Risk Score** — 4-pillar evidence-based corroboration → finalScore
+5. **Persist + Notify** — MongoDB write + webhook dispatch
+6. **PDF Report** — Forensic PDF generation

@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 
 if (!process.env['GEMINI_API_KEY'] || !process.env['MONGODB_URI']) {
   const __filename = fileURLToPath(import.meta.url);
@@ -99,7 +100,7 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
 
     // Stage 9: Aggregate Risk
     console.info(`[${messageId}] stage: risk-engine`);
-    const riskMatrix = aggregateRisk(authResults, identityResult, ipReputationResult, nlpResult);
+    const riskMatrix = aggregateRisk(senderDomain, authResults, identityResult, ipReputationResult, nlpResult);
     const executionTimeMs = Date.now() - startTime;
 
     // Stage 10: Persist + Notify
@@ -119,7 +120,7 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
         model: nlpResult.model,
         urgency: nlpResult.nlpScore,
         intent: nlpResult.intentLabels,
-        integrityHash: signPayload(JSON.stringify(riskMatrix), webhookSigningSecret, Date.now()),
+        integrityHash: crypto.createHash('sha256').update(JSON.stringify(riskMatrix)).digest('hex'),
         confidence: nlpResult.confidence || 0,
         findings: nlpResult.findings || [],
         aiDiagnostics: nlpResult.aiDiagnostics,
