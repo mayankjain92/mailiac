@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Mailiac - Forensic Analysis Console</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-secondary-fixed": "#1c1b1b",
+                        "on-secondary-fixed-variant": "#474646",
+                        "surface-container-highest": "#e2e2e2",
+                        "on-tertiary-fixed-variant": "#464744",
+                        "on-error": "#ffffff",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "error": "#ba1a1a",
+                        "surface": "#fdfcf8", /* Adjusted to match ivory background requirement */
+                        "error-container": "#ffdad6",
+                        "on-primary-container": "#dfe3ff",
+                        "outline": "#e5e5e5", /* Adjusted for 1px hairline borders */
+                        "primary-fixed-dim": "#b7c4ff",
+                        "surface-tint": "#0052ff",
+                        "outline-variant": "#e5e5e5",
+                        "secondary": "#5f5e5e",
+                        "on-background": "#121212", /* Near black */
+                        "on-secondary": "#ffffff",
+                        "tertiary-container": "#656663",
+                        "primary": "#0052ff", /* Electric blue */
+                        "on-surface": "#121212",
+                        "primary-fixed": "#dde1ff",
+                        "inverse-on-surface": "#f1f1f1",
+                        "on-secondary-container": "#656464",
+                        "inverse-surface": "#121212",
+                        "surface-variant": "#f4f3f3",
+                        "surface-bright": "#ffffff",
+                        "on-primary-fixed-variant": "#0038b6",
+                        "tertiary": "#4d4e4b",
+                        "surface-dim": "#dadada",
+                        "on-tertiary-container": "#e5e4e0",
+                        "secondary-fixed": "#e5e2e1",
+                        "on-surface-variant": "#434656",
+                        "secondary-container": "#e5e2e1",
+                        "on-primary-fixed": "#001452",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed-dim": "#c7c7c3",
+                        "surface-container-low": "#f9f9f9",
+                        "surface-container": "#f4f3f3",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "background": "#fdfcf8",
+                        "inverse-primary": "#b7c4ff",
+                        "surface-container-high": "#e8e8e8",
+                        "primary-container": "#0052ff",
+                        "on-tertiary": "#ffffff",
+                        "tertiary-fixed": "#e3e2df"
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.125rem",
+                        lg: "0.25rem",
+                        xl: "0.5rem",
+                        full: "0.75rem"
+                    },
+                    spacing: {
+                        "margin-desktop": "64px",
+                        "margin-mobile": "20px",
+                        "section-gap": "120px",
+                        "unit": "4px",
+                        "container-max": "1440px",
+                        "gutter": "24px"
+                    },
+                    fontFamily: {
+                        "display-hero": ["Hanken Grotesk"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "body-md": ["Hanken Grotesk"],
+                        "mono-label": ["JetBrains Mono"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "mono-data": ["JetBrains Mono"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "headline-lg": ["Hanken Grotesk"]
+                    },
+                    fontSize: {
+                        "display-hero": ["112px", { lineHeight: "100px", letterSpacing: "-0.04em", fontWeight: "800" }],
+                        "headline-md": ["32px", { lineHeight: "40px", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "body-md": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+                        "mono-label": ["11px", { lineHeight: "16px", letterSpacing: "0.1em", fontWeight: "700" }],
+                        "headline-lg-mobile": ["40px", { lineHeight: "44px", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "mono-data": ["13px", { lineHeight: "20px", letterSpacing: "0.02em", fontWeight: "500" }],
+                        "body-lg": ["18px", { lineHeight: "28px", fontWeight: "400" }],
+                        "headline-lg": ["64px", { lineHeight: "72px", letterSpacing: "-0.02em", fontWeight: "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .pulse-border {
+            animation: pulse-border 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse-border {
+            0%, 100% { border-color: rgba(0, 82, 255, 1); box-shadow: 0 0 0 0 rgba(0, 82, 255, 0.4); }
+            50% { border-color: rgba(0, 82, 255, 0.5); box-shadow: 0 0 0 8px rgba(0, 82, 255, 0); }
+        }
+        .bracket-corners {
+            position: relative;
+        }
+        .bracket-corners::before, .bracket-corners::after {
+            content: '';
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border: 2px solid #0052ff;
+        }
+        .bracket-corners::before {
+            top: -1px; left: -1px;
+            border-right: none; border-bottom: none;
+        }
+        .bracket-corners::after {
+            bottom: -1px; right: -1px;
+            border-left: none; border-top: none;
+        }
+        .connector-line {
+            position: absolute;
+            top: 50%;
+            left: 100%;
+            width: 100%;
+            height: 1px;
+            background-color: #e5e5e5;
+            z-index: 0;
+            transform: translateY(-50%);
+        }
+        .pipeline-item { z-index: 1; }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md antialiased min-h-screen flex flex-col">
+<!-- TopNavBar -->
+<header class="bg-surface border-b border-outline w-full sticky top-0 z-50">
+<div class="flex justify-between items-center w-full px-margin-desktop h-16 max-w-container-max mx-auto">
+<div class="flex items-center gap-8">
+<div class="font-headline-md text-headline-md font-bold tracking-tighter text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="polyline">polyline</span>
+                    Mailiac
+                </div>
+<nav class="hidden md:flex gap-6">
+<a class="text-on-secondary-fixed-variant hover:text-primary transition-colors font-mono-label text-mono-label uppercase" href="#">Dashboard</a>
+<a class="text-primary font-bold border-b-2 border-primary pb-[22px] mt-[22px] font-mono-label text-mono-label uppercase" href="#">Analysis Console</a>
+<a class="text-on-secondary-fixed-variant hover:text-primary transition-colors font-mono-label text-mono-label uppercase" href="#">Archive</a>
+<a class="text-on-secondary-fixed-variant hover:text-primary transition-colors font-mono-label text-mono-label uppercase" href="#">Policy</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-3 border border-outline px-3 py-1 rounded-sm bg-surface-container-low">
+<span class="font-mono-label text-mono-label text-secondary uppercase tracking-widest">CASE_ID:</span>
+<span class="font-mono-data text-mono-data font-bold">8829-X</span>
+<div class="w-px h-4 bg-outline mx-2"></div>
+<span class="font-mono-label text-mono-label text-primary uppercase tracking-widest flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                        ANALYZING
+                    </span>
+</div>
+<button class="w-8 h-8 flex items-center justify-center text-on-surface hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+</div>
+</div>
+</header>
+<main class="flex-grow flex flex-col px-margin-desktop py-12 max-w-container-max mx-auto w-full">
+<!-- Hero Section -->
+<section class="mb-16 text-center max-w-3xl mx-auto">
+<h1 class="font-headline-lg text-headline-lg mb-4">FORENSIC ANALYSIS</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant mb-6">Deep inspection of the submitted email is in progress. Our multi-stage pipeline is dissecting headers, attachments, and intent.</p>
+<div class="inline-flex items-center gap-3 border border-outline bg-surface-container-lowest px-4 py-2 rounded-sm shadow-sm">
+<span class="material-symbols-outlined text-secondary" data-icon="draft">draft</span>
+<span class="font-mono-data text-mono-data">invoice_urgent.eml</span>
+</div>
+</section>
+<!-- Pipeline Visualization -->
+<section class="mb-24 w-full">
+<h2 class="font-mono-label text-mono-label text-secondary uppercase tracking-widest mb-8 text-center">Forensic Pipeline Activity</h2>
+<div class="flex justify-between items-start relative w-full px-4">
+<!-- Stage 1 -->
+<div class="flex flex-col items-center w-24 relative pipeline-item">
+<div class="w-12 h-12 rounded-sm border border-outline bg-surface-container-low flex items-center justify-center mb-3 text-[#00875A] relative">
+<span class="material-symbols-outlined" data-icon="check_circle">check_circle</span>
+<div class="absolute -top-2 -left-2 bg-surface px-1 font-mono-label text-[9px] text-secondary">01</div>
+</div>
+<div class="font-mono-label text-[10px] text-center leading-tight">EML<br/>Ingestion</div>
+<div class="connector-line"></div>
+</div>
+<!-- Stage 2 -->
+<div class="flex flex-col items-center w-24 relative pipeline-item">
+<div class="w-12 h-12 rounded-sm border border-outline bg-surface-container-low flex items-center justify-center mb-3 text-[#00875A] relative">
+<span class="material-symbols-outlined" data-icon="check_circle">check_circle</span>
+<div class="absolute -top-2 -left-2 bg-surface px-1 font-mono-label text-[9px] text-secondary">02</div>
+</div>
+<div class="font-mono-label text-[10px] text-center leading-tight">MIME<br/>Deconstruction</div>
+<div class="connector-line"></div>
+</div>
+<!-- Stage 3 -->
+<div class="flex flex-col items-center w-24 relative pipeline-item">
+<div class="w-12 h-12 rounded-sm border border-outline bg-surface-container-low flex items-center justify-center mb-3 text-[#00875A] relative">
+<span class="material-symbols-outlined" data-icon="check_circle">check_circle</span>
+<div class="absolute -top-2 -left-2 bg-surface px-1 font-mono-label text-[9px] text-secondary">03</div>
+</div>
+<div class="font-mono-label text-[10px] text-center leading-tight">Reverse-Hop<br/>Trace</div>
+<div class="connector-line"></div>
+</div>
+<!-- Stage 4 (Active) -->
+<div class="flex flex-col items-center w-24 relative pipeline-item">
+<div class="w-12 h-12 rounded-sm border pulse-border bg-surface-container-lowest flex items-center justify-center mb-3 text-primary relative bracket-corners">
+<span class="material-symbols-outlined animate-spin" data-icon="sync">sync</span>
+<div class="absolute -top-2 -left-2 bg-surface px-1 font-mono-label text-[9px] text-primary font-bold">04</div>
+</div>
+<div class="font-mono-label text-[10px] text-center leading-tight text-primary font-bold">Cryptographic<br/>Authentication</div>
+<div class="connector-line"></div>
+</div>
+<!-- Stage 5 -->
+<div class="flex flex-col items-center w-24 relative pipeline-item opacity-50">
+<div class="w-12 h-12 rounded-sm border border-outline bg-surface-container-lowest flex items-center justify-center mb-3 text-secondary relative">
+<span class="material-symbols-outlined" data-icon="public">public</span>
+<div class="absolute -top-2 -left-2 bg-surface px-1 font-mono-label text-[9px]">05</div>
+</div>
+<div class="font-mono-label text-[10px] text-center leading-tight">GeoIP / ASN<br/>Enrichment</div>
+<div class="connector-line"></div>
+</div>
+<!-- Stage 6 -->
+<div class="flex flex-col items-center w-24 relative pipeline-item opacity-50">
+<div class="w-12 h-12 rounded-sm border border-outline bg-surface-container-lowest flex items-center justify-center mb-3 text-secondary relative">
+<span class="material-symbols-outlined" data-icon="visibility">visibility</span>
+<div class="absolute -top-2 -left-2 bg-surface px-1 font-mono-label text-[9px]">06</div>
+</div>
+<div class="font-mono-label text-[10px] text-center leading-tight">HTML<br/>De-cloaking</div>
+<div class="connector-line"></div>
+</div>
+<!-- Stage 7 -->
+<div class="flex flex-col items-center w-24 relative pipeline-item opacity-50">
+<div class="w-12 h-12 rounded-sm border border-outline bg-surface-container-lowest flex items-center justify-center mb-3 text-secondary relative">
+<span class="material-symbols-outlined" data-icon="psychology">psychology</span>
+<div class="absolute -top-2 -left-2 bg-surface px-1 font-mono-label text-[9px]">07</div>
+</div>
+<div class="font-mono-label text-[10px] text-center leading-tight">Semantic<br/>NLP Analysis</div>
+<div class="connector-line"></div>
+</div>
+<!-- Stage 8 -->
+<div class="flex flex-col items-center w-24 relative pipeline-item opacity-50">
+<div class="w-12 h-12 rounded-sm border border-outline bg-surface-container-lowest flex items-center justify-center mb-3 text-secondary relative">
+<span class="material-symbols-outlined" data-icon="speed">speed</span>
+<div class="absolute -top-2 -left-2 bg-surface px-1 font-mono-label text-[9px]">08</div>
+</div>
+<div class="font-mono-label text-[10px] text-center leading-tight">Risk<br/>Aggregation</div>
+<div class="connector-line"></div>
+</div>
+<!-- Stage 9 -->
+<div class="flex flex-col items-center w-24 relative pipeline-item opacity-50">
+<div class="w-12 h-12 rounded-sm border border-outline bg-surface-container-lowest flex items-center justify-center mb-3 text-secondary relative">
+<span class="material-symbols-outlined" data-icon="database">database</span>
+<div class="absolute -top-2 -left-2 bg-surface px-1 font-mono-label text-[9px]">09</div>
+</div>
+<div class="font-mono-label text-[10px] text-center leading-tight">Persistence</div>
+</div>
+</div>
+</section>
+<!-- Live Telemetry -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Telemetry Card 1 -->
+<div class="border border-outline bg-surface-container-lowest p-6 rounded-sm relative shadow-sm">
+<div class="font-mono-label text-mono-label text-secondary uppercase tracking-widest mb-4 flex justify-between items-center">
+<span>MAILIAC · PIPELINE</span>
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+</div>
+<div class="space-y-3 font-mono-data text-mono-data">
+<div class="flex justify-between border-b border-outline pb-2">
+<span class="text-secondary">Status</span>
+<span>Processing</span>
+</div>
+<div class="flex justify-between border-b border-outline pb-2">
+<span class="text-secondary">Queue</span>
+<span>Forensic-Analysis</span>
+</div>
+<div class="flex justify-between pb-2">
+<span class="text-secondary">Worker</span>
+<span class="text-[#00875A]">Active</span>
+</div>
+</div>
+</div>
+<!-- Telemetry Card 2 -->
+<div class="border border-outline bg-surface-container-lowest p-6 rounded-sm relative shadow-sm">
+<div class="font-mono-label text-mono-label text-secondary uppercase tracking-widest mb-4">TRACE · ROUTE</div>
+<div class="space-y-3 font-mono-data text-mono-data">
+<div class="flex justify-between items-center border-b border-outline pb-2">
+<span class="text-secondary">Hop 01</span>
+<span class="material-symbols-outlined text-[#00875A] text-sm" data-icon="check">check</span>
+</div>
+<div class="flex justify-between items-center border-b border-outline pb-2">
+<span class="text-secondary">Hop 02</span>
+<span class="text-primary animate-pulse text-xs">Identifying...</span>
+</div>
+<div class="flex justify-between pb-2">
+<span class="text-secondary">Origin</span>
+<span>Pending</span>
+</div>
+</div>
+</div>
+<!-- Telemetry Card 3 -->
+<div class="border border-primary bg-[#f4f7ff] p-6 rounded-sm relative shadow-sm bracket-corners">
+<div class="font-mono-label text-mono-label text-primary uppercase tracking-widest mb-4">AUTHENTICATION</div>
+<div class="space-y-3 font-mono-data text-mono-data">
+<div class="flex justify-between border-b border-primary/20 pb-2">
+<span class="text-secondary">SPF</span>
+<span class="text-[#00875A] font-bold">PASS</span>
+</div>
+<div class="flex justify-between border-b border-primary/20 pb-2">
+<span class="text-secondary">DKIM</span>
+<span class="text-[#DE350B] font-bold">FAIL</span>
+</div>
+<div class="flex justify-between pb-2">
+<span class="text-secondary">DMARC</span>
+<span class="text-[#DE350B] font-bold">FAIL</span>
+</div>
+</div>
+<!-- Scanning overlay effect -->
+<div class="absolute inset-0 bg-gradient-to-b from-transparent via-primary/5 to-transparent h-[10%] animate-[scan_2s_ease-in-out_infinite]"></div>
+<style>
+                    @keyframes scan {
+                        0% { top: 0; }
+                        50% { top: 90%; }
+                        100% { top: 0; }
+                    }
+                </style>
+</div>
+</section>
+</main>
+</body></html>

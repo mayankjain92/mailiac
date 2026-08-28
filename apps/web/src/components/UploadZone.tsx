@@ -84,78 +84,52 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps) {
   };
 
   return (
-    <div className="glass-panel" style={{ padding: '24px' }}>
-      <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <UploadCloud style={{ color: 'var(--accent-cyan)', width: '20px', height: '20px' }} />
-        Upload Email Sample (.eml)
-      </h2>
+    <div className="bg-[#F2F2EE] dark:bg-[#1B211E] border border-[#D5D5CE] dark:border-[#29342F] p-6 rounded shadow-sm forensic-card bracket-tl transition-colors duration-200">
+      <div className="text-xs font-mono font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-widest mb-3 flex items-center gap-2">
+        <UploadCloud className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" />
+        EML SAMPLE INGESTION
+      </div>
 
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        style={{
-          border: `2px dashed ${isDragging ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.15)'}`,
-          borderRadius: '12px',
-          padding: '36px 20px',
-          textAlign: 'center',
-          background: isDragging ? 'rgba(6, 182, 212, 0.08)' : 'rgba(15, 23, 42, 0.4)',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '12px'
-        }}
+        className={`border-2 border-dashed rounded-md p-8 text-center cursor-pointer transition-all duration-200 flex flex-col items-center gap-3 ${
+          isDragging
+            ? 'border-[#0052ff] dark:border-[#3b82f6] bg-[#0052ff]/10 dark:bg-[#3b82f6]/20'
+            : 'border-[#D5D5CE] dark:border-[#29342F] hover:border-[#0052ff] dark:hover:border-[#3b82f6] bg-[#EAEAE5] dark:bg-[#151A17]'
+        }`}
       >
         <input
           ref={fileInputRef}
           type="file"
           accept=".eml,message/rfc822"
           onChange={handleFileSelect}
-          style={{ display: 'none' }}
+          className="hidden"
         />
 
-        <div style={{
-          width: '48px',
-          height: '48px',
-          borderRadius: '50%',
-          background: 'rgba(6, 182, 212, 0.12)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--accent-cyan)'
-        }}>
-          <UploadCloud style={{ width: '24px', height: '24px' }} />
+        <div className="w-12 h-12 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6]">
+          <UploadCloud className="w-6 h-6" />
         </div>
 
         <div>
-          <p style={{ fontWeight: 500, fontSize: '15px', color: 'var(--text-primary)', marginBottom: '4px' }}>
-            Drag and drop your raw <code className="font-mono" style={{ color: 'var(--accent-cyan)' }}>.eml</code> file here
+          <p className="font-semibold text-sm text-[#1a1c1c] dark:text-[#F2F2EE] mb-1">
+            Drag & drop raw <code className="font-mono text-[#0052ff] dark:text-[#3b82f6] font-bold">.eml</code> file
           </p>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-            or click to browse your computer
+          <p className="text-xs text-[#737688] dark:text-[#A0A7A3]">
+            or click to select file from your workstation
           </p>
         </div>
       </div>
 
       {selectedFile && (
-        <div style={{
-          marginTop: '16px',
-          padding: '12px 16px',
-          background: 'rgba(30, 41, 59, 0.6)',
-          borderRadius: '8px',
-          border: '1px solid var(--border-glass)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <FileText style={{ color: 'var(--accent-cyan)', width: '18px', height: '18px' }} />
+        <div className="mt-4 p-3 bg-[#EAEAE5] dark:bg-[#151A17] rounded border border-[#D5D5CE] dark:border-[#29342F] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <FileText className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" />
             <div>
-              <p style={{ fontSize: '14px', fontWeight: 500 }}>{selectedFile.name}</p>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{(selectedFile.size / 1024).toFixed(1)} KB</p>
+              <p className="text-xs font-bold text-[#1a1c1c] dark:text-[#F2F2EE] font-mono">{selectedFile.name}</p>
+              <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3] font-mono">{(selectedFile.size / 1024).toFixed(1)} KB</p>
             </div>
           </div>
 
@@ -165,18 +139,17 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps) {
               handleUpload();
             }}
             disabled={isUploading}
-            className="btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+            className="bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold px-4 py-2 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 disabled:opacity-50"
           >
             {isUploading ? (
               <>
-                <Loader2 style={{ animation: 'spin 1s linear infinite', width: '16px', height: '16px' }} />
-                Analyzing...
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Ingesting...
               </>
             ) : (
               <>
-                <CheckCircle2 style={{ width: '16px', height: '16px' }} />
-                Run Pipeline
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Start Forensics
               </>
             )}
           </button>
@@ -184,19 +157,8 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps) {
       )}
 
       {error && (
-        <div style={{
-          marginTop: '12px',
-          padding: '10px 14px',
-          background: 'rgba(244, 63, 94, 0.1)',
-          border: '1px solid rgba(244, 63, 94, 0.3)',
-          borderRadius: '8px',
-          color: '#fb7185',
-          fontSize: '13px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px'
-        }}>
-          <AlertCircle style={{ width: '16px', height: '16px', flexShrink: 0 }} />
+        <div className="mt-3 p-3 bg-[#ffdad6] dark:bg-[#410e0b] border border-[#ba1a1a]/30 rounded text-[#93000a] dark:text-[#ffb4ab] text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}

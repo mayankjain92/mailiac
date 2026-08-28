@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Mailiac - Forensic Evidence Explorer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-tertiary-fixed-variant": "#464744",
+                        "outline-variant": "#E5E5E5", /* Adjusted for 1px hairline aesthetics */
+                        "inverse-surface": "#2f3131",
+                        "on-surface-variant": "#434656",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-container": "#dfe3ff",
+                        "surface-dim": "#dadada",
+                        "surface-container": "#eeeeee",
+                        "surface-container-low": "#f4f3f3",
+                        "surface-bright": "#f9f9f9",
+                        "on-primary": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "surface": "#FDFCF8", /* Warm ivory canvas */
+                        "secondary-fixed": "#e5e2e1",
+                        "on-primary-fixed": "#001452",
+                        "on-surface": "#121212", /* Near black */
+                        "surface-container-highest": "#e2e2e2",
+                        "primary": "#0052FF", /* Surgical electric blue */
+                        "secondary": "#5f5e5e",
+                        "on-background": "#121212",
+                        "inverse-on-surface": "#f1f1f1",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "surface-tint": "#004ced",
+                        "inverse-primary": "#b7c4ff",
+                        "tertiary-fixed-dim": "#c7c7c3",
+                        "surface-variant": "#e2e2e2",
+                        "on-primary-fixed-variant": "#0038b6",
+                        "on-error-container": "#93000a",
+                        "tertiary": "#4d4e4b",
+                        "tertiary-fixed": "#e3e2df",
+                        "background": "#FDFCF8", /* Warm ivory canvas */
+                        "primary-container": "#0052FF",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "secondary-container": "#e5e2e1",
+                        "on-secondary-container": "#656464",
+                        "tertiary-container": "#656663",
+                        "on-tertiary-container": "#e5e4e0",
+                        "on-error": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "on-secondary-fixed-variant": "#474646",
+                        "error": "#ba1a1a",
+                        "on-secondary": "#ffffff",
+                        "primary-fixed-dim": "#b7c4ff",
+                        "surface-container-high": "#e8e8e8",
+                        "outline": "#E5E5E5",
+                        "primary-fixed": "#dde1ff"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0px", /* Minimalist rigid grid */
+                        "lg": "4px",
+                        "xl": "4px",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "gutter": "24px",
+                        "margin-desktop": "64px",
+                        "container-max": "1440px",
+                        "unit": "4px",
+                        "section-gap": "120px",
+                        "margin-mobile": "20px"
+                    },
+                    fontFamily: {
+                        "mono-label": ["JetBrains Mono", "monospace"],
+                        "mono-data": ["JetBrains Mono", "monospace"],
+                        "body-lg": ["Hanken Grotesk", "sans-serif"],
+                        "headline-md": ["Hanken Grotesk", "sans-serif"],
+                        "headline-lg-mobile": ["Hanken Grotesk", "sans-serif"],
+                        "headline-lg": ["Hanken Grotesk", "sans-serif"],
+                        "display-hero": ["Hanken Grotesk", "sans-serif"],
+                        "body-md": ["Hanken Grotesk", "sans-serif"]
+                    },
+                    fontSize: {
+                        "mono-label": ["11px", { lineHeight: "16px", letterSpacing: "0.1em", fontWeight: "700" }],
+                        "mono-data": ["13px", { lineHeight: "20px", letterSpacing: "0.02em", fontWeight: "500" }],
+                        "body-lg": ["18px", { lineHeight: "28px", fontWeight: "400" }],
+                        "headline-md": ["32px", { lineHeight: "40px", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "headline-lg-mobile": ["40px", { lineHeight: "44px", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "headline-lg": ["64px", { lineHeight: "72px", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "display-hero": ["112px", { lineHeight: "100px", letterSpacing: "-0.04em", fontWeight: "800" }],
+                        "body-md": ["16px", { lineHeight: "24px", fontWeight: "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .filled-icon {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24 !important;
+        }
+        /* Custom bracket accents */
+        .bracket-tl::before {
+            content: ""; position: absolute; top: 0; left: 0; width: 12px; height: 12px;
+            border-top: 1px solid #121212; border-left: 1px solid #121212;
+        }
+        .bracket-br::after {
+            content: ""; position: absolute; bottom: 0; right: 0; width: 12px; height: 12px;
+            border-bottom: 1px solid #121212; border-right: 1px solid #121212;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md antialiased selection:bg-primary selection:text-white pb-24">
+<!-- TopNavBar -->
+<nav class="flex justify-between items-center w-full px-margin-desktop h-16 bg-background dark:bg-inverse-surface border-b border-outline-variant docked full-width top-0 sticky z-50">
+<div class="flex items-center gap-8">
+<div class="font-headline-md text-headline-md font-bold text-on-surface dark:text-inverse-on-surface">Mailiac</div>
+<div class="hidden md:flex gap-6 items-center pt-1">
+<a class="font-body-md text-body-md text-on-surface-variant dark:text-outline-variant hover:text-primary transition-colors duration-200" href="#">Dashboard</a>
+<a class="font-body-md text-body-md text-primary dark:text-primary-fixed font-bold border-b-2 border-primary pb-1 hover:text-primary transition-colors duration-200 Active: opacity-80" href="#">Archive</a>
+<a class="font-body-md text-body-md text-on-surface-variant dark:text-outline-variant hover:text-primary transition-colors duration-200" href="#">Policy</a>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-4 text-on-surface-variant">
+<button class="hover:text-primary transition-colors"><span class="material-symbols-outlined" data-icon="notifications">notifications</span></button>
+<button class="hover:text-primary transition-colors"><span class="material-symbols-outlined" data-icon="settings">settings</span></button>
+</div>
+<img alt="Analyst Profile" class="w-8 h-8 rounded-full border border-outline-variant object-cover" data-alt="A small, professional portrait of a cybersecurity analyst, high contrast lighting, neutral background, sharp focus, corporate editorial style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAFnYsG37SC2fjIhy37tSoRZR_KL-LCM9tC7PdHSl5b1yq5N1FD0xKPn5u5Nxauy5Ul5IntBwntngiHL6QKUuoEHaadkhFs2xnYbrCW_m8qK2mtDKu5jNeyUFp6sOW6UlIM6H8S38fMPxoEuZFIzoyYhgxwlbX06RJu1gNyQ27zUbA4o8Hu5ZutmXhb3GW5ih8Z1QVjfTJOMFeq0v8mb1VME2iuwSdeVGS6gjjZgmp2HlN9OMOH5ggj"/>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="max-w-[1440px] mx-auto px-margin-mobile md:px-margin-desktop pt-12">
+<!-- Header & Summary -->
+<header class="mb-12">
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-outline-variant pb-8">
+<div>
+<div class="flex items-center gap-3 mb-2">
+<span class="font-mono-label text-mono-label bg-surface-container px-2 py-1 uppercase">Case ID</span>
+<span class="font-mono-data text-mono-data text-on-surface-variant">e3e148d8-8bab-4328-b225-e3c907c89b72</span>
+</div>
+<h1 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg">Forensic Evidence</h1>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 border border-outline-variant px-4 py-2">
+<div class="w-2 h-2 rounded-full bg-[#10B981]"></div>
+<span class="font-mono-label text-mono-label text-on-surface">STATUS: COMPLETE</span>
+</div>
+<button class="bg-primary text-white font-mono-label text-mono-label px-6 py-2.5 rounded hover:bg-primary-fixed-variant transition-colors border border-primary">
+                        EXPORT FORENSIC REPORT
+                    </button>
+</div>
+</div>
+<!-- Case Summary Bar -->
+<div class="flex items-center gap-8 py-4 border-b border-outline-variant bg-surface-bright px-4">
+<div class="flex items-center gap-3">
+<span class="font-mono-label text-mono-label text-on-surface-variant uppercase">Threat Score</span>
+<div class="flex items-center gap-2">
+<span class="font-body-lg text-body-lg font-bold text-[#10B981]">17</span>
+<span class="font-mono-data text-mono-data text-on-surface-variant">/100</span>
+</div>
+<span class="font-mono-label text-mono-label bg-surface-container px-2 py-0.5 rounded text-[#10B981]">LOW RISK · BENIGN</span>
+</div>
+<div class="w-px h-8 bg-outline-variant"></div>
+<div class="flex items-center gap-3">
+<span class="font-mono-label text-mono-label text-on-surface-variant uppercase">AI Confidence</span>
+<span class="font-mono-data text-mono-data font-bold text-on-surface">95%</span>
+</div>
+</div>
+</header>
+<!-- Investigation Navigation (Horizontal override for full width layout) -->
+<div class="mb-8 border-b border-outline-variant overflow-x-auto hide-scrollbar">
+<div class="flex gap-8 min-w-max px-2">
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-on-surface pb-4 border-b-2 border-transparent transition-colors flex items-center gap-2" href="#">
+<span class="material-symbols-outlined text-[16px]">analytics</span> OVERVIEW
+                </a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-on-surface pb-4 border-b-2 border-transparent transition-colors flex items-center gap-2" href="#">
+<span class="material-symbols-outlined text-[16px]">security</span> AUTHENTICATION
+                </a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-on-surface pb-4 border-b-2 border-transparent transition-colors flex items-center gap-2" href="#">
+<span class="material-symbols-outlined text-[16px]">fingerprint</span> IDENTITY
+                </a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-on-surface pb-4 border-b-2 border-transparent transition-colors flex items-center gap-2" href="#">
+<span class="material-symbols-outlined text-[16px]">lan</span> INFRASTRUCTURE
+                </a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-on-surface pb-4 border-b-2 border-transparent transition-colors flex items-center gap-2" href="#">
+<span class="material-symbols-outlined text-[16px]">psychology</span> AI / INTENT
+                </a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-on-surface pb-4 border-b-2 border-transparent transition-colors flex items-center gap-2" href="#">
+<span class="material-symbols-outlined text-[16px]">inventory_2</span> PAYLOAD
+                </a>
+<a class="font-mono-label text-mono-label text-primary border-b-2 border-primary pb-4 transition-colors flex items-center gap-2" href="#">
+<span class="material-symbols-outlined text-[16px] filled-icon">description</span> EVIDENCE
+                </a>
+</div>
+</div>
+<!-- Evidence Canvas Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- Left Column: Primary Analysis Panels -->
+<div class="lg:col-span-8 flex flex-col gap-6">
+<!-- Email Identity -->
+<div class="border border-outline-variant bg-surface relative p-6">
+<span class="font-mono-label text-mono-label text-on-surface-variant absolute top-6 right-6">01.0 // METADATA</span>
+<h2 class="font-body-lg text-body-lg font-bold mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">mail</span>
+                        Email Identity
+                    </h2>
+<div class="grid grid-cols-2 gap-4">
+<div class="border-t border-outline-variant pt-3">
+<div class="font-mono-label text-mono-label text-on-surface-variant mb-1">MESSAGE ID</div>
+<div class="font-mono-data text-mono-data truncate" title="&lt;7c9a42.43f@aon.com&gt;">&lt;7c9a42.43f@aon.com&gt;</div>
+</div>
+<div class="border-t border-outline-variant pt-3">
+<div class="font-mono-label text-mono-label text-on-surface-variant mb-1">SENDER DOMAIN</div>
+<div class="font-mono-data text-mono-data">aon.com</div>
+</div>
+<div class="border-t border-outline-variant pt-3">
+<div class="font-mono-label text-mono-label text-on-surface-variant mb-1">TIMESTAMP</div>
+<div class="font-mono-data text-mono-data">2023-10-27T14:32:01Z</div>
+</div>
+<div class="border-t border-outline-variant pt-3">
+<div class="font-mono-label text-mono-label text-on-surface-variant mb-1">EXECUTION TIME</div>
+<div class="font-mono-data text-mono-data text-primary">4.374s</div>
+</div>
+</div>
+</div>
+<!-- Bento Grid: Auth & Identity -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<!-- Authentication -->
+<div class="border border-outline-variant bg-surface relative p-6">
+<span class="font-mono-label text-mono-label text-on-surface-variant absolute top-6 right-6">02.0 // AUTH</span>
+<div class="flex justify-between items-start mb-6">
+<h2 class="font-body-lg text-body-lg font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">security</span>
+                                Authentication
+                            </h2>
+<div class="text-right">
+<div class="font-mono-label text-mono-label text-on-surface-variant">SCORE</div>
+<div class="font-mono-data text-mono-data font-bold text-[#10B981]">0/100</div>
+</div>
+</div>
+<div class="flex flex-col gap-3">
+<div class="flex justify-between items-center border-b border-outline-variant pb-2">
+<span class="font-mono-label text-mono-label">SPF</span>
+<span class="font-mono-data text-mono-data text-[#10B981] bg-[#10B981]/10 px-2 rounded">PASS</span>
+</div>
+<div class="flex justify-between items-center border-b border-outline-variant pb-2">
+<span class="font-mono-label text-mono-label">DKIM</span>
+<span class="font-mono-data text-mono-data text-[#10B981] bg-[#10B981]/10 px-2 rounded">PASS</span>
+</div>
+<div class="flex justify-between items-center border-b border-outline-variant pb-2">
+<span class="font-mono-label text-mono-label">DMARC</span>
+<span class="font-mono-data text-mono-data text-on-surface-variant bg-surface-container px-2 rounded">RELAXED</span>
+</div>
+<div class="flex justify-between items-center pb-2">
+<span class="font-mono-label text-mono-label">ARC</span>
+<span class="font-mono-data text-mono-data text-[#10B981] bg-[#10B981]/10 px-2 rounded">PASS</span>
+</div>
+</div>
+</div>
+<!-- Identity Analysis -->
+<div class="border border-outline-variant bg-surface relative p-6 bracket-tl">
+<span class="font-mono-label text-mono-label text-on-surface-variant absolute top-6 right-6">03.0 // ID</span>
+<div class="flex justify-between items-start mb-6">
+<h2 class="font-body-lg text-body-lg font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">fingerprint</span>
+                                Identity Analysis
+                            </h2>
+<div class="text-right">
+<div class="font-mono-label text-mono-label text-on-surface-variant">RISK</div>
+<div class="font-mono-data text-mono-data font-bold text-[#F59E0B]">50/100</div>
+</div>
+</div>
+<div class="mb-4">
+<div class="font-mono-label text-mono-label text-on-surface-variant mb-1">DISPLAY NAME</div>
+<div class="font-mono-data text-mono-data pb-2 border-b border-outline-variant">AAS Tech Support</div>
+</div>
+<div class="mb-6">
+<div class="font-mono-label text-mono-label text-on-surface-variant mb-1">SENDER DOMAIN</div>
+<div class="font-mono-data text-mono-data pb-2 border-b border-outline-variant">aon.com</div>
+</div>
+<div class="bg-[#F59E0B]/5 border-l-2 border-[#F59E0B] p-3 text-sm">
+<div class="font-mono-label text-mono-label text-[#F59E0B] mb-1">MISMATCH WARNING (MEDIUM)</div>
+<p class="text-on-surface-variant">Slight discrepancy between display name context and generic corporate domain. Monitor for impersonation tactics.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Context & Risk -->
+<div class="lg:col-span-4 flex flex-col gap-6">
+<!-- Risk Engine Summary -->
+<div class="bg-[#121212] text-white p-6 relative">
+<div class="font-mono-label text-mono-label text-gray-500 absolute top-6 right-6">SYS.OP // ENGINE</div>
+<h2 class="font-body-lg text-body-lg font-bold mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">radar</span>
+                        Risk Engine Breakdown
+                    </h2>
+<div class="flex items-end gap-2 border-b border-gray-800 pb-4 mb-6">
+<span class="text-5xl font-bold text-[#10B981]">17</span>
+<span class="font-mono-data text-mono-data text-gray-500 mb-1">/ 100 TTL</span>
+</div>
+<div class="flex flex-col gap-4 font-mono-data text-mono-data">
+<div class="flex justify-between items-center">
+<span class="text-gray-400">Auth.Score</span>
+<span class="text-[#10B981]">00</span>
+</div>
+<div class="w-full h-[1px] bg-gray-800">
+<div class="h-[1px] bg-[#10B981]" style="width: 0%"></div>
+</div>
+<div class="flex justify-between items-center mt-2">
+<span class="text-gray-400">Identity.Risk</span>
+<span class="text-[#F59E0B]">50</span>
+</div>
+<div class="w-full h-[1px] bg-gray-800">
+<div class="h-[1px] bg-[#F59E0B]" style="width: 50%"></div>
+</div>
+<div class="flex justify-between items-center mt-2">
+<span class="text-gray-400">Infra.Score</span>
+<span class="text-[#10B981]">12</span>
+</div>
+<div class="w-full h-[1px] bg-gray-800">
+<div class="h-[1px] bg-[#10B981]" style="width: 12%"></div>
+</div>
+<div class="flex justify-between items-center mt-2">
+<span class="text-gray-400">Intent.Threat</span>
+<span class="text-[#10B981]">10</span>
+</div>
+<div class="w-full h-[1px] bg-gray-800">
+<div class="h-[1px] bg-[#10B981]" style="width: 10%"></div>
+</div>
+</div>
+</div>
+<!-- Mini Timeline / Evidence Log -->
+<div class="border border-outline-variant bg-surface p-6">
+<h2 class="font-mono-label text-mono-label text-on-surface-variant mb-4 uppercase">Evidence Timeline</h2>
+<div class="flex flex-col gap-0 border-l border-outline-variant ml-2 relative">
+<div class="pl-4 pb-4 relative">
+<div class="absolute w-2 h-2 bg-[#10B981] rounded-full -left-[5px] top-1"></div>
+<div class="font-mono-label text-mono-label text-on-surface-variant">AUTH_PASS</div>
+<div class="text-sm">DKIM signature verified for aon.com</div>
+</div>
+<div class="pl-4 pb-4 relative">
+<div class="absolute w-2 h-2 bg-primary rounded-full -left-[5px] top-1"></div>
+<div class="font-mono-label text-mono-label text-on-surface-variant">INFO_GEO</div>
+<div class="text-sm">Originated from US IP space (Microsoft)</div>
+</div>
+<div class="pl-4 relative">
+<div class="absolute w-2 h-2 bg-[#F59E0B] rounded-full -left-[5px] top-1"></div>
+<div class="font-mono-label text-mono-label text-on-surface-variant">ID_WARN</div>
+<div class="text-sm">Display name context deviates from domain baseline</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>
