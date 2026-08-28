@@ -46,7 +46,7 @@ Reconciling the two stack tables in the master PRD, for a 10-day build we optimi
 | DOM Cleaning  | **cheerio**                               | Glassworm de-cloaking                                                                                       |
 | GeoIP         | **Free HTTP API (ip-api.com / ipapi.co)** | MaxMind `.mmdb` is optional/post-prototype (needs binary DB provisioning we don't have time for in 10 days) |
 | IP Reputation | **AbuseIPDB API**                         | Pillar 3                                                                                                    |
-| AI/NLP        | **@google/genai (Gemini)**                | Structured JSON intent classification                                                                       |
+| AI/NLP        | **@google/genai (Gemini)**                | Hybrid semantic NLP analysis with local heuristics                                                          |
 | Reporting     | **@react-pdf/renderer**                   | Forensic PDF export                                                                                         |
 | Realtime      | **WebSocket or SSE**                      | Job status push to frontend                                                                                 |
 
@@ -285,7 +285,7 @@ new Worker(
 | MIME Deconstruction  | `postal-mime` → produces `MDM`; computes SHA-256 per attachment                                                                                   |
 | HTML De-cloaking     | `cheerio` strips `display:none` / `opacity:0` / `font-size:0px`; counts zero-width spaces (U+200B) and soft hyphens (U+00AD); flags if count > 50 |
 | GeoIP/ASN Enrichment | Free HTTP GeoIP API call per hop IP, returns city/country/coordinates/ASN — pure enrichment, no scoring judgment                                  |
-| AI Intent Scoring    | `@google/genai` (Gemini) — prompt template that returns structured JSON: financial-request score, credential-harvesting score, intent labels      |
+| AI Intent Scoring    | `@google/genai` (Gemini 3.6-flash) — hybrid semantic NLP approach with local fallback heuristics, generating structured JSON intent scores |
 
 **Fixture strategy:** build and test each module against 3–4 sample `.eml` files (a clean email, a BEC-style phishing email, a spoofed-domain email, a legitimately forwarded mailing-list email) — no need to wait for Mayank's ingestion endpoint to exist.
 
@@ -301,7 +301,7 @@ new Worker(
 | Crypto Auth          | `mailauth` wrapper for SPF/DKIM/DMARC (strict vs relaxed alignment) + ARC seal check (`cv=pass` overrides a direct SPF/DKIM fail to 0, to avoid penalizing legitimate mailing-list forwards)                                                                                       |
 | Identity Pillar      | `damerau-levenshtein` (distance ≤2 → 100 pts), Jaro-Winkler (≥0.85 → 100 pts, combosquatting), UTS #39 homoglyph skeleton mapping for IDN attacks                                                                                                                                  |
 | IP Reputation Pillar | AbuseIPDB call (>80% → 100 pts), proxy/VPN/hosting-provider detection, `Date:` header timezone vs resolved IP location discrepancy (>4h → 50 pts)                                                                                                                                  |
-| Risk Engine          | Implements the master formula: `finalScore = auth*0.30 + identity*0.20 + ip*0.20 + nlp*0.30`                                                                                                                                                                                       |
+| Risk Engine          | Implements a deterministic, evidence-based corroboration model to calculate the final threat score, avoiding brittle circuit-breakers                                              |
 | Webhook Signing      | `HMAC-SHA256(signingSecret, timestamp + "." + payloadBody)`, attached as `X-Forensic-Signature` header for downstream Tines/Sublime dispatch                                                                                                                                       |
 
 **Fixture strategy:** the reverse-hop and auth modules can be built and unit-tested against raw header strings/sample DNS responses without needing Praneet's parser — postal-mime's `receivedHeadersRaw` output is just an array of strings, easy to stub by hand on Day 1.

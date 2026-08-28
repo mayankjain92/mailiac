@@ -436,6 +436,8 @@ Analyze against:
 3. AUTHORITY TRAP & IMPERSONATION (authority_score): Claiming brands (Bradesco, Livelo) from unrelated sender domains.
 4. HARVESTING RISK & SUSPICIOUS LINKS (harvesting_score): External links pointing to unrelated third-party domains.
 
+NOTE ON MARKETING: If the intent is clearly "MARKETING" or promotional, standard promotional phrases (e.g., "limited-time", "free rewards") MUST NOT inflate urgency_score or financial_score into the moderate/high tier.
+
 Respond with a single JSON object strictly matching:
 {
   "intentLabels": string[], // Applicable from: "FINANCIAL_COERCION", "CREDENTIAL_HARVESTING", "URGENCY", "AUTHORITY_TRAP", "EXTORTION", "MALWARE_LURE", "BENIGN", "MARKETING", "UNKNOWN"

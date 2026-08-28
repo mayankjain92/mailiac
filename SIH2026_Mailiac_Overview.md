@@ -8,18 +8,21 @@ Instead of relying on simple keyword matching, Mailiac fuses **hard cryptographi
 
 ---
 
-## ⚙️ The 9-Step Forensics Pipeline
-Mailiac operates on a robust, non-blocking asynchronous pipeline. When an email is uploaded, it passes through 9 distinct analysis stages:
+## ⚙️ The Forensics Pipeline (Parallel Execution Architecture)
+Mailiac operates on a robust, non-blocking asynchronous pipeline. When an email is uploaded, it passes through highly optimized, parallelized analysis phases:
 
 1. **EML Upload / Ingestion:** Secure ingestion of raw `.eml` files or via direct Gmail API integration.
 2. **MIME Parse:** Deep structural extraction of headers, body content, and attachments without data corruption.
-3. **Reverse-Hop Trace:** Network forensics that parses `Received` headers to trace the email back to its *true* originating public IP, exposing hidden proxies.
-4. **Crypto Auth:** Strict validation of email authentication protocols (SPF, DKIM, DMARC, and Multi-Hop ARC).
-5. **GeoIP Enrich & Reputation:** Mapping the origin IP geographically and checking it against threat intelligence databases for bad reputation.
-6. **HTML De-cloak:** Scanning the email body for hidden tracking pixels, obfuscated links, and zero-font text designed to trick spam filters.
-7. **NLP Intent Scoring:** Leveraging a **semantic Natural Language Processing (NLP) pipeline** to read the email's context and detect psychological manipulation, urgency, or financial fraud intent.
-8. **4-Pillar Risk Score:** An evidence-based aggregation engine that calculates a final, deterministic Threat/Risk Score based on the previous steps.
-9. **Persist + Notify:** Securely saving the forensic report to the database and streaming the status back to the frontend dashboard.
+3. **Parallel Phase 1 (Core Forensics):**
+   - **Reverse-Hop Trace:** Network forensics that parses `Received` headers to trace the email back to its *true* originating public IP, exposing hidden proxies.
+   - **Crypto Auth:** Strict validation of email authentication protocols (SPF, DKIM, DMARC, and Multi-Hop ARC).
+   - **HTML De-cloak:** Scanning the email body for hidden tracking pixels, obfuscated links, and zero-font text designed to trick spam filters.
+4. **Parallel Phase 2 (Enrichment & AI):**
+   - **NLP Intent Scoring:** Leveraging a **hybrid semantic Natural Language Processing (NLP) pipeline** (Gemini 3.6-flash + heuristics) to read the email's context and detect psychological manipulation, urgency, or financial fraud intent.
+   - **GeoIP Enrich & Reputation:** Mapping the origin IP geographically and checking it against threat intelligence databases for bad reputation.
+   - **Identity Scoring:** Levenshtein and Jaro-Winkler distances to detect homoglyph attacks and display-name spoofing.
+5. **Deterministic Risk Score:** An evidence-based aggregation engine that calculates a final, deterministic Threat/Risk Score based on the previous steps, avoiding brittle AI circuit-breakers.
+6. **Persist + Notify + PDF Report:** Securely saving the forensic report to MongoDB, streaming the status back to the frontend dashboard, and generating an immutable forensic PDF report.
 
 ---
 
