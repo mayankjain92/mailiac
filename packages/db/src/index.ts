@@ -128,3 +128,141 @@ export const AnalysisReportModel = model<AnalysisReportDocument>(
   'AnalysisReport',
   analysisReportSchema
 );
+
+// ---------------------------------------------------------------------------
+// GmailAccount Mongoose schema + model
+// ---------------------------------------------------------------------------
+
+export interface GmailAccount {
+  sessionId: string;
+  email: string;
+  accessToken: string;
+  refreshToken?: string;
+  tokenExpiry: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type GmailAccountDocument = GmailAccount & Document;
+
+const gmailAccountSchema = new Schema<GmailAccountDocument>(
+  {
+    sessionId: { type: String, required: true, index: true },
+    email: { type: String, required: true },
+    accessToken: { type: String, required: true },
+    refreshToken: { type: String },
+    tokenExpiry: { type: Date, required: true },
+  },
+  { timestamps: true }
+);
+
+export const GmailAccountModel =
+  (mongoose.models?.['GmailAccount'] as mongoose.Model<GmailAccountDocument>) ||
+  model<GmailAccountDocument>('GmailAccount', gmailAccountSchema);
+
+// ---------------------------------------------------------------------------
+// EmailAnalysisRecord Mongoose schema + model (for Unified .EML + Gmail Tracking)
+// ---------------------------------------------------------------------------
+
+export interface EmailAnalysisRecord {
+  jobId: string;
+  source: 'eml' | 'gmail';
+  gmailMessageId?: string;
+  sender?: string;
+  subject?: string;
+  senderDomain: string;
+  finalScore: number;
+  verdict: 'QUARANTINE' | 'FLAG' | 'SAFE';
+  authScore: number;
+  identityScore: number;
+  ipScore: number;
+  nlpScore: number;
+  timestamp: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type EmailAnalysisRecordDocument = EmailAnalysisRecord & Document;
+
+const emailAnalysisRecordSchema = new Schema<EmailAnalysisRecordDocument>(
+  {
+    jobId: { type: String, required: true },
+    source: { type: String, enum: ['eml', 'gmail'], required: true },
+    gmailMessageId: { type: String },
+    sender: { type: String },
+    subject: { type: String },
+    senderDomain: { type: String, required: true },
+    finalScore: { type: Number, required: true },
+    verdict: { type: String, enum: ['QUARANTINE', 'FLAG', 'SAFE'], required: true },
+    authScore: { type: Number, required: true },
+    identityScore: { type: Number, required: true },
+    ipScore: { type: Number, required: true },
+    nlpScore: { type: Number, required: true },
+    timestamp: { type: String, required: true },
+  },
+  {
+    timestamps: true,
+    autoIndex: false, // Prevents race condition with live duplicates before cleanup migration runs
+  }
+);
+
+emailAnalysisRecordSchema.index({ jobId: 1 }, { unique: true });
+emailAnalysisRecordSchema.index({ gmailMessageId: 1 }, { unique: true, sparse: true });
+emailAnalysisRecordSchema.index({ source: 1, createdAt: -1 });
+emailAnalysisRecordSchema.index({ verdict: 1, createdAt: -1 });
+
+export const EmailAnalysisRecordModel =
+  (mongoose.models?.['EmailAnalysisRecord'] as mongoose.Model<EmailAnalysisRecordDocument>) ||
+  model<EmailAnalysisRecordDocument>('EmailAnalysisRecord', emailAnalysisRecordSchema);
+
+/**
+ * Migration cleanup routine to collapse any duplicate gmailMessageId records
+ * down to the most recent one (by createdAt / updatedAt).
+ */
+export async function cleanupDuplicateGmailRecords(): Promise<{ duplicatesRemoved: number }> {
+  try {
+    const duplicates = await EmailAnalysisRecordModel.aggregate([
+      { $match: { gmailMessageId: { $exists: true, $ne: null } } },
+      {
+        $group: {
+          _id: '$gmailMessageId',
+          count: { $sum: 1 },
+          docs: { $push: { id: '$_id', createdAt: '$createdAt' } },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+    ]);
+
+    let duplicatesRemoved = 0;
+
+    for (const group of duplicates) {
+      const sorted = group.docs.sort(
+        (a: { createdAt?: Date; id: unknown }, b: { createdAt?: Date; id: unknown }) => {
+          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return timeB - timeA;
+        }
+      );
+
+      // Keep the newest (index 0), delete older duplicates
+      const idsToDelete = sorted.slice(1).map((d: { id: unknown }) => d.id);
+      const deleteResult = await EmailAnalysisRecordModel.deleteMany({ _id: { $in: idsToDelete } });
+      duplicatesRemoved += deleteResult.deletedCount || 0;
+    }
+
+    return { duplicatesRemoved };
+  } catch (err) {
+    console.error('[db] Error cleaning up duplicate Gmail records:', err);
+    throw err;
+  }
+}
+
+/**
+ * Safely synchronizes indexes on EmailAnalysisRecordModel after deduplication cleanup.
+ */
+export async function syncEmailAnalysisIndexes(): Promise<void> {
+  await cleanupDuplicateGmailRecords();
+  await EmailAnalysisRecordModel.syncIndexes();
+}
+
+

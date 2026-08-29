@@ -1,160 +1,136 @@
-# 🚀 Developer Onboarding Guide — mailiac
+# 🚀 Developer Onboarding Guide — Mailiac
 
-Welcome to **mailiac**! Follow this quick setup guide to pull the codebase, configure your AI agent environment, and start working on your assigned modules.
+Welcome to the **Mailiac** engineering team! This guide covers everything you need to clone, configure, run, and develop on the Mailiac monorepo.
 
 ---
 
-## 1. Initial Local Setup
+## 1. Prerequisites
 
-Open your terminal and run:
+Ensure your development environment meets the following baseline requirements:
+- **Node.js**: `v20.x` or higher (`node -v`)
+- **pnpm**: `v9.x` or higher (`pnpm -v`)
+- **Docker & Docker Compose**: For local MongoDB and Redis (`docker compose version`)
+- **Git**: For version control and branch management
 
+---
+
+## 2. Initial Setup & Quickstart
+
+### Step 1: Clone Repository & Checkout Develop
 ```bash
-# 1. Clone the repository (if not already cloned)
 git clone https://github.com/mayankjain92/mailiac.git
 cd mailiac
-
-# 2. Checkout the develop branch & pull latest
 git checkout develop
 git pull origin develop
+```
 
-# 3. Install workspace dependencies
+### Step 2: Install Workspace Dependencies
+```bash
 pnpm install
+```
 
-# 4. Copy environment variables file
+### Step 3: Start Infrastructure (MongoDB & Redis)
+```bash
+docker compose up -d
+```
+*This launches:*
+- **MongoDB**: `mongodb://localhost:27017/mailiac`
+- **Redis**: `redis://localhost:6379`
+
+### Step 4: Configure Environment Variables
+```bash
 cp .env.example .env
 ```
 
----
-
-## 2. Setting Up Antigravity AI Rules & Workflows
-
-To ensure all developers follow the frozen contracts, code conventions, and workflows:
-
-### A. Add Workspace Workflows
-Copy the workflow files from `docs/workflows/` into your local Antigravity workflow folder (`~/.gemini/antigravity/global_workflows/`):
+Edit your `.env` file with required API keys and connection strings:
 
 ```bash
-mkdir -p ~/.gemini/antigravity/global_workflows/
+# Infrastructure
+PORT=4000
+MONGODB_URI=mongodb://localhost:27017/mailiac
+REDIS_URL=redis://localhost:6379
+
+# Frontend
+FRONTEND_URL=http://localhost:3000
+NEXT_PUBLIC_API_URL=http://localhost:4000
+
+# Threat Intelligence & AI APIs
+GEMINI_API_KEY=your_gemini_api_key_here
+ABUSEIPDB_API_KEY=your_abuseipdb_key_here
+GEOIP_API_KEY=your_geoip_key_here
+
+# Google Workspace / Gmail OAuth 2.0 (Dual Ingestion)
+GOOGLE_CLIENT_ID=your_google_client_id_here
+GOOGLE_CLIENT_SECRET=your_google_client_secret_here
+GOOGLE_REDIRECT_URI=http://localhost:4000/api/gmail/auth/callback
+
+# Security & Webhooks
+WEBHOOK_SIGNING_SECRET=your_hmac_signing_secret_here
+PROTECTED_DOMAINS=target-corp.com,paypal.com,google.com,microsoft.com,apple.com
+```
+
+### Step 5: Start All Applications in Development Mode
+```bash
+pnpm dev
+```
+*This starts Turborepo in watch mode:*
+- **Frontend Dashboard (`apps/web`)**: `http://localhost:3000`
+- **Express API Gateway (`apps/api`)**: `http://localhost:4000`
+- **BullMQ Pipeline Worker (`apps/worker`)**: Listening on `email-forensics` queue
+
+---
+
+## 3. Monorepo Scripts & Quality Checks
+
+Run these scripts from the repository root:
+
+| Command | Action |
+|---|---|
+| `pnpm dev` | Run all applications and packages in hot-reload watch mode |
+| `pnpm build` | Compile all TypeScript packages and build Next.js frontend |
+| `pnpm typecheck` | Run `tsc --noEmit` across all 11 monorepo packages |
+| `pnpm test` | Execute Vitest unit and integration test suites |
+| `pnpm lint` | Run ESLint across all codebase files |
+
+To run commands for a single app or package:
+```bash
+# Example: Run tests only for the risk engine package
+pnpm --filter @mailiac/scoring-risk-engine test
+
+# Example: Run typecheck only for apps/api
+pnpm --filter @mailiac/api typecheck
+```
+
+---
+
+## 4. Antigravity AI Agent Rules & Workflows
+
+Mailiac is optimized for AI-assisted pair programming using Antigravity coding agents.
+
+### A. Installing Global & Workspace Workflows
+Workflows live in `docs/workflows/` and `.agents/workflows/`:
+```bash
+mkdir -p ~/.gemini/antigravity-ide/global_workflows/ ~/.gemini/antigravity/global_workflows/ .agents/workflows/
+cp docs/workflows/*.md ~/.gemini/antigravity-ide/global_workflows/
 cp docs/workflows/*.md ~/.gemini/antigravity/global_workflows/
+cp docs/workflows/*.md .agents/workflows/
 ```
 
-This makes the 7 slash commands available directly in your AI assistant:
-- `/sync-contract`
-- `/new-branch`
-- `/implement-module`
-- `/pre-pr-check`
-- `/open-pr`
-- `/integration-check`
-- `/wire-real-api`
-
-### B. Configure Global Rules
-Paste the contents of `RULE[user_global]` into **Antigravity Settings → Rules → Workspace Rules**.
+### B. Standard Slash Commands
+- **`/sync-contract`** — Verify local alignment against `@mailiac/shared-types`.
+- **`/new-branch`** — Create a feature branch (`feat/<owner>/<module-name>`) off `develop`.
+- **`/implement-module`** — Implement a package or module following strict contracts and tests.
+- **`/pre-pr-check`** — Run full lint, typecheck, unit tests, and build check before pushing.
+- **`/open-pr`** — Commit and open a PR targeting `develop`.
+- **`/integration-check`** — Run full end-to-end pipeline validation against fixture emails.
+- **`/wire-real-api`** — Connect frontend data layers to backend endpoints.
 
 ---
 
-## 3. Daily Workflow for Developers
+## 5. Golden Engineering Rules
 
-When you are ready to implement a module:
-
-1. **Start your session by telling the AI:**
-   > `"I'm [Name], Day [X]"`  
-   *(e.g., `"I'm Praneet, Day 1-2"`, `"I'm Vivek, Day 1-2"`, or `"I'm Harshita, Day 1-2"`)*
-
-2. **Execute steps using Slash Commands:**
-   - Run `/sync-contract` — Verify shared interfaces
-   - Run `/new-branch` — Create your feature branch (`feat/<owner>/<module-name>`) off `develop`
-   - Implement code & test cases with AI assistance
-   - Run `/pre-pr-check` — Verify linting, typechecking, vitest tests, and builds pass 100%
-   - Run `/open-pr` — Open a Pull Request targeting the `develop` branch!
-
----
-
-## 4. Track & Package Responsibilities
-
-Refer to [`docs/10_Day_Checklist.md`](./10_Day_Checklist.md) for the exact module breakdown, file locations, and task cards for each developer:
-
-- **Mayank**: API Ingestion gateway, MongoDB persistence, SSE/WebSockets, PDF reporting.
-- **Praneet**: MIME parsing (`packages/parsing/mime`), HTML de-cloaking, GeoIP enrichment, AI Intent.
-- **Vivek**: Reverse-hop trace (`packages/scoring/reverse-hop`), Crypto Auth, Identity scoring, IP Reputation, Risk Engine, Webhook signing.
-- **Harshita**: Frontend application (`apps/web`), mock fixture, `src/lib/api.ts` abstraction, 3 core pages (`/upload`, `/status/[jobId]`, `/report/[jobId]`), recharts breakdown & Leaflet hop map.
-
----
-
-## 5. Harshita Setup Guide (Track D — Frontend)
-
-### A. Scaffold Prompt for Harshita (Paste into AI assistant in workspace)
-
-```text
-Add a new app `apps/web` to the existing `mailiac` Turborepo monorepo.
-Do NOT touch apps/api, apps/worker, or any packages/ folder — only add apps/web
-and register it in the workspace.
-
-STACK
-- Next.js 14 (App Router), TypeScript strict mode
-- Tailwind CSS + shadcn/ui
-- recharts (for the 4-pillar risk breakdown)
-- react-leaflet + leaflet (for the forensic hop-path map)
-- Depends on `@mailiac/shared-types` for all data types — do not
-  redefine AnalysisReport or any pillar types locally.
-
-IMPORTANT: Build everything against MOCK DATA first. The real backend isn't
-ready yet. Create `apps/web/src/lib/mock-data.ts` exporting one hand-written
-object of type `AnalysisReport` (import the type from shared-types) with
-realistic-looking values across all fields (risk score, pillar breakdown,
-forensic path with 3-4 hops, aiSummary).
-
-Create `apps/web/src/lib/api.ts` as the ONLY place that "talks to the backend."
-For now, every function in this file should just return the mock data
-(with an artificial delay via setTimeout to simulate a real request):
-  - uploadEml(file: File): Promise<{ jobId: string }>
-  - getJobStatus(jobId: string): Promise<{ status: 'queued'|'processing'|'completed'|'failed' }>
-  - getReport(jobId: string): Promise<AnalysisReport>
-This is the ONLY file that will need to change later when the real backend
-is ready — no component should ever import mock-data.ts directly, only api.ts.
-
-PAGES
-- `/upload` — drag-and-drop or file-picker for a .eml file, calls uploadEml(),
-  shows the returned jobId, then redirects to /status/[jobId]
-- `/status/[jobId]` — polls getJobStatus() every 2s, shows a simple state
-  indicator (queued/processing/completed/failed), redirects to /report/[jobId]
-  once completed
-- `/report/[jobId]` — calls getReport(), and renders:
-    - a big risk score number/gauge (0-100, color-coded: green <40, yellow
-      40-70, red >70)
-    - a bar chart (recharts) of the 4 pillar scores (auth/identity/ip/nlp)
-    - a table of the forensic hop path (ip, city, country, trusted y/n)
-    - a leaflet map plotting each hop's coordinates
-    - the aiSummary section (urgency, intent labels)
-
-DESIGN
-- Dark theme, clean SOC-analyst-dashboard feel — not a marketing site.
-- Use shadcn/ui components (Card, Table, Badge, Button) rather than raw
-  Tailwind everywhere.
-
-Do not implement real fetch() calls to any URL yet. Do not add authentication.
-This is a 10-day prototype — keep scope to exactly the 3 pages above.
-```
-
-### B. Harshita Individual Rules
-
-```markdown
-# AGENTS.md — Track D (Harshita): Frontend
-
-## Your app
-apps/web only. Never touch apps/api, apps/worker, or packages/.
-
-## Context
-- All data types come from `@mailiac/shared-types` — import them,
-  never redefine AnalysisReport/RiskMatrix/etc. locally.
-- ALL data fetching goes through `src/lib/api.ts`. No component should ever
-  call fetch() directly or import mock-data.ts directly — this is what makes
-  the Day 9 swap to the real backend a one-file change instead of a rewrite.
-- Build and test every screen against the mock fixture first. Don't wait for
-  the real backend to be ready to build UI.
-- Risk score color bands: green <40, yellow 40-70, red >70.
-
-## Non-goals
-No auth/login. No settings/admin pages. Just the 3 screens: upload, status,
-report. If it's not one of those 3, it's out of scope for this sprint.
-```
-
+1. **Frozen Interface Contract:** NEVER add, modify, or remove fields in `packages/shared-types/src/index.ts` without explicit team consensus.
+2. **Queue Mechanics Isolation:** BullMQ `Queue` and `Worker` instances belong exclusively in `apps/api` and `apps/worker`. Packages under `packages/parsing/*` and `packages/scoring/*` must remain pure, side-effect-free functions.
+3. **No Direct Internal Cross-Imports:** Always import from sibling packages using their published root entrypoints (e.g. `import { parseEmlToMdm } from '@mailiac/parsing-mime'`).
+4. **Resilient Fallbacks:** Every async API call (Gemini, AbuseIPDB, GeoIP) must have a strict timeout and a local deterministic fallback. Flaky third-party network calls must never crash worker jobs.
+5. **No Full PII Logging:** Never log raw email bodies or sensitive user tokens in production or worker logs.

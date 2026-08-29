@@ -1,9 +1,48 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from 'express';
-import { connectDb, AnalysisReportModel } from '@mailiac/db';
+import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel } from '@mailiac/db';
 import { generateForensicPdf } from '@mailiac/reporting-pdf';
 import type { AnalysisReport } from '@mailiac/shared-types';
 
 export const reportsRouter: IRouter = Router();
+
+/**
+ * GET /api/reports/history
+ * Returns a paginated/filtered list of recent forensic email analysis records (.eml and Gmail).
+ */
+reportsRouter.get('/reports/history', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const mongoUri = process.env['MONGODB_URI'] ?? 'mongodb://localhost:27017/mailiac';
+    await connectDb(mongoUri);
+
+    const source = typeof req.query['source'] === 'string' ? req.query['source'] : undefined;
+    const verdict = typeof req.query['verdict'] === 'string' ? req.query['verdict'] : undefined;
+    const limit = Math.min(Number(req.query['limit'] ?? 50), 100);
+
+    const filter: Record<string, unknown> = {};
+    if (source === 'eml' || source === 'gmail') {
+      filter['source'] = source;
+    }
+    if (verdict === 'QUARANTINE' || verdict === 'FLAG' || verdict === 'SAFE') {
+      filter['verdict'] = verdict;
+    }
+
+    const records = await EmailAnalysisRecordModel.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    const sanitizedRecords = records.map((rec) => {
+      const copy = { ...rec } as Record<string, unknown>;
+      delete copy['_id'];
+      delete copy['__v'];
+      return copy;
+    });
+
+    res.json({ records: sanitizedRecords });
+  } catch (err) {
+    next(err);
+  }
+});
 
 reportsRouter.get('/reports/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
