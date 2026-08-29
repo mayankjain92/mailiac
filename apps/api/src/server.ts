@@ -21,8 +21,9 @@ import { uploadRouter } from './routes/upload.js';
 import { jobsRouter } from './routes/jobs.js';
 import { reportsRouter } from './routes/reports.js';
 import { notifyRouter } from './routes/notify.js';
+import { gmailRouter } from './routes/gmail.js';
 import { errorHandler } from './middleware/error.js';
-import { connectDb } from '@mailiac/db';
+import { connectDb, syncEmailAnalysisIndexes } from '@mailiac/db';
 
 const app: Application = express();
 
@@ -32,6 +33,7 @@ app.use('/api', uploadRouter);
 app.use('/api', jobsRouter);
 app.use('/api', reportsRouter);
 app.use('/api', notifyRouter);
+app.use('/api/gmail', gmailRouter);
 
 app.use(errorHandler);
 
@@ -40,8 +42,14 @@ const port = process.env['PORT'] ?? 4000;
 if (process.env['NODE_ENV'] !== 'test') {
   const mongoUri = process.env['MONGODB_URI'] ?? 'mongodb://localhost:27017/mailiac';
   connectDb(mongoUri)
-    .then(() => {
+    .then(async () => {
       console.info('[api] connected to MongoDB');
+      try {
+        await syncEmailAnalysisIndexes();
+        console.info('[api] EmailAnalysisRecord indexes synced');
+      } catch (idxErr) {
+        console.error('[api] Warning: Failed to sync EmailAnalysisRecord indexes:', idxErr);
+      }
       app.listen(port, () => {
         console.info(`[api] listening on port ${port}`);
       });

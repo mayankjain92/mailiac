@@ -161,3 +161,11 @@ export interface AnalysisReport {
     aiDiagnostics?: AIDiagnostics;
   };
 }
+
+export interface GmailMessageAnalysisEnrichment {
+  analyzed: boolean;
+  jobId?: string;
+  finalScore?: number;
+  verdict?: 'QUARANTINE' | 'FLAG' | 'SAFE';
+}
+

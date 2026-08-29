@@ -10,9 +10,12 @@ vi.mock('@mailiac/db', () => ({
   AnalysisReportModel: {
     findOne: vi.fn(),
   },
+  EmailAnalysisRecordModel: {
+    find: vi.fn(),
+  },
 }));
 
-import { connectDb, AnalysisReportModel } from '@mailiac/db';
+import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel } from '@mailiac/db';
 
 describe('GET /api/reports/:id', () => {
   let server: ReturnType<ReturnType<typeof express>['listen']>;
@@ -133,5 +136,59 @@ describe('GET /api/reports/:id', () => {
 
     const res = await fetch(`${baseUrl}/api/reports/non-existent-msg-id/pdf`);
     expect(res.status).toBe(404);
+  });
+
+  describe('GET /api/reports/history', () => {
+    it('returns 200 with list of sanitized analysis records', async () => {
+      const mockRecords = [
+        {
+          _id: 'mongo-id-101',
+          __v: 0,
+          jobId: 'job-1',
+          source: 'gmail',
+          gmailMessageId: 'gmail-msg-1',
+          senderDomain: 'paypal.com',
+          finalScore: 85,
+          verdict: 'QUARANTINE',
+          authScore: 30,
+          identityScore: 20,
+          ipScore: 10,
+          nlpScore: 80,
+          timestamp: '2026-08-29T12:00:00Z',
+        },
+        {
+          _id: 'mongo-id-102',
+          __v: 0,
+          jobId: 'job-2',
+          source: 'eml',
+          senderDomain: 'github.com',
+          finalScore: 5,
+          verdict: 'SAFE',
+          authScore: 0,
+          identityScore: 0,
+          ipScore: 0,
+          nlpScore: 5,
+          timestamp: '2026-08-29T11:00:00Z',
+        },
+      ];
+
+      (EmailAnalysisRecordModel.find as ReturnType<typeof vi.fn>).mockReturnValue({
+        sort: vi.fn().mockReturnValue({
+          limit: vi.fn().mockReturnValue({
+            lean: vi.fn().mockResolvedValue(mockRecords),
+          }),
+        }),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/history?source=gmail&limit=10`);
+      expect(res.status).toBe(200);
+
+      const data = (await res.json()) as { records: Array<Record<string, unknown>> };
+      expect(data.records).toHaveLength(2);
+      expect(data.records[0]?.['jobId']).toBe('job-1');
+      expect(data.records[0]?.['_id']).toBeUndefined();
+      expect(data.records[0]?.['__v']).toBeUndefined();
+      expect(EmailAnalysisRecordModel.find).toHaveBeenCalledWith({ source: 'gmail' });
+    });
   });
 });

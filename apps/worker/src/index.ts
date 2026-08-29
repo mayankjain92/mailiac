@@ -2,7 +2,6 @@ import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import crypto from 'node:crypto';
 
 if (!process.env['GEMINI_API_KEY'] || !process.env['MONGODB_URI']) {
   const __filename = fileURLToPath(import.meta.url);
@@ -19,32 +18,19 @@ if (!process.env['GEMINI_API_KEY'] || !process.env['MONGODB_URI']) {
 
 import { Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
+import { runForensicPipeline } from './pipeline.js';
 
-// Stub imports — real logic will be implemented by each package owner.
-// These are imported here to verify the dependency graph compiles correctly.
-import { parseEmlToMdm } from '@mailiac/parsing-mime';
-import { decloakHtml } from '@mailiac/parsing-decloak';
-import { enrichHopsWithGeo } from '@mailiac/parsing-geoip';
-import { scoreIntent } from '@mailiac/parsing-ai-intent';
-import { traceReverseHops } from '@mailiac/scoring-reverse-hop';
-import { verifyAuth } from '@mailiac/scoring-auth';
-import { scoreIdentity } from '@mailiac/scoring-identity';
-import { scoreIpReputation } from '@mailiac/scoring-ip-reputation';
-import { aggregateRisk } from '@mailiac/scoring-risk-engine';
-import { signPayload } from '@mailiac/webhooks';
-import { generateForensicPdf } from '@mailiac/reporting-pdf';
-
-import { connectDb, AnalysisReportModel } from '@mailiac/db';
-import type { AnalysisReport } from '@mailiac/shared-types';
+export { runForensicPipeline };
 
 interface EmailJobData {
   messageId: string;
   buffer: Buffer;
+  source?: 'eml' | 'gmail';
+  gmailMessageId?: string;
 }
 
 const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 const mongoUri = process.env['MONGODB_URI'] ?? 'mongodb://localhost:27017/mailiac';
-const webhookSigningSecret = process.env['WEBHOOK_SIGNING_SECRET'] ?? 'default-signing-secret';
 const protectedDomains = (process.env['PROTECTED_DOMAINS'] ?? 'target-corp.com,paypal.com,google.com,microsoft.com').split(',');
 
 const connection = new Redis(redisUrl, {
@@ -52,92 +38,19 @@ const connection = new Redis(redisUrl, {
 });
 
 async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
-  const { messageId } = job.data;
-  const startTime = Date.now();
+  const { messageId, source, gmailMessageId } = job.data;
 
   try {
-    await connectDb(mongoUri);
-
     const rawEmlBuffer = Buffer.isBuffer(job.data.buffer)
       ? job.data.buffer
       : Buffer.from((job.data.buffer as unknown as { data: number[] }).data || []);
 
-    // Stage 1: MIME Parse
-    console.info(`[${messageId}] stage: mime-parse`);
-    const mdm = await parseEmlToMdm(rawEmlBuffer);
-
-    const senderDomain = mdm.from.address.includes('@')
-      ? (mdm.from.address.split('@').pop() ?? mdm.from.address)
-      : mdm.from.address;
-
-    // Phase 1: Parallel Execution of Independent Analysis Stages
-    console.info(`[${messageId}] stage: parallel-phase-1 (reverse-hop, auth, decloak)`);
-    const [reverseHopResult, authResults, decloakResult] = await Promise.all([
-      traceReverseHops(mdm.receivedHeadersRaw),
-      verifyAuth(rawEmlBuffer),
-      Promise.resolve(decloakHtml(mdm.bodyHtmlRaw)),
-    ]);
-
-    // Phase 2: Parallel Execution of AI Intent & Enrichment Stages
-    console.info(`[${messageId}] stage: parallel-phase-2 (ai-intent, geoip, ip-reputation, identity)`);
-    const originatingIp = reverseHopResult.originatingSenderIp ?? '';
-    const [nlpResult, forensicPath, ipReputationResult, identityResult] = await Promise.all([
-      scoreIntent({
-        text: mdm.bodyText || decloakResult.extractedText,
-        subject: mdm.subject,
-        sender: mdm.from.name ? `${mdm.from.name} <${mdm.from.address}>` : mdm.from.address,
-        senderDomain,
-        urls: decloakResult.extractedUrls,
-      }),
-      enrichHopsWithGeo(reverseHopResult.path),
-      scoreIpReputation(originatingIp, mdm.date),
-      Promise.resolve(scoreIdentity(senderDomain, protectedDomains, mdm.from.name)),
-    ]);
-
-    // Attach decloak results to NLP intent model
-    nlpResult.glasswormFlag = decloakResult.glasswormFlag;
-    nlpResult.zeroWidthCharCount = decloakResult.zeroWidthCharCount;
-
-    // Stage 9: Aggregate Risk
-    console.info(`[${messageId}] stage: risk-engine`);
-    const riskMatrix = aggregateRisk(senderDomain, authResults, identityResult, ipReputationResult, nlpResult);
-    const executionTimeMs = Date.now() - startTime;
-
-    // Stage 10: Persist + Notify
-    console.info(`[${messageId}] stage: persist-notify`);
-    const report: AnalysisReport = {
-      messageId: messageId,
-      senderDomain: senderDomain || 'unknown',
-      timestamp: new Date().toISOString(),
-      executionTimeMs,
-      forensicPath,
-      authResults,
-      riskMatrix,
-      aiSummary: {
-        provider: nlpResult.provider || 'heuristic',
-        providerStatus: nlpResult.providerStatus || 'fallback',
-        fallbackReason: nlpResult.fallbackReason,
-        model: nlpResult.model,
-        urgency: nlpResult.nlpScore,
-        intent: nlpResult.intentLabels,
-        integrityHash: crypto.createHash('sha256').update(JSON.stringify(riskMatrix)).digest('hex'),
-        confidence: nlpResult.confidence || 0,
-        findings: nlpResult.findings || [],
-        aiDiagnostics: nlpResult.aiDiagnostics,
-      },
-    };
-
-    await AnalysisReportModel.create(report);
-
-    // Stage 11: PDF Report
-    console.info(`[${messageId}] stage: pdf`);
-    try {
-      await generateForensicPdf(report);
-    } catch (_pdfErr) {
-      console.info(`[${messageId}] PDF report stage deferred`);
-    }
-
-    console.info(`[${messageId}] pipeline completed successfully in ${executionTimeMs}ms. Final Risk Score: ${riskMatrix.finalScore}/100`);
+    await runForensicPipeline(messageId, rawEmlBuffer, {
+      mongoUri,
+      protectedDomains,
+      source,
+      gmailMessageId,
+    });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.error(`[${messageId}] pipeline failed: ${reason}`);
@@ -156,3 +69,4 @@ worker.on('failed', (job, err) => {
 });
 
 console.info('[worker] listening on queue: email-forensics');
+

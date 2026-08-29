@@ -505,7 +505,7 @@ export function scoreIdentity(
   }
 
   const findings: Finding[] = [];
-  let candidateScores: number[] = [];
+  const candidateScores: number[] = [];
   let matchedBrand: string | undefined = undefined;
 
   // 2. Brand Impersonation / Alias Mismatch in Display Name
