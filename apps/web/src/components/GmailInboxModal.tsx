@@ -38,7 +38,7 @@ export default function GmailInboxModal({
   isOpen,
   onClose,
   onJobCreated,
-}: GmailInboxModalProps) {
+}: GmailInboxModalProps): React.JSX.Element | null {
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [connectedEmail, setConnectedEmail] = useState<string | null>(null);
   const [messages, setMessages] = useState<GmailMessageSummary[]>([]);
@@ -51,7 +51,7 @@ export default function GmailInboxModal({
   const [error, setError] = useState<string | null>(null);
 
   // Check connection status
-  const checkStatus = useCallback(async () => {
+  const checkStatus = useCallback(async (): Promise<boolean> => {
     try {
       const res = await fetch('/api/gmail/status');
       if (res.ok) {
@@ -70,7 +70,7 @@ export default function GmailInboxModal({
 
   // Fetch messages from Gmail
   const fetchMessages = useCallback(
-    async (query = '', pageToken?: string) => {
+    async (query = '', pageToken?: string): Promise<void> => {
       setIsLoading(true);
       setError(null);
       try {
@@ -113,7 +113,7 @@ export default function GmailInboxModal({
   }, [isOpen, checkStatus, fetchMessages, searchQuery]);
 
   // Initiate Google OAuth login
-  const handleConnect = async () => {
+  const handleConnect = async (): Promise<void> => {
     setIsConnecting(true);
     setError(null);
     try {
@@ -129,7 +129,7 @@ export default function GmailInboxModal({
   };
 
   // Disconnect account
-  const handleDisconnect = async () => {
+  const handleDisconnect = async (): Promise<void> => {
     if (!confirm('Are you sure you want to disconnect your Gmail account?')) return;
     setIsDisconnecting(true);
     setError(null);
@@ -148,13 +148,13 @@ export default function GmailInboxModal({
   };
 
   // Handle Search submit
-  const handleSearchSubmit = (e: React.FormEvent) => {
+  const handleSearchSubmit = (e: React.FormEvent): void => {
     e.preventDefault();
     fetchMessages(searchQuery);
   };
 
   // Trigger Forensic Analysis for a specific email
-  const handleAnalyze = async (message: GmailMessageSummary) => {
+  const handleAnalyze = async (message: GmailMessageSummary): Promise<void> => {
     setAnalyzingMessageId(message.id);
     setError(null);
     try {
@@ -182,7 +182,7 @@ export default function GmailInboxModal({
     }
   };
 
-  const formatDate = (dateStr: string) => {
+  const formatDate = (dateStr: string): string => {
     try {
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return dateStr;

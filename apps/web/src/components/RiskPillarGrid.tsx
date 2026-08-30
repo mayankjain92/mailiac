@@ -7,7 +7,7 @@ interface RiskPillarGridProps {
   report?: AnalysisReport | null;
 }
 
-export default function RiskPillarGrid({ report }: RiskPillarGridProps) {
+export default function RiskPillarGrid({ report }: RiskPillarGridProps): React.JSX.Element {
   const pillars = report?.riskMatrix?.pillars;
 
   const authScore = pillars?.authentication ? Math.round(pillars.authentication.score) : 91;

@@ -38,7 +38,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
     }
   }, [initialJobId, initialFileName]);
 
-  const handleJobCreated = (jobId: string, fileName: string) => {
+  const handleJobCreated = (jobId: string, fileName: string): void => {
     const newJob: ForensicJob = {
       id: jobId,
       fileName,
@@ -116,19 +116,21 @@ function ForensicAnalysisContent(): React.JSX.Element {
       }
     }, 800);
 
-    return () => clearInterval(interval);
+    return (): void => {
+      clearInterval(interval);
+    };
   }, [jobs, fetchReport]);
 
   const activeJob = jobs.find((j) => j.id === activeJobId);
 
-  const handleReset = () => {
+  const handleReset = (): void => {
     setActiveJobId(null);
     router.push('/forensic-analysis');
   };
 
   return (
     <div className="min-h-screen bg-[#F2F2EE] dark:bg-[#0E1210] text-[#1a1c1c] dark:text-[#F2F2EE] transition-colors duration-200">
-      <StitchLandingHeader />
+      <StitchLandingHeader onJobCreated={handleJobCreated} />
 
       <main className="w-full">
         {activeJob ? (
@@ -265,7 +267,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
   );
 }
 
-export default function ForensicAnalysisPage() {
+export default function ForensicAnalysisPage(): React.JSX.Element {
   return (
     <Suspense
       fallback={
