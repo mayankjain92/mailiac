@@ -69,6 +69,7 @@ describe('Express Gmail Routes (/api/gmail)', () => {
     const app = express();
     app.use(express.json());
     app.use('/api/gmail', gmailRouter);
+    app.use('/api/integrations/gmail', gmailRouter);
     app.use(errorHandler);
 
     await new Promise<void>((resolve) => {
@@ -103,7 +104,7 @@ describe('Express Gmail Routes (/api/gmail)', () => {
     });
   });
 
-  describe('GET /api/gmail/auth/callback', () => {
+  describe('GET /api/gmail/auth/callback and alias endpoints', () => {
     it('happy path: exchanges code, saves to MongoDB, sets cookie, and redirects to frontend', async () => {
       vi.mocked(exchangeCodeForTokens).mockResolvedValue({
         accessToken: 'mock-access-token-123',
@@ -134,6 +135,22 @@ describe('Express Gmail Routes (/api/gmail)', () => {
         }),
         { upsert: true, new: true }
       );
+    });
+
+    it('supports /api/integrations/gmail/callback as an alias', async () => {
+      vi.mocked(exchangeCodeForTokens).mockResolvedValue({
+        accessToken: 'mock-access-token-999',
+        tokenExpiry: new Date(Date.now() + 3600000),
+        email: 'analyst@target-corp.com',
+      });
+
+      const res = await fetch(
+        `${baseUrl}/api/integrations/gmail/callback?code=integration-code&state=integration-sess`,
+        { redirect: 'manual' }
+      );
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe('http://localhost:3000/?gmail=connected');
     });
 
     it('returns 400 Bad Request when code query parameter is missing', async () => {

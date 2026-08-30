@@ -34,6 +34,7 @@ app.use('/api', jobsRouter);
 app.use('/api', reportsRouter);
 app.use('/api', notifyRouter);
 app.use('/api/gmail', gmailRouter);
+app.use('/api/integrations/gmail', gmailRouter);
 
 app.use(errorHandler);
 

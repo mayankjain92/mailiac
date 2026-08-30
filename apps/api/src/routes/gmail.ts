@@ -60,10 +60,10 @@ export async function findConnectedAccount(
 }
 
 /**
- * GET /api/gmail/auth/url
+ * GET /api/gmail/auth/url or /api/gmail/url
  * Generates the Google OAuth 2.0 consent URL.
  */
-gmailRouter.get('/auth/url', (req: Request, res: Response, next: NextFunction): void => {
+gmailRouter.get(['/auth/url', '/url'], (req: Request, res: Response, next: NextFunction): void => {
   try {
     const existingSessionId = resolveSessionId(req) ?? randomUUID();
     const url = generateAuthUrl(existingSessionId);
@@ -74,11 +74,11 @@ gmailRouter.get('/auth/url', (req: Request, res: Response, next: NextFunction): 
 });
 
 /**
- * GET /api/gmail/auth/callback
+ * GET /api/gmail/auth/callback & /api/gmail/callback
  * Handles Google OAuth redirect, exchanges authorization code for tokens,
  * persists the account in MongoDB, sets a session cookie, and redirects to frontend.
  */
-gmailRouter.get('/auth/callback', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+gmailRouter.get(['/auth/callback', '/callback'], async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const code = req.query['code'];
     const state = req.query['state'];
