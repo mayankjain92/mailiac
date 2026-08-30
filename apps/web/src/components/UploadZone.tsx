@@ -18,7 +18,7 @@ interface UploadZoneProps {
   onJobCreated: (jobId: string, fileName: string) => void;
 }
 
-export default function UploadZone({ onJobCreated }: UploadZoneProps) {
+export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX.Element {
   const [ingestionMode, setIngestionMode] = useState<'eml' | 'gmail'>('eml');
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -50,17 +50,17 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps) {
     checkGmailStatus();
   }, [checkGmailStatus]);
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent): void => {
     e.preventDefault();
     setIsDragging(true);
   };
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = (e: React.DragEvent): void => {
     e.preventDefault();
     setIsDragging(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent): void => {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -69,13 +69,13 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps) {
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>): void => {
     if (e.target.files && e.target.files.length > 0) {
       processFile(e.target.files[0]);
     }
   };
 
-  const processFile = (file: File) => {
+  const processFile = (file: File): void => {
     setError(null);
     if (!file.name.endsWith('.eml') && file.type !== 'message/rfc822') {
       setError('Please select a valid .eml file format.');
@@ -84,7 +84,7 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps) {
     setSelectedFile(file);
   };
 
-  const handleUpload = async () => {
+  const handleUpload = async (): Promise<void> => {
     if (!selectedFile) return;
 
     setIsUploading(true);
@@ -258,12 +258,18 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps) {
 
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setIsGmailModalOpen(true)}
+                onClick={() => {
+                  if (isGmailConnected) {
+                    window.location.href = '/mailbox';
+                  } else {
+                    setIsGmailModalOpen(true);
+                  }
+                }}
                 className="bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold px-5 py-2.5 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors inline-flex items-center gap-2 shadow-sm"
               >
                 {isGmailConnected ? (
                   <>
-                    <span>Browse Gmail Inbox</span>
+                    <span>Browse Gmail Mailbox</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </>
                 ) : (

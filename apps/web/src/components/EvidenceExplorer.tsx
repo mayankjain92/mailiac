@@ -154,6 +154,10 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
     }
   };
 
+  const handleDownloadPdf = (): void => {
+    window.open(`/api/reports/${encodeURIComponent(caseId)}/pdf`, '_blank');
+  };
+
   const handlePrint = (): void => {
     window.print();
   };
@@ -183,6 +187,13 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleDownloadPdf}
+            className="border border-[#0052ff]/30 dark:border-[#3b82f6]/30 hover:border-[#0052ff] dark:hover:border-[#3b82f6] text-[#0052ff] dark:text-[#3b82f6] px-3.5 py-1.5 rounded text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors bg-[#0052ff]/5 dark:bg-[#3b82f6]/10"
+            title="Download PDF Forensic Report"
+          >
+            <Download className="w-3.5 h-3.5" /> PDF Report
+          </button>
           <button
             onClick={handlePrint}
             className="border border-[#D5D5CE] dark:border-[#29342F] hover:border-[#0052ff] dark:hover:border-[#3b82f6] text-[#1a1c1c] dark:text-[#F2F2EE] px-3.5 py-1.5 rounded text-xs font-mono font-medium inline-flex items-center gap-1.5 transition-colors bg-[#EAEAE5] dark:bg-[#151A17]"

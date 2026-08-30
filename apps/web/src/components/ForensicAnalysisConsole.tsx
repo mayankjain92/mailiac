@@ -85,7 +85,9 @@ export default function ForensicAnalysisConsole({
       setElapsedMs(Date.now() - start);
     }, 100);
 
-    return () => clearInterval(timer);
+    return (): void => {
+      clearInterval(timer);
+    };
   }, [job.status, job.report]);
 
   // Dynamic active stage progression during processing
@@ -110,7 +112,9 @@ export default function ForensicAnalysisConsole({
       });
     }, 600);
 
-    return () => clearInterval(interval);
+    return (): void => {
+      clearInterval(interval);
+    };
   }, [job.status, isCompleted, isQueued, isFailed]);
 
   // Determine stage states

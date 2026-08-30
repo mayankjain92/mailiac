@@ -1,0 +1,234 @@
+<!DOCTYPE html><html class="light" lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Mailiac - Forensic Ingestion</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-tint": "#004ced",
+                        "on-tertiary": "#ffffff",
+                        "secondary-fixed": "#e5e2e1",
+                        "primary": "#003ec7",
+                        "error-container": "#ffdad6",
+                        "on-secondary-fixed-variant": "#474646",
+                        "secondary-container": "#e5e2e1",
+                        "background": "#f9f9f9",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "surface-container-high": "#e8e8e8",
+                        "inverse-surface": "#2f3131",
+                        "surface-bright": "#f9f9f9",
+                        "on-primary-container": "#dfe3ff",
+                        "primary-fixed": "#dde1ff",
+                        "on-tertiary-fixed-variant": "#464744",
+                        "inverse-primary": "#b7c4ff",
+                        "on-tertiary-container": "#e5e4e0",
+                        "on-secondary-container": "#656464",
+                        "error": "#ba1a1a",
+                        "on-primary": "#ffffff",
+                        "surface-variant": "#e2e2e2",
+                        "tertiary-fixed-dim": "#c7c7c3",
+                        "on-primary-fixed-variant": "#0038b6",
+                        "primary-fixed-dim": "#b7c4ff",
+                        "inverse-on-surface": "#f1f1f1",
+                        "outline-variant": "#c3c5d9",
+                        "surface-container-low": "#f4f3f3",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#1a1c1c",
+                        "outline": "#737688",
+                        "tertiary-fixed": "#e3e2df",
+                        "primary-container": "#0052ff",
+                        "on-primary-fixed": "#001452",
+                        "surface-container": "#eeeeee",
+                        "on-error-container": "#93000a",
+                        "on-surface": "#1a1c1c",
+                        "tertiary-container": "#656663",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "surface-container-highest": "#e2e2e2",
+                        "surface": "#f9f9f9",
+                        "secondary": "#5f5e5e",
+                        "on-surface-variant": "#434656",
+                        "tertiary": "#4d4e4b",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-dim": "#dadada",
+                        "on-error": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "24px",
+                        "unit": "4px",
+                        "margin-desktop": "64px",
+                        "margin-mobile": "20px",
+                        "section-gap": "120px",
+                        "container-max": "1440px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Hanken Grotesk"],
+                        "mono-label": ["JetBrains Mono"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "display-hero": ["Hanken Grotesk"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "mono-data": ["JetBrains Mono"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "headline-lg-mobile": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "mono-label": ["11px", { "lineHeight": "16px", "letterSpacing": "0.1em", "fontWeight": "700" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "display-hero": ["112px", { "lineHeight": "100px", "letterSpacing": "-0.04em", "fontWeight": "800" }],
+                        "headline-lg": ["64px", { "lineHeight": "72px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "mono-data": ["13px", { "lineHeight": "20px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "headline-md": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-lg-mobile": ["40px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .forensic-bracket {
+            position: relative;
+        }
+        .forensic-bracket::before,
+        .forensic-bracket::after {
+            content: '';
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-color: #0052ff;
+            border-style: solid;
+        }
+        .forensic-bracket-tl::before { top: -1px; left: -1px; border-width: 1px 0 0 1px; }
+        .forensic-bracket-tr::after { top: -1px; right: -1px; border-width: 1px 1px 0 0; }
+        .forensic-bracket-bl::before { bottom: -1px; left: -1px; border-width: 0 0 1px 1px; }
+        .forensic-bracket-br::after { bottom: -1px; right: -1px; border-width: 0 1px 1px 0; }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md antialiased overflow-hidden">
+<!-- Background Mock Landing Page (Darkened) -->
+<div class="fixed inset-0 z-0 opacity-20 pointer-events-none" data-alt="A highly complex, technical dashboard interface displaying forensic email analysis data. The screen is filled with detailed data visualizations, monospace code snippets, and structured tables. The visual style is rooted in Swiss minimalism, utilizing a strict grid layout, hairline borders, and a stark monochromatic palette with precise electric blue highlights. The lighting is digital and crisp, conveying a sense of high-stakes cybersecurity intelligence gathering in a modern digital laboratory." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDQhzrwuDUUa4s8vnu0uUkd906feWwBh_mphMmaq-rd0F-zv7VPsbDw6OefQDUNaxQp4bsp9mYDEZ3TEciP4LSxgeWCjqlhDMFj94hyL49tBJin15qZ3zX5Atnj5FkTN6Hym4ioc4uAF3S6d0OIUYAnIXKJXdrqjPmXhswMXKD_6Ip1XV9SUoMchnFLp7_6ph3chZ-Dbt5mUROn1uYgJXrmAIkeLVJCQQFxmoO8_H9MAI9cxEm-6l3U')"></div>
+<div class="fixed inset-0 z-10 bg-on-background/80 backdrop-blur-sm flex items-center justify-center p-margin-mobile md:p-margin-desktop">
+<!-- Main Modal Container -->
+<main class="relative z-20 w-full max-w-[800px] bg-surface border border-surface-variant forensic-bracket forensic-bracket-tl forensic-bracket-br shadow-2xl flex flex-col">
+<!-- Close Button -->
+<button aria-label="Close modal" class="absolute top-6 right-6 text-on-surface-variant hover:text-primary transition-colors focus:outline-none">
+<span class="material-symbols-outlined" style="font-variation-settings: 'wght' 300;">close</span>
+</button>
+<!-- Header -->
+<header class="p-8 md:p-12 border-b border-surface-variant">
+<p class="font-mono-label text-mono-label text-primary mb-4 tracking-widest uppercase">MAILIAC · FORENSIC INGESTION</p>
+<h1 class="font-headline-md text-headline-md text-on-surface mb-2">Analyze an email.</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl">Choose how you want to submit an email for forensic analysis.</p>
+</header>
+<!-- Content Area -->
+<div class="p-8 md:p-12 flex-grow bg-surface-container-lowest">
+<!-- Options Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+<!-- Card 1: EML Upload -->
+<div class="group relative flex flex-col border border-surface-variant bg-surface hover:border-primary transition-colors duration-200 forensic-bracket p-6">
+<div class="flex items-center justify-between mb-4">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors" style="font-variation-settings: 'wght' 300, 'FILL' 0;">upload_file</span>
+<span class="font-mono-data text-mono-data text-on-surface-variant text-[10px]">LOCAL INGESTION</span>
+</div>
+<h2 class="font-body-lg text-body-lg font-bold mb-2">Upload .EML</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mb-6 flex-grow">Drop an .eml file here or choose one from your workstation.</p>
+<button class="w-full py-3 px-4 bg-surface border border-on-surface text-on-surface font-body-md font-semibold hover:bg-on-surface hover:text-surface transition-colors flex items-center justify-between group-hover:border-primary group-hover:bg-primary group-hover:text-on-primary">
+<span class="">Choose .EML file</span>
+<span class="material-symbols-outlined text-sm transition-transform group-hover:translate-x-1">arrow_forward</span>
+</button>
+<div id="upload-selected-state" class="hidden absolute inset-0 bg-surface z-10 p-6 flex flex-col justify-center items-center text-center"><span class="material-symbols-outlined text-primary mb-2">description</span><p class="font-mono-data text-sm mb-1">evidence_sample_01.eml</p><p class="text-xs text-on-surface-variant mb-4">1.2 MB</p><button class="w-full py-3 px-4 bg-primary text-on-primary font-semibold flex items-center justify-between"><span class="">Start Forensic Analysis</span><span class="material-symbols-outlined">arrow_forward</span></button></div></div>
+<!-- Card 2: Connect Gmail -->
+<div class="group relative flex flex-col border border-surface-variant bg-surface hover:border-primary transition-colors duration-200 forensic-bracket p-6 bg-primary-container/5 border-primary/20">
+<div class="flex items-center justify-between mb-4">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors" style="font-variation-settings: 'wght' 300, 'FILL' 0;">mail</span>
+<span class="font-mono-data text-mono-data text-on-surface-variant text-[10px]">GMAIL CONNECTION</span>
+</div>
+<h2 class="font-body-lg text-body-lg font-bold mb-2">Connect Gmail</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mb-6 flex-grow">Analyze emails directly from your mailbox without downloading individual .eml files.</p>
+<button class="w-full py-3 px-4 bg-primary text-on-primary font-body-md font-semibold hover:bg-on-primary-fixed-variant transition-colors flex items-center justify-between rounded-DEFAULT">
+<span class="">Connect Gmail</span>
+<span class="material-symbols-outlined text-sm transition-transform group-hover:translate-x-1">arrow_forward</span>
+</button>
+<div id="gmail-connecting-state" class="hidden absolute inset-0 bg-surface/95 backdrop-blur-sm z-10 p-6 flex flex-col justify-center items-center text-center"><div class="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-4"></div><p class="font-mono-label text-primary tracking-widest">CONNECTING TO GOOGLE...</p></div></div>
+</div>
+<!-- Help Section -->
+<div class="border-t border-surface-variant pt-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+<div>
+<h3 class="font-body-md text-body-md font-semibold text-on-surface">Need an .EML file?</h3>
+<p class="font-body-md text-body-md text-on-surface-variant text-sm">You can export the original message from Gmail in a few steps.</p>
+</div>
+<button class="font-mono-label text-mono-label text-primary hover:text-on-primary-fixed-variant transition-colors flex items-center gap-2 border-b border-primary pb-1" id="help-toggle">
+                        How to get an .EML from Gmail
+                        <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Footer / Privacy -->
+<footer class="p-6 md:px-12 md:py-6 bg-surface border-t border-surface-variant flex items-center gap-3">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'wght' 300;">shield</span>
+<p class="font-body-md text-body-md text-on-surface-variant text-sm leading-snug">
+                    Your mailbox remains under your control. Mailiac only requests the permissions required for email analysis.
+                </p>
+</footer>
+</main>
+<!-- Secondary Help Overlay (Hidden by default) -->
+<div class="hidden absolute right-margin-desktop top-1/2 -translate-y-1/2 w-80 bg-inverse-surface text-inverse-on-surface border border-inverse-primary forensic-bracket forensic-bracket-tl shadow-xl p-6 z-30" id="help-overlay">
+<div class="flex justify-between items-center border-b border-on-surface-variant pb-4 mb-4">
+<h4 class="font-mono-label text-mono-label text-inverse-primary">EXPORTING .EML (GMAIL)</h4>
+<button class="text-inverse-on-surface hover:text-inverse-primary focus:outline-none" id="close-help">
+<span class="material-symbols-outlined text-sm">close</span>
+</button>
+</div>
+<ol class="space-y-4 font-mono-data text-mono-data text-sm">
+<li class="flex gap-3">
+<span class="text-inverse-primary font-bold">01.</span>
+<span class="">Open the target email in Gmail.</span>
+</li>
+<li class="flex gap-3">
+<span class="text-inverse-primary font-bold">02.</span>
+<span class="">Click the three-dot menu (More) in the top right.</span>
+</li>
+<li class="flex gap-3">
+<span class="text-inverse-primary font-bold">03.</span>
+<span class="">Select 'Show original' from the dropdown.</span>
+</li>
+<li class="flex gap-3">
+<span class="text-inverse-primary font-bold">04.</span>
+<span class="">Click 'Download Original' in the new tab.</span>
+</li>
+</ol>
+</div>
+</div>
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const helpToggle = document.getElementById('help-toggle');
+            const helpOverlay = document.getElementById('help-overlay');
+            const closeHelp = document.getElementById('close-help');
+
+            if(helpToggle && helpOverlay && closeHelp) {
+                helpToggle.addEventListener('click', () => {
+                    helpOverlay.classList.remove('hidden');
+                });
+
+                closeHelp.addEventListener('click', () => {
+                    helpOverlay.classList.add('hidden');
+                });
+            }
+        });
+    </script>
+
+
+</body></html>
