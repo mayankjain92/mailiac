@@ -161,7 +161,10 @@ export default function ForensicIngestionModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
+      onClick={onClose}
+    >
       {/* Main Modal Container */}
       <div
         className="relative z-20 w-full max-w-[820px] bg-[#F2F2EE] dark:bg-[#121614] border border-[#D5D5CE] dark:border-[#29342F] rounded-lg shadow-2xl flex flex-col overflow-hidden text-[#1a1c1c] dark:text-[#F2F2EE] forensic-card bracket-tl bracket-br transition-colors duration-200"

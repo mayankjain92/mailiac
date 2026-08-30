@@ -57,13 +57,14 @@ function LandingPageContent(): React.JSX.Element {
                 >
                   Analyze an email <ArrowUpRight className="w-4 h-4" />
                 </button>
-                <Link
-                  href="/mailbox"
-                  className="border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] px-6 py-4 rounded font-medium hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-colors inline-flex items-center justify-center text-base gap-2"
+                <button
+                  type="button"
+                  onClick={() => setIsIngestionModalOpen(true)}
+                  className="border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] px-6 py-4 rounded font-medium hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-colors inline-flex items-center justify-center text-base gap-2 cursor-pointer"
                 >
                   <Mail className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" />
                   Gmail Mailbox →
-                </Link>
+                </button>
               </div>
 
               <div className="mt-12 pt-8 border-t border-[#D5D5CE] dark:border-[#29342F] flex items-center gap-3">

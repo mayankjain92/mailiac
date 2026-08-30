@@ -71,19 +71,20 @@ export default function StitchLandingHeader({
               Forensic Analysis
             </button>
 
-            <Link
-              className={`transition-colors duration-200 uppercase text-xs tracking-wider flex items-center gap-1.5 ${
+            <button
+              type="button"
+              onClick={handleAnalyzeClick}
+              className={`transition-colors duration-200 uppercase text-xs tracking-wider flex items-center gap-1.5 cursor-pointer ${
                 isMailboxPage
                   ? 'text-[#0052ff] dark:text-[#3b82f6] font-bold border-b-2 border-[#0052ff] dark:border-[#3b82f6] pb-1'
                   : 'text-[#434656] dark:text-[#A0A7A3] hover:text-[#0052ff] dark:hover:text-[#3b82f6]'
               }`}
-              href="/mailbox"
             >
               <span>Gmail Mailbox</span>
               {isGmailConnected && (
                 <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse"></span>
               )}
-            </Link>
+            </button>
           </div>
 
           {/* Action CTA Buttons */}
