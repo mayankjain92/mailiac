@@ -98,6 +98,41 @@ code, pre, .font-mono, .font-mono-label, .font-mono-data {
   100% { box-shadow: 0 0 0 0 rgba(0, 82, 255, 0); }
 }
 
+@keyframes forensic-float {
+  0%, 100% {
+    transform: translateY(-8px);
+  }
+  50% {
+    transform: translateY(8px);
+  }
+}
+
+.animate-forensic-float {
+  animation: forensic-float 10s ease-in-out infinite;
+}
+
+@keyframes envelope-float {
+  0%, 100% {
+    transform: translateY(-4px);
+  }
+  50% {
+    transform: translateY(4px);
+  }
+}
+
+.animate-envelope-float {
+  animation: envelope-float 6s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-forensic-float,
+  .animate-envelope-float {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
 /* Glassmorphic Container Card */
 .glass-panel {
   background: #ffffff;

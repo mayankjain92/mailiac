@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import StitchLandingHeader from '@/components/StitchLandingHeader';
 import RiskPillarGrid from '@/components/RiskPillarGrid';
 import ForensicIngestionModal from '@/components/ForensicIngestionModal';
+import ForensicHeroVisualizer from '@/components/ForensicHeroVisualizer';
 import { ArrowUpRight, ShieldCheck, Mail, FileText, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
@@ -75,46 +76,9 @@ function LandingPageContent(): React.JSX.Element {
               </div>
             </div>
 
-            {/* Hero Right Column — Stitch Forensic Visualizer Asset & Floating Cards */}
-            <div className="relative h-[480px] sm:h-[520px] lg:h-[560px] w-full">
-              {/* Graphic Container */}
-              <div className="absolute inset-0 bg-[#F2F2EE] dark:bg-[#0E1210] border border-[#D5D5CE] dark:border-[#29342F] rounded-lg shadow-sm flex items-center justify-center overflow-hidden p-6 transition-colors">
-                <img
-                  src="/screen_3_visualization.png"
-                  alt="Mailiac Forensic Visualizer"
-                  className="max-w-full max-h-full object-contain mix-blend-multiply dark:mix-blend-screen dark:invert opacity-95"
-                />
-              </div>
-
-              {/* Floating Tech Card 1 (Top Left) */}
-              <div className="absolute top-6 left-[-8px] sm:left-[-12px] forensic-card bg-[#F2F2EE] dark:bg-[#1B211E] border border-[#D5D5CE] dark:border-[#29342F] p-4 shadow-md rounded bracket-tl bracket-br max-w-[270px] z-10 transition-colors">
-                <div className="text-[10px] font-mono font-bold text-[#737688] dark:text-[#A0A7A3] mb-1 uppercase tracking-wider">
-                  MAILIAC · QUERY
-                </div>
-                <div className="text-xs font-mono text-[#1a1c1c] dark:text-[#F2F2EE] font-semibold">
-                  &gt; Q3 FX exposure across desks?
-                </div>
-                <div className="text-xs font-mono text-[#434656] dark:text-[#A0A7A3] mt-1">
-                  £42M over 3 desks · 78% hedged.
-                </div>
-                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[#D5D5CE] dark:border-[#29342F]">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#0052ff] dark:bg-[#3b82f6]"></div>
-                  <span className="text-[10px] font-mono text-[#0052ff] dark:text-[#3b82f6] font-bold">6 sources · sealed</span>
-                </div>
-              </div>
-
-              {/* Floating Tech Card 2 (Bottom Right) */}
-              <div className="absolute bottom-6 right-[-8px] sm:right-[-12px] forensic-card bg-[#F2F2EE] dark:bg-[#1B211E] border border-[#D5D5CE] dark:border-[#29342F] p-4 shadow-md rounded bracket-tr bracket-bl max-w-[270px] z-10 transition-colors">
-                <div className="text-[10px] font-mono font-bold text-[#737688] dark:text-[#A0A7A3] mb-1 uppercase tracking-wider">
-                  AUTH · AUDIT
-                </div>
-                <div className="text-xs font-mono text-[#1a1c1c] dark:text-[#F2F2EE] flex justify-between gap-4">
-                  <span>04:14:07</span> <span className="text-[#0052ff] dark:text-[#3b82f6] font-bold">PERMIT</span> <span>wf-mistral-3 · read</span>
-                </div>
-                <div className="text-xs font-mono text-[#1a1c1c] dark:text-[#F2F2EE] flex justify-between gap-4 mt-1">
-                  <span>04:14:12</span> <span className="text-[#ba1a1a] dark:text-[#ef4444] font-bold">DENY</span> <span>egress · recorded</span>
-                </div>
-              </div>
+            {/* Hero Right Column — Forensic Intelligence Visualization & Floating Evidence Panels */}
+            <div className="relative w-full flex items-center justify-center">
+              <ForensicHeroVisualizer />
             </div>
           </div>
         </section>
