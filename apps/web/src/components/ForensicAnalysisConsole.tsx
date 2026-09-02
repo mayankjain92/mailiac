@@ -9,6 +9,7 @@ import {
   XCircle,
   FileText,
   Shield,
+  ShieldCheck,
   Layers,
   Route,
   KeyRound,
@@ -22,6 +23,7 @@ import {
   Clock,
   Radio,
 } from 'lucide-react';
+import AnalystFeedbackModal from './AnalystFeedbackModal';
 
 export interface ForensicJob {
   id: string;
@@ -64,6 +66,7 @@ export default function ForensicAnalysisConsole({
 }: ForensicAnalysisConsoleProps): React.JSX.Element {
   const [elapsedMs, setElapsedMs] = useState<number>(0);
   const [activeStageIndex, setActiveStageIndex] = useState<number>(0);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
 
   // Stage progression logic strictly derived from backend job status
   const isCompleted = job.status === 'completed' && !!job.report;
@@ -528,6 +531,14 @@ export default function ForensicAnalysisConsole({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setIsFeedbackModalOpen(true)}
+              className="border border-[#0052ff] dark:border-[#3b82f6] text-[#0052ff] dark:text-[#3b82f6] hover:bg-[#0052ff]/10 dark:hover:bg-[#3b82f6]/20 bg-white dark:bg-[#151A17] text-xs font-bold px-4 py-2.5 rounded transition-colors flex items-center gap-2 font-mono shadow-sm"
+              title="Submit SOC Analyst Feedback & Ground-Truth Calibration"
+            >
+              <ShieldCheck className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" /> Submit Feedback
+            </button>
+
             <Link
               href={`/analysis-console/${job.id}/evidence`}
               className="bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold px-5 py-2.5 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 shadow-sm font-mono"
@@ -536,14 +547,14 @@ export default function ForensicAnalysisConsole({
             </Link>
             <button
               onClick={handleScrollToReport}
-              className="border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold px-4 py-2.5 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-colors"
+              className="border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold px-4 py-2.5 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-colors font-mono"
             >
               Overview Score
             </button>
             {onReset && (
               <button
                 onClick={onReset}
-                className="border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold px-4 py-2.5 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-colors"
+                className="border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold px-4 py-2.5 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-colors font-mono"
               >
                 Analyze Another
               </button>
@@ -568,13 +579,20 @@ export default function ForensicAnalysisConsole({
           {onReset && (
             <button
               onClick={onReset}
-              className="bg-[#ba1a1a] text-white text-xs font-semibold px-5 py-2.5 rounded hover:bg-[#93000a] transition-colors flex items-center gap-2"
+              className="bg-[#ba1a1a] text-white text-xs font-semibold px-5 py-2.5 rounded hover:bg-[#93000a] transition-colors flex items-center gap-2 font-mono"
             >
               <RefreshCw className="w-4 h-4" /> Return to Upload
             </button>
           )}
         </div>
       )}
+
+      {/* Analyst Feedback Modal */}
+      <AnalystFeedbackModal
+        isOpen={isFeedbackModalOpen}
+        onClose={() => setIsFeedbackModalOpen(false)}
+        caseId={job.id}
+      />
     </div>
   );
 }

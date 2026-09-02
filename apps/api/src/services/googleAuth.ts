@@ -50,6 +50,7 @@ export function generateAuthUrl(state?: string, customRedirectUri?: string): str
   return client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
+    include_granted_scopes: true,
     scope: GMAIL_SCOPES,
     ...(state ? { state } : {}),
   });

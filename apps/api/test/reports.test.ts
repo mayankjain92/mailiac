@@ -13,9 +13,13 @@ vi.mock('@mailiac/db', () => ({
   EmailAnalysisRecordModel: {
     find: vi.fn(),
   },
+  AnalystFeedbackModel: {
+    findOneAndUpdate: vi.fn(),
+    findOne: vi.fn(),
+  },
 }));
 
-import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel } from '@mailiac/db';
+import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel, AnalystFeedbackModel } from '@mailiac/db';
 
 describe('GET /api/reports/:id', () => {
   let server: ReturnType<ReturnType<typeof express>['listen']>;
@@ -191,4 +195,97 @@ describe('GET /api/reports/:id', () => {
       expect(EmailAnalysisRecordModel.find).toHaveBeenCalledWith({ source: 'gmail' });
     });
   });
+
+  describe('POST /api/reports/:id/feedback and GET /api/reports/:id/feedback', () => {
+    it('POST: returns 200 and saves valid analyst feedback', async () => {
+      const mockFeedback = {
+        jobId: 'case-999',
+        analystVerdict: 'CONFIRMED_TRUE_POSITIVE',
+        actualThreatCategory: 'Credential Harvesting',
+        suggestedScore: 90,
+      };
+
+      (AnalystFeedbackModel.findOneAndUpdate as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue(mockFeedback),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/case-999/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analystVerdict: 'CONFIRMED_TRUE_POSITIVE',
+          actualThreatCategory: 'Credential Harvesting',
+          suggestedScore: 90,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.feedback.jobId).toBe('case-999');
+    });
+
+    it('POST: returns 400 when analystVerdict is invalid', async () => {
+      const res = await fetch(`${baseUrl}/api/reports/case-999/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analystVerdict: 'INVALID_VERDICT',
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toContain('Invalid analystVerdict');
+    });
+
+    it('POST: returns 200 and saves valid user mode feedback', async () => {
+      const mockFeedback = {
+        jobId: 'case-888',
+        feedbackMode: 'user',
+        analystVerdict: 'USER_ACCURATE',
+        userSuspicionLevel: 4,
+        userSelectedTriggers: ['Unexpected sender address or strange email format'],
+      };
+
+      (AnalystFeedbackModel.findOneAndUpdate as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue(mockFeedback),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/case-888/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feedbackMode: 'user',
+          analystVerdict: 'USER_ACCURATE',
+          userSuspicionLevel: 4,
+          userSelectedTriggers: ['Unexpected sender address or strange email format'],
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.feedback.feedbackMode).toBe('user');
+      expect(json.feedback.analystVerdict).toBe('USER_ACCURATE');
+    });
+
+    it('GET: returns existing feedback for a caseId', async () => {
+      const mockFeedback = {
+        jobId: 'case-999',
+        analystVerdict: 'FALSE_POSITIVE',
+        suggestedScore: 10,
+      };
+
+      (AnalystFeedbackModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue(mockFeedback),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/case-999/feedback`);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.feedback?.analystVerdict).toBe('FALSE_POSITIVE');
+    });
+  });
 });
+

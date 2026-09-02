@@ -11,6 +11,7 @@ import {
   ArrowRight,
   ShieldCheck,
   ExternalLink,
+  X,
 } from 'lucide-react';
 import GmailInboxModal from './GmailInboxModal';
 
@@ -73,6 +74,7 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX
     if (e.target.files && e.target.files.length > 0) {
       processFile(e.target.files[0]);
     }
+    e.target.value = '';
   };
 
   const processFile = (file: File): void => {
@@ -172,7 +174,11 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={(e) => {
+                if (fileInputRef.current && e.target !== fileInputRef.current) {
+                  fileInputRef.current.click();
+                }
+              }}
               className={`border-2 border-dashed rounded-md p-8 text-center cursor-pointer transition-all duration-200 flex flex-col items-center gap-3 ${
                 isDragging
                   ? 'border-[#0052ff] dark:border-[#3b82f6] bg-[#0052ff]/10 dark:bg-[#3b82f6]/20'
@@ -184,6 +190,7 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX
                 type="file"
                 accept=".eml,message/rfc822"
                 onChange={handleFileSelect}
+                onClick={(e) => e.stopPropagation()}
                 className="hidden"
               />
 
@@ -211,26 +218,39 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX
                   </div>
                 </div>
 
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleUpload();
-                  }}
-                  disabled={isUploading}
-                  className="bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold px-4 py-2 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 disabled:opacity-50"
-                >
-                  {isUploading ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Ingesting...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Start Forensics
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedFile(null);
+                    }}
+                    disabled={isUploading}
+                    className="border border-[#D5D5CE] dark:border-[#29342F] text-[#737688] hover:text-[#1a1c1c] dark:hover:text-[#F2F2EE] p-2 rounded text-xs transition-colors disabled:opacity-50"
+                    title="Remove selected file"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleUpload();
+                    }}
+                    disabled={isUploading}
+                    className="bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold px-4 py-2 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 disabled:opacity-50 shadow-sm"
+                  >
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Ingesting...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Start Forensics
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             )}
           </div>
