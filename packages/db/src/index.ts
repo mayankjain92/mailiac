@@ -265,4 +265,79 @@ export async function syncEmailAnalysisIndexes(): Promise<void> {
   await EmailAnalysisRecordModel.syncIndexes();
 }
 
+// ---------------------------------------------------------------------------
+// AnalystFeedback Mongoose schema + model
+// ---------------------------------------------------------------------------
+
+export interface AnalystFeedback {
+  jobId: string;
+  feedbackMode?: 'user' | 'expert';
+  analystVerdict:
+    | 'CONFIRMED_TRUE_POSITIVE'
+    | 'CONFIRMED_TRUE_NEGATIVE'
+    | 'FALSE_POSITIVE'
+    | 'FALSE_NEGATIVE'
+    | 'MISCLASSIFIED_SEVERITY'
+    | 'USER_ACCURATE'
+    | 'USER_FALSE_ALARM'
+    | 'USER_MISSED_THREAT'
+    | 'USER_UNSURE';
+  actualThreatCategory?: string;
+  pillarAccuracy?: {
+    identityCorrect?: boolean;
+    aiIntentCorrect?: boolean;
+    cryptoAuthCorrect?: boolean;
+    ipReputationCorrect?: boolean;
+  };
+  suggestedScore?: number;
+  userSuspicionLevel?: number;
+  userSelectedTriggers?: string[];
+  notes?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type AnalystFeedbackDocument = AnalystFeedback & Document;
+
+const analystFeedbackSchema = new Schema<AnalystFeedbackDocument>(
+  {
+    jobId: { type: String, required: true, index: true },
+    feedbackMode: { type: String, enum: ['user', 'expert'], default: 'expert' },
+    analystVerdict: {
+      type: String,
+      enum: [
+        'CONFIRMED_TRUE_POSITIVE',
+        'CONFIRMED_TRUE_NEGATIVE',
+        'FALSE_POSITIVE',
+        'FALSE_NEGATIVE',
+        'MISCLASSIFIED_SEVERITY',
+        'USER_ACCURATE',
+        'USER_FALSE_ALARM',
+        'USER_MISSED_THREAT',
+        'USER_UNSURE',
+      ],
+      required: true,
+    },
+    actualThreatCategory: { type: String },
+    pillarAccuracy: {
+      identityCorrect: { type: Boolean },
+      aiIntentCorrect: { type: Boolean },
+      cryptoAuthCorrect: { type: Boolean },
+      ipReputationCorrect: { type: Boolean },
+    },
+    suggestedScore: { type: Number, min: 0, max: 100 },
+    userSuspicionLevel: { type: Number, min: 1, max: 5 },
+    userSelectedTriggers: [{ type: String }],
+    notes: { type: String },
+  },
+  { timestamps: true }
+);
+
+analystFeedbackSchema.index({ jobId: 1 }, { unique: true });
+
+export const AnalystFeedbackModel =
+  (mongoose.models?.['AnalystFeedback'] as mongoose.Model<AnalystFeedbackDocument>) ||
+  model<AnalystFeedbackDocument>('AnalystFeedback', analystFeedbackSchema);
+
+
 

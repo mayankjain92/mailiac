@@ -5,6 +5,7 @@ import type { AnalysisReport, Finding, ForensicHop } from '@mailiac/shared-types
 import {
   Shield,
   ShieldAlert,
+  ShieldCheck,
   Fingerprint,
   Route,
   BrainCircuit,
@@ -23,6 +24,7 @@ import {
   Paperclip,
   Link2,
 } from 'lucide-react';
+import AnalystFeedbackModal from './AnalystFeedbackModal';
 
 interface EvidenceExplorerProps {
   report: AnalysisReport;
@@ -154,6 +156,7 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
   const [isTechnicalExpanded, setIsTechnicalExpanded] = useState<boolean>(false);
   const [showRawJson, setShowRawJson] = useState<boolean>(false);
   const [animatedScore, setAnimatedScore] = useState<number>(0);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
 
   const finalScore = Math.max(0, Math.min(100, report?.riskMatrix?.finalScore ?? 0));
   const intentList = report?.aiSummary?.intent || ['BENIGN'];
@@ -488,6 +491,15 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setIsFeedbackModalOpen(true)}
+              className="border border-[#0052ff] dark:border-[#3b82f6] text-[#0052ff] dark:text-[#3b82f6] hover:bg-[#0052ff]/10 dark:hover:bg-[#3b82f6]/20 px-4 py-2.5 rounded text-xs font-mono font-bold inline-flex items-center gap-1.5 transition-colors bg-[#FFFFFF] dark:bg-[#151A17] shadow-sm"
+              title="Submit SOC Analyst Feedback & Ground-Truth Calibration"
+            >
+              <ShieldCheck className="w-4 h-4" /> Submit Feedback
+            </button>
+
             <div className="flex items-center gap-2 border border-[#E5E5E5] dark:border-[#29342F] bg-[#FFFFFF] dark:bg-[#151A17] px-4 py-2 rounded shadow-sm">
               <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
               <span className="font-mono text-[11px] font-bold text-[#121212] dark:text-[#F2F2EE] tracking-wider">
@@ -1271,6 +1283,12 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
           <span>{isExportingPdf ? 'GENERATING PDF...' : 'EXPORT FORENSIC REPORT'}</span>
         </button>
       </div>
+
+      <AnalystFeedbackModal
+        isOpen={isFeedbackModalOpen}
+        onClose={() => setIsFeedbackModalOpen(false)}
+        caseId={caseId}
+      />
     </div>
   );
 }
