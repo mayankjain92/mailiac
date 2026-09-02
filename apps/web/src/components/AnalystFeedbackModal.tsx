@@ -63,8 +63,9 @@ export default function AnalystFeedbackModal({
   caseId,
   onFeedbackSaved,
 }: AnalystFeedbackModalProps) {
-  // Mode selection: 'user' (Everyday language) vs 'expert' (SOC Forensic)
+  // Persona Selection State
   const [feedbackMode, setFeedbackMode] = useState<'user' | 'expert'>('user');
+  const [isRoleChosen, setIsRoleChosen] = useState<boolean>(false);
 
   // User Mode State
   const [userVerdict, setUserVerdict] = useState<'USER_ACCURATE' | 'USER_FALSE_ALARM' | 'USER_MISSED_THREAT' | 'USER_UNSURE'>('USER_ACCURATE');
@@ -89,7 +90,7 @@ export default function AnalystFeedbackModal({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Fetch existing feedback if already submitted
+  // Reset or fetch existing feedback when modal opens
   useEffect(() => {
     if (isOpen && caseId) {
       setIsLoading(true);
@@ -101,14 +102,19 @@ export default function AnalystFeedbackModal({
         .then((data) => {
           if (data?.feedback) {
             const fb = data.feedback;
-            if (fb.feedbackMode) setFeedbackMode(fb.feedbackMode);
+            if (fb.feedbackMode) {
+              setFeedbackMode(fb.feedbackMode);
+              setIsRoleChosen(true);
+            }
             if (fb.analystVerdict) {
               if (fb.analystVerdict.startsWith('USER_')) {
                 setUserVerdict(fb.analystVerdict);
                 setFeedbackMode('user');
+                setIsRoleChosen(true);
               } else {
                 setAnalystVerdict(fb.analystVerdict);
                 setFeedbackMode('expert');
+                setIsRoleChosen(true);
               }
             }
             if (fb.actualThreatCategory) setActualThreatCategory(fb.actualThreatCategory);
@@ -128,6 +134,11 @@ export default function AnalystFeedbackModal({
         .finally(() => setIsLoading(false));
     }
   }, [isOpen, caseId]);
+
+  const selectRole = (mode: 'user' | 'expert') => {
+    setFeedbackMode(mode);
+    setIsRoleChosen(true);
+  };
 
   const toggleTrigger = (trigger: string) => {
     setUserSelectedTriggers((prev) =>
@@ -226,40 +237,101 @@ export default function AnalystFeedbackModal({
           </button>
         </div>
 
-        {/* Mode Selector Toggle */}
-        <div className="px-6 pt-4 pb-2 bg-[#EAEAE5]/60 dark:bg-[#151A17]/60 border-b border-[#D5D5CE] dark:border-[#29342F]">
-          <div className="grid grid-cols-2 p-1 bg-[#D5D5CE]/40 dark:bg-[#29342F]/50 rounded-md text-xs font-mono">
-            <button
-              type="button"
-              onClick={() => setFeedbackMode('user')}
-              className={`py-2 px-3 rounded font-bold transition-all flex items-center justify-center gap-2 ${
-                feedbackMode === 'user'
-                  ? 'bg-white dark:bg-[#1B211E] text-[#0052ff] dark:text-[#3b82f6] shadow-sm'
-                  : 'text-[#737688] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#F2F2EE]'
-              }`}
-            >
-              <User className="w-3.5 h-3.5" />
-              General User Form (Simple)
-            </button>
+        {/* Persona Header Switcher */}
+        {isRoleChosen && (
+          <div className="px-6 py-2.5 bg-[#EAEAE5]/60 dark:bg-[#151A17]/60 border-b border-[#D5D5CE] dark:border-[#29342F] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-[#737688] dark:text-[#A0A7A3]">Active Persona:</span>
+              <span className="font-bold text-xs text-[#0052ff] dark:text-[#3b82f6] flex items-center gap-1.5 bg-white dark:bg-[#1B211E] px-2.5 py-1 rounded border border-[#D5D5CE] dark:border-[#29342F]">
+                {feedbackMode === 'user' ? (
+                  <>
+                    <User className="w-3.5 h-3.5" /> General User Form
+                  </>
+                ) : (
+                  <>
+                    <Shield className="w-3.5 h-3.5" /> SOC Security Expert Form
+                  </>
+                )}
+              </span>
+            </div>
 
             <button
               type="button"
-              onClick={() => setFeedbackMode('expert')}
-              className={`py-2 px-3 rounded font-bold transition-all flex items-center justify-center gap-2 ${
-                feedbackMode === 'expert'
-                  ? 'bg-white dark:bg-[#1B211E] text-[#0052ff] dark:text-[#3b82f6] shadow-sm'
-                  : 'text-[#737688] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#F2F2EE]'
-              }`}
+              onClick={() => setIsRoleChosen(false)}
+              className="text-[11px] font-bold text-[#0052ff] dark:text-[#3b82f6] hover:underline"
             >
-              <Shield className="w-3.5 h-3.5" />
-              SOC Security Expert Form
+              ← Change Persona
             </button>
           </div>
-        </div>
+        )}
 
         {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs font-mono">
-          {isLoading ? (
+          {!isRoleChosen ? (
+            /* Role Selection Step */
+            <div className="py-6 space-y-6 text-xs font-mono">
+              <div className="text-center space-y-1.5">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-[#1a1c1c] dark:text-[#F2F2EE]">
+                  Select Your Feedback Persona
+                </h3>
+                <p className="text-[#737688] dark:text-[#A0A7A3] max-w-md mx-auto">
+                  Choose which form you would like to submit for this email analysis:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                {/* Card 1: General User */}
+                <button
+                  type="button"
+                  onClick={() => selectRole('user')}
+                  className="p-5 rounded-lg border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] hover:border-[#0052ff] dark:hover:border-[#3b82f6] hover:shadow-md transition-all text-left group flex flex-col justify-between space-y-4"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6] group-hover:scale-110 transition-transform">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-[#1a1c1c] dark:text-[#F2F2EE]">
+                        General User
+                      </h4>
+                      <span className="text-[11px] text-[#737688] dark:text-[#A0A7A3]">Everyday Language</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-[#434656] dark:text-[#A0A7A3] leading-relaxed">
+                    Best for non-technical users to report False Alarms, Missed Threats, or suspicious indicators in simple terms.
+                  </p>
+                  <div className="pt-2 text-xs font-bold text-[#0052ff] dark:text-[#3b82f6] flex items-center gap-1">
+                    Select User Form ➔
+                  </div>
+                </button>
+
+                {/* Card 2: SOC Security Expert */}
+                <button
+                  type="button"
+                  onClick={() => selectRole('expert')}
+                  className="p-5 rounded-lg border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] hover:border-[#0052ff] dark:hover:border-[#3b82f6] hover:shadow-md transition-all text-left group flex flex-col justify-between space-y-4"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6] group-hover:scale-110 transition-transform">
+                      <Shield className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-[#1a1c1c] dark:text-[#F2F2EE]">
+                        SOC Security Expert
+                      </h4>
+                      <span className="text-[11px] text-[#737688] dark:text-[#A0A7A3]">Forensic Analysis</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-[#434656] dark:text-[#A0A7A3] leading-relaxed">
+                    Best for SOC analysts to calibrate 4-pillar engine accuracy, ground-truth verdicts, and risk score overrides.
+                  </p>
+                  <div className="pt-2 text-xs font-bold text-[#0052ff] dark:text-[#3b82f6] flex items-center gap-1">
+                    Select Expert Form ➔
+                  </div>
+                </button>
+              </div>
+            </div>
+          ) : isLoading ? (
             <div className="py-12 text-center text-[#737688] dark:text-[#A0A7A3] flex flex-col items-center gap-2">
               <Loader2 className="w-6 h-6 animate-spin text-[#0052ff] dark:text-[#3b82f6]" />
               <span>Loading existing feedback data...</span>
