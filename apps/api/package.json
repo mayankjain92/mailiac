@@ -1,0 +1,33 @@
+{
+  "name": "@mailiac/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run --passWithNoTests",
+    "dev": "node --env-file=../../.env --watch dist/server.js",
+    "start": "node --env-file=../../.env dist/server.js"
+  },
+  "dependencies": {
+    "@mailiac/db": "workspace:*",
+    "@mailiac/reporting-pdf": "workspace:*",
+    "@mailiac/shared-types": "workspace:*",
+    "bullmq": "^5.13.0",
+    "express": "^4.19.2",
+    "google-auth-library": "^11.0.2",
+    "googleapis": "^176.0.0",
+    "ioredis": "^5.4.1",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}

@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+
+<html class="scroll-smooth" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Mailiac | Deep Email Forensics</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-background": "#1a1c1c",
+                        "surface-container-highest": "#e2e2e2",
+                        "secondary-fixed": "#e5e2e1",
+                        "on-tertiary": "#ffffff",
+                        "tertiary": "#4d4e4b",
+                        "inverse-on-surface": "#f1f1f1",
+                        "on-primary-fixed-variant": "#0038b6",
+                        "on-primary": "#ffffff",
+                        "surface-dim": "#dadada",
+                        "primary-container": "#0052ff",
+                        "outline-variant": "#c3c5d9",
+                        "surface-container": "#eeeeee",
+                        "surface-tint": "#004ced",
+                        "tertiary-container": "#656663",
+                        "primary-fixed": "#dde1ff",
+                        "surface-variant": "#e2e2e2",
+                        "inverse-surface": "#2f3131",
+                        "on-primary-container": "#dfe3ff",
+                        "secondary-container": "#e5e2e1",
+                        "outline": "#737688",
+                        "on-error-container": "#93000a",
+                        "inverse-primary": "#b7c4ff",
+                        "on-tertiary-container": "#e5e4e0",
+                        "surface": "#f9f9f9",
+                        "on-secondary": "#ffffff",
+                        "primary-fixed-dim": "#b7c4ff",
+                        "on-surface": "#1a1c1c",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "error-container": "#ffdad6",
+                        "on-surface-variant": "#434656",
+                        "on-tertiary-fixed-variant": "#464744",
+                        "on-secondary-fixed-variant": "#474646",
+                        "background": "#fdfcf8", /* Adjusted for prompt request */
+                        "surface-bright": "#f9f9f9",
+                        "on-secondary-container": "#656464",
+                        "surface-container-high": "#e8e8e8",
+                        "secondary": "#5f5e5e",
+                        "surface-container-low": "#f4f3f3",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "on-error": "#ffffff",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "primary": "#0052ff", /* Adjusted to match brand primary */
+                        "error": "#ba1a1a",
+                        "tertiary-fixed-dim": "#c7c7c3",
+                        "tertiary-fixed": "#e3e2df",
+                        "on-primary-fixed": "#001452",
+                        "surface-container-lowest": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "section-gap": "120px",
+                        "gutter": "24px",
+                        "unit": "4px",
+                        "margin-mobile": "20px",
+                        "container-max": "1440px",
+                        "margin-desktop": "64px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["Hanken Grotesk"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "mono-label": ["JetBrains Mono"],
+                        "body-md": ["Hanken Grotesk"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "display-hero": ["Hanken Grotesk"],
+                        "mono-data": ["JetBrains Mono"],
+                        "headline-lg": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["40px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "mono-label": ["11px", { "lineHeight": "16px", "letterSpacing": "0.1em", "fontWeight": "700" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-md": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "display-hero": ["112px", { "lineHeight": "100px", "letterSpacing": "-0.04em", "fontWeight": "800" }],
+                        "mono-data": ["13px", { "lineHeight": "20px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "headline-lg": ["64px", { "lineHeight": "72px", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .grid-bg {
+            background-size: 24px 24px;
+            background-image: linear-gradient(to right, #e5e5e5 1px, transparent 1px),
+                              linear-gradient(to bottom, #e5e5e5 1px, transparent 1px);
+        }
+        .bracket-tl::before { content: ''; position: absolute; top: -1px; left: -1px; width: 6px; height: 6px; border-top: 1px solid #0052ff; border-left: 1px solid #0052ff; }
+        .bracket-tr::after { content: ''; position: absolute; top: -1px; right: -1px; width: 6px; height: 6px; border-top: 1px solid #0052ff; border-right: 1px solid #0052ff; }
+        .bracket-bl::before { content: ''; position: absolute; bottom: -1px; left: -1px; width: 6px; height: 6px; border-bottom: 1px solid #0052ff; border-left: 1px solid #0052ff; }
+        .bracket-br::after { content: ''; position: absolute; bottom: -1px; right: -1px; width: 6px; height: 6px; border-bottom: 1px solid #0052ff; border-right: 1px solid #0052ff; }
+        .forensic-card {
+            position: relative;
+        }
+        .pulse-dot {
+            animation: pulse-dot 2s infinite;
+        }
+        @keyframes pulse-dot {
+            0% { box-shadow: 0 0 0 0 rgba(0, 82, 255, 0.4); }
+            70% { box-shadow: 0 0 0 6px rgba(0, 82, 255, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 82, 255, 0); }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md antialiased overflow-x-hidden">
+<!-- TopNavBar -->
+<nav class="bg-background w-full px-margin-mobile md:px-margin-desktop py-4 max-w-container-max mx-auto border-b border-surface-container-highest">
+<div class="flex justify-between items-center">
+<a class="flex items-center gap-2 group" href="#">
+<img alt="Mailiac Logo" class="h-8 w-8 object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2cK4TX9rjv26PU7DzzDTRtmYZunJhhTYqqfyTYE75GiUAXksEuR9a7EZ9WyHzqsI0vC-eQE2MfA4vXJFDR4jUbFU5y-ICk4vnKs-Znb6U1pYn5RWyDFIT9n6qhdfMhEownjhhjk0JjgQCL8Hmx2OFiDI9Q3vnABUyjMAIiWS4C4Qkt4KlhWzpFDndsxEv9lwpq3eUYEtzn52BmHPmPw-ZOg33d-zPnsCd9Z1AQYFVmtKfQrHQmG5e"/>
+<span class="text-headline-md font-headline-md font-bold text-on-surface tracking-tighter">Mailiac</span>
+</a>
+<div class="hidden md:flex gap-8 items-center">
+<a class="text-on-surface-variant font-medium hover:text-primary transition-colors duration-200" href="#">Product</a>
+<a class="text-on-surface-variant font-medium hover:text-primary transition-colors duration-200" href="#">How it works</a>
+<a class="text-on-surface-variant font-medium hover:text-primary transition-colors duration-200" href="#">Technology</a>
+<a class="text-on-surface-variant font-medium hover:text-primary transition-colors duration-200" href="#">Resources</a>
+<a class="text-on-surface-variant font-medium hover:text-primary transition-colors duration-200" href="#">Pricing</a>
+</div>
+<div class="flex items-center gap-4">
+<button class="hidden md:flex items-center justify-center h-8 w-8 rounded-full border border-surface-container-highest hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-sm">dark_mode</span>
+</button>
+<button class="text-primary font-medium hover:opacity-80 transition-opacity">Talk to us</button>
+<button class="bg-primary text-on-primary px-4 py-2 rounded font-medium hover:bg-surface-tint transition-colors">Analyze an email</button>
+</div>
+</div>
+</nav>
+<main>
+<!-- Hero Section -->
+<section class="relative pt-24 pb-section-gap px-margin-mobile md:px-margin-desktop max-w-container-max mx-auto overflow-hidden grid-bg">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter relative z-10">
+<div class="flex flex-col justify-center">
+<div class="flex items-center gap-2 mb-8">
+<div class="w-1.5 h-1.5 rounded-full bg-primary pulse-dot"></div>
+<span class="text-mono-label font-mono-label text-on-surface-variant uppercase tracking-widest">Email Forensics Platform</span>
+</div>
+<h1 class="text-headline-lg-mobile md:text-display-hero font-display-hero text-on-surface mb-8">
+                        See what<br/>others<br/>miss<span class="text-primary">.</span>
+</h1>
+<p class="text-body-lg font-body-lg text-on-surface-variant max-w-md mb-12">
+                        Mailiac performs deep forensics, authentication validation, and AI analysis to expose phishing, BEC and spoofing attacks that bypass traditional defenses.
+                    </p>
+<div class="flex flex-col sm:flex-row gap-4">
+<button class="bg-primary text-on-primary px-8 py-4 rounded font-medium hover:bg-surface-tint transition-colors flex items-center justify-center gap-2">
+                            Analyze an email <span class="material-symbols-outlined text-sm">arrow_upward</span>
+</button>
+<button class="border border-on-surface text-on-surface px-8 py-4 rounded font-medium hover:bg-surface-container-low transition-colors flex items-center justify-center gap-2">
+                            Book a demo <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</div>
+<div class="mt-16 pt-8 border-t border-surface-container-highest flex gap-8">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">verified</span>
+<span class="text-mono-data font-mono-data text-on-surface-variant">Trusted by security teams</span>
+</div>
+</div>
+</div>
+<div class="relative h-[600px] hidden lg:block">
+<!-- Forensic Visualization Placeholder -->
+<div class="absolute inset-0 bg-surface-container-lowest border border-surface-container-highest rounded-lg shadow-sm flex items-center justify-center overflow-hidden">
+<div class="w-full h-full bg-contain bg-center bg-no-repeat opacity-90 mix-blend-multiply" data-alt="A striking abstract digital visualization of an email envelope deconstructed into technical components, wireframes, and geometric nodes. A large central envelope rendered in a fine halftone dot pattern, surrounded by floating technical data labels connected by thin lines. Minimalist, light-mode, architectural feel. High contrast black and white with vibrant blue accents for technical highlights." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBVgtk0uqo56fcD9c2qfPqbY0FEdumKlZPuYjLYC6GVtyBkXYqz5soX4lie4ujUBVlpIwDVe4BWBjKu8LJ9KHGtvo5824wuAgr7g-XgF_Sno5Yi2qbfyQtxrOq-PNXUE8havkQq69Pw4H3EUl_lKEfH9qpqsrRfhxT35RhvWI5LUq_SD8D9kTwe741hxeLSA119W7jh58urctSqmJbgvumGF6hSLSbLzXl2XcNa_MYoSa5NBhN0xw-a')"></div>
+</div>
+<!-- Floating Tech Cards -->
+<div class="absolute top-12 left-0 forensic-card bg-surface-container-lowest border border-surface-container-highest p-4 shadow-sm bracket-tl bracket-br">
+<div class="text-mono-label font-mono-label text-on-surface-variant mb-2">MAILIAC · QUERY</div>
+<div class="text-mono-data font-mono-data text-on-surface">&gt; Q3 FX exposure across desks?</div>
+<div class="text-mono-data font-mono-data text-on-surface mt-1">£42M over 3 desks · 78% hedged.</div>
+<div class="flex items-center gap-2 mt-2">
+<div class="w-1 h-1 rounded-full bg-primary"></div>
+<span class="text-mono-label font-mono-label text-primary">6 sources · sealed</span>
+</div>
+</div>
+<div class="absolute bottom-12 right-0 forensic-card bg-surface-container-lowest border border-surface-container-highest p-4 shadow-sm bracket-tr bracket-bl">
+<div class="text-mono-label font-mono-label text-on-surface-variant mb-2">AUTH · AUDIT</div>
+<div class="text-mono-data font-mono-data text-on-surface flex justify-between gap-4">
+<span>04:14:07</span> <span class="text-primary">PERMIT</span> <span>wf-mistral-3 · read</span>
+</div>
+<div class="text-mono-data font-mono-data text-on-surface flex justify-between gap-4 mt-1">
+<span>04:14:12</span> <span class="text-error">DENY</span> <span>egress · recorded</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- 4-Pillar Risk Engine Section -->
+<section class="py-section-gap px-margin-mobile md:px-margin-desktop bg-surface-container-low border-y border-surface-container-highest">
+<div class="max-w-container-max mx-auto">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-gutter items-center">
+<div class="lg:col-span-1 pr-8">
+<div class="text-mono-label font-mono-label text-primary uppercase tracking-widest mb-4">THE 4-PILLAR RISK ENGINE</div>
+<h2 class="text-headline-md font-headline-md text-on-surface mb-6">One score.<br/>Complete clarity.</h2>
+<p class="text-body-md font-body-md text-on-surface-variant mb-8">
+                            Explainable risk scoring across four dimensions, so you know exactly why an email is dangerous.
+                        </p>
+<button class="bg-primary text-on-primary px-6 py-3 rounded font-medium hover:bg-surface-tint transition-colors flex items-center justify-center gap-2">
+                            See risk engine <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</div>
+<div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest border border-surface-container-highest p-6 rounded flex flex-col gap-4 forensic-card bracket-tl">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface text-2xl">shield</span>
+<div>
+<div class="font-bold text-on-surface">Authentication</div>
+<div class="text-mono-label font-mono-label text-primary">30% weight</div>
+</div>
+</div>
+<div class="text-headline-md font-headline-md text-primary">91<span class="text-body-md text-on-surface-variant">/100</span></div>
+</div>
+<p class="text-body-sm text-on-surface-variant mt-2 border-t border-surface-container-highest pt-4">SPF, DKIM, DMARC, ARC validation and alignment checks.</p>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-lowest border border-surface-container-highest p-6 rounded flex flex-col gap-4 forensic-card">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface text-2xl">fingerprint</span>
+<div>
+<div class="font-bold text-on-surface">Identity</div>
+<div class="text-mono-label font-mono-label text-primary">20% weight</div>
+</div>
+</div>
+<div class="text-headline-md font-headline-md text-primary">84<span class="text-body-md text-on-surface-variant">/100</span></div>
+</div>
+<p class="text-body-sm text-on-surface-variant mt-2 border-t border-surface-container-highest pt-4">Domain similarity, impersonation and brand abuse detection.</p>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container-lowest border border-surface-container-highest p-6 rounded flex flex-col gap-4 forensic-card">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface text-2xl">language</span>
+<div>
+<div class="font-bold text-on-surface">Infrastructure</div>
+<div class="text-mono-label font-mono-label text-primary">20% weight</div>
+</div>
+</div>
+<div class="text-headline-md font-headline-md text-primary">72<span class="text-body-md text-on-surface-variant">/100</span></div>
+</div>
+<p class="text-body-sm text-on-surface-variant mt-2 border-t border-surface-container-highest pt-4">IP reputation, ASN, geolocation and routing anomalies.</p>
+</div>
+<!-- Card 4 -->
+<div class="bg-surface-container-lowest border border-surface-container-highest p-6 rounded flex flex-col gap-4 forensic-card bracket-br">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface text-2xl">psychology</span>
+<div>
+<div class="font-bold text-on-surface">AI / Intent</div>
+<div class="text-mono-label font-mono-label text-primary">30% weight</div>
+</div>
+</div>
+<div class="text-headline-md font-headline-md text-primary">95<span class="text-body-md text-on-surface-variant">/100</span></div>
+</div>
+<p class="text-body-sm text-on-surface-variant mt-2 border-t border-surface-container-highest pt-4">LLM-powered intent analysis, psychological &amp; behavioral cues.</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="bg-surface border-t border-surface-container-highest w-full px-margin-mobile md:px-margin-desktop py-12 max-w-container-max mx-auto">
+<div class="flex flex-col md:flex-row justify-between items-start gap-8">
+<div>
+<a class="flex items-center gap-2 group mb-4" href="#">
+<img alt="Mailiac Logo" class="h-6 w-6 object-contain grayscale opacity-60" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2cK4TX9rjv26PU7DzzDTRtmYZunJhhTYqqfyTYE75GiUAXksEuR9a7EZ9WyHzqsI0vC-eQE2MfA4vXJFDR4jUbFU5y-ICk4vnKs-Znb6U1pYn5RWyDFIT9n6qhdfMhEownjhhjk0JjgQCL8Hmx2OFiDI9Q3vnABUyjMAIiWS4C4Qkt4KlhWzpFDndsxEv9lwpq3eUYEtzn52BmHPmPw-ZOg33d-zPnsCd9Z1AQYFVmtKfQrHQmG5e"/>
+<span class="text-headline-md font-headline-md font-bold text-on-surface text-lg">Mailiac</span>
+</a>
+<p class="text-mono-label font-mono-label text-on-surface-variant">© 2024 Mailiac Forensics. All rights reserved.<br/>Forensic Grade Security.</p>
+</div>
+<div class="flex flex-wrap gap-8">
+<a class="text-body-md font-body-md text-on-surface-variant hover:text-primary transition-colors" href="#">Documentation</a>
+<a class="text-body-md font-body-md text-on-surface-variant hover:text-primary transition-colors" href="#">API Reference</a>
+<a class="text-body-md font-body-md text-on-surface-variant hover:text-primary transition-colors" href="#">Status</a>
+<a class="text-body-md font-body-md text-on-surface-variant hover:text-primary transition-colors" href="#">Privacy Policy</a>
+<a class="text-body-md font-body-md text-on-surface-variant hover:text-primary transition-colors" href="#">Security Audit</a>
+</div>
+</div>
+</footer>
+</body></html>

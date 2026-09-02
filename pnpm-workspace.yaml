@@ -1,0 +1,6 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "packages/parsing/*"
+  - "packages/scoring/*"
+  - "packages/reporting/*"

@@ -1,0 +1,11 @@
+Received-SPF: fail (google.com: domain of ceo@target-corp.com does not designate 203.0.113.200 as permitted sender)
+Authentication-Results: mx.target.com;
+       dkim=fail header.i=@target-corp.com;
+       spf=fail smtp.mailfrom=ceo@target-corp.com;
+       dmarc=fail (p=REJECT) header.from=target-corp.com
+From: "CEO Executive" <ceo@target-corp.com>
+To: "Accounting" <accounting@target-corp.com>
+Subject: Urgent Wire Transfer
+Date: Tue, 25 Aug 2026 11:00:00 +0000
+
+Urgent wire transfer required immediately.

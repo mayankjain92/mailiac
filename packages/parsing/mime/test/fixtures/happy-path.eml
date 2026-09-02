@@ -1,0 +1,42 @@
+Received: from mail.receiver.com (mail.receiver.com [198.51.100.1]) by mx.target.com; Tue, 25 Aug 2026 10:00:02 +0000
+Received: from mail.example.com (mail.example.com [203.0.113.10]) by mail.receiver.com; Tue, 25 Aug 2026 10:00:01 +0000
+Received: from internal.example.com ([10.0.0.50]) by mail.example.com; Tue, 25 Aug 2026 10:00:00 +0000
+From: "Jane Doe" <jane.doe@example.com>
+To: "Recipient" <recipient@target.com>
+Reply-To: "Support Team" <replies@example.com>
+Subject: Monthly Financial Report
+Date: Tue, 25 Aug 2026 10:00:00 +0000
+Message-ID: <msg-001@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY-MIXED-12345"
+
+--BOUNDARY-MIXED-12345
+Content-Type: multipart/alternative; boundary="BOUNDARY-ALT-12345"
+
+--BOUNDARY-ALT-12345
+Content-Type: text/plain; charset="utf-8"
+
+Hello Recipient,
+
+Please find attached the monthly financial report for August 2026.
+
+Best regards,
+Jane Doe
+--BOUNDARY-ALT-12345
+Content-Type: text/html; charset="utf-8"
+
+<html>
+<body>
+<p>Hello Recipient,</p>
+<p>Please find attached the monthly financial report for August 2026.</p>
+<p>Best regards,<br>Jane Doe</p>
+</body>
+</html>
+--BOUNDARY-ALT-12345--
+--BOUNDARY-MIXED-12345
+Content-Type: text/csv; name="report.csv"
+Content-Disposition: attachment; filename="report.csv"
+Content-Transfer-Encoding: base64
+
+aWQsbmFtZSxhbW91bnQKMTEsQWxpY2UsMTAwLjAwCjEyLEJvYiwxNTUuNTA=
+--BOUNDARY-MIXED-12345--

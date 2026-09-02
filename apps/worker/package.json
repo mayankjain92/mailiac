@@ -1,0 +1,37 @@
+{
+  "name": "@mailiac/worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run --passWithNoTests",
+    "dev": "node --env-file=../../.env --watch dist/index.js",
+    "start": "node --env-file=../../.env dist/index.js"
+  },
+  "dependencies": {
+    "bullmq": "^5.13.0",
+    "ioredis": "^5.4.1",
+    "@mailiac/shared-types": "workspace:*",
+    "@mailiac/parsing-mime": "workspace:*",
+    "@mailiac/parsing-decloak": "workspace:*",
+    "@mailiac/parsing-geoip": "workspace:*",
+    "@mailiac/parsing-ai-intent": "workspace:*",
+    "@mailiac/scoring-reverse-hop": "workspace:*",
+    "@mailiac/scoring-auth": "workspace:*",
+    "@mailiac/scoring-identity": "workspace:*",
+    "@mailiac/scoring-ip-reputation": "workspace:*",
+    "@mailiac/scoring-risk-engine": "workspace:*",
+    "@mailiac/webhooks": "workspace:*",
+    "@mailiac/reporting-pdf": "workspace:*",
+    "@mailiac/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}

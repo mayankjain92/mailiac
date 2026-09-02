@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build & Compilation Outputs
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+.turbo/
+
+# Environment Variables & Secrets
+.env
+.env*.local
+!.env.example
+*.pem
+*.key
+
+# Logs & Debugging
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Testing & Coverage
+coverage/
+.nyc_output/
+test-results/
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Temporary & Cache Files
+tmp/
+temp/
+.cache/

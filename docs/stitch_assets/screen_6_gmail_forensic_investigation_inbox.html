@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Mailiac - Gmail Forensic Mailbox</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed": "#dde1ff",
+                        "surface-container-low": "#f4f3f3",
+                        "primary-container": "#0052ff",
+                        "on-secondary-container": "#656464",
+                        "on-primary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-tint": "#004ced",
+                        "on-primary-container": "#dfe3ff",
+                        "tertiary-container": "#656663",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed-dim": "#c7c7c3",
+                        "tertiary-fixed": "#e3e2df",
+                        "inverse-on-surface": "#f1f1f1",
+                        "surface-container-high": "#e8e8e8",
+                        "tertiary": "#4d4e4b",
+                        "outline": "#737688",
+                        "inverse-surface": "#2f3131",
+                        "on-background": "#1a1c1c",
+                        "primary-fixed-dim": "#b7c4ff",
+                        "on-secondary-fixed-variant": "#474646",
+                        "primary": "#003ec7",
+                        "on-tertiary-fixed-variant": "#464744",
+                        "surface-dim": "#dadada",
+                        "inverse-primary": "#b7c4ff",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "on-primary-fixed-variant": "#0038b6",
+                        "secondary": "#5f5e5e",
+                        "surface-container-highest": "#e2e2e2",
+                        "error": "#ba1a1a",
+                        "secondary-fixed": "#e5e2e1",
+                        "on-error": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "surface-variant": "#e2e2e2",
+                        "surface-container": "#eeeeee",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "on-surface": "#1a1c1c",
+                        "on-secondary": "#ffffff",
+                        "secondary-container": "#e5e2e1",
+                        "on-surface-variant": "#434656",
+                        "surface": "#f9f9f9",
+                        "surface-bright": "#f9f9f9",
+                        "on-primary-fixed": "#001452",
+                        "outline-variant": "#c3c5d9",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "on-tertiary-container": "#e5e4e0",
+                        "background": "#f9f9f9",
+                        "on-tertiary": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem",
+                        "3xl": "1.5rem"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "margin-desktop": "64px",
+                        "container-max": "1440px",
+                        "section-gap": "120px",
+                        "gutter": "24px",
+                        "margin-mobile": "20px"
+                    },
+                    "fontFamily": {
+                        "mono-data": ["JetBrains Mono"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "mono-label": ["JetBrains Mono"],
+                        "display-hero": ["Hanken Grotesk"],
+                        "body-md": ["Hanken Grotesk"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "headline-lg": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "mono-data": ["13px", { "lineHeight": "20px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "headline-md": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "mono-label": ["11px", { "lineHeight": "16px", "letterSpacing": "0.1em", "fontWeight": "700" }],
+                        "display-hero": ["112px", { "lineHeight": "100px", "letterSpacing": "-0.04em", "fontWeight": "800" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["40px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-lg": ["64px", { "lineHeight": "72px", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: #0b0b0b; color: #fdfcf8; }
+        .grid-bg {
+            background-size: 24px 24px;
+            background-image: linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px);
+        }
+        .hairline-border { border: 1px solid #333; }
+        .hairline-b { border-bottom: 1px solid #333; }
+        .hairline-r { border-right: 1px solid #333; }
+        .hairline-l { border-left: 1px solid #333; }
+        .hairline-t { border-top: 1px solid #333; }
+        .email-row:hover { box-shadow: inset 1px 0 0 #333, inset -1px 0 0 #333, 0 1px 2px 0 rgba(0,0,0,0.3); }
+        .email-row:hover .row-actions { display: flex; }
+        .row-actions { display: none; }
+        /* Checkbox styling */
+        .gmail-checkbox {
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border: 2px solid #5f5e5e;
+            border-radius: 2px;
+            background-color: transparent;
+            cursor: pointer;
+            position: relative;
+        }
+        .gmail-checkbox:checked {
+            background-color: #0052ff;
+            border-color: #0052ff;
+        }
+        .gmail-checkbox:checked::after {
+            content: '';
+            position: absolute;
+            left: 5px;
+            top: 2px;
+            width: 5px;
+            height: 10px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+        }
+    </style>
+</head>
+<body class="grid-bg font-body-md h-screen flex flex-col overflow-hidden">
+<!-- TopNavBar (Gmail Style) -->
+<header class="bg-[#0b0b0b] flex items-center justify-between w-full px-4 py-2 shrink-0 z-50 hairline-b">
+<div class="flex items-center gap-4">
+<button class="p-2 text-secondary hover:bg-[#202124] rounded-full transition-colors">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<div class="flex items-center gap-2 mr-6 cursor-pointer">
+<span class="material-symbols-outlined text-primary-container text-3xl" style="font-variation-settings: 'FILL' 1;">shield</span>
+<span class="font-headline-md text-[22px] font-bold text-on-primary tracking-tighter leading-none">Mailiac</span>
+</div>
+</div>
+<div class="flex-1 max-w-[720px] ml-4 flex items-center gap-4">
+<div class="relative flex-1 flex items-center bg-[#202124] rounded-3xl overflow-hidden focus-within:bg-[#303134] focus-within:shadow-[0_1px_2px_0_rgba(0,0,0,0.3),_0_1px_3px_1px_rgba(0,0,0,0.15)] transition-all border border-transparent focus-within:border-[#3c4043]">
+<button class="p-3 text-secondary hover:bg-[#303134] rounded-full ml-1">
+<span class="material-symbols-outlined text-[20px]">search</span>
+</button>
+<input class="bg-transparent border-none w-full px-2 py-3 text-on-primary font-body-md focus:ring-0 focus:outline-none placeholder-secondary" placeholder="Search mail" type="text"/>
+<button class="p-3 text-secondary hover:bg-[#303134] rounded-full mr-1">
+<span class="material-symbols-outlined text-[20px]">tune</span>
+</button>
+</div>
+<button class="bg-primary-container text-white font-body-md font-medium px-4 py-2.5 rounded-full flex items-center gap-2 hover:bg-primary transition-colors shrink-0">
+<span class="material-symbols-outlined text-[18px]">search_insights</span> Analyze an email
+    </button>
+</div>
+<div class="flex items-center gap-2 ml-4">
+<div class="flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full font-mono-label text-mono-label text-green-400 mr-2">
+<span class="w-2 h-2 rounded-full bg-green-500"></span>
+                Gmail Connected
+            </div>
+<button class="p-2 text-secondary hover:bg-[#202124] rounded-full transition-colors">
+<span class="material-symbols-outlined">help_outline</span>
+</button>
+<button class="p-2 text-secondary hover:bg-[#202124] rounded-full transition-colors">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-low overflow-hidden cursor-pointer border border-[#333] ml-2">
+<img alt="Investigator Profile" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuChnut9ScSO_CNfe81kY1aJQz5k0En1H3FmfdUk4FffpClF8IIzFnk6otgDrtL1XWs2-cE3LjQxZWpGjiLJhg1pLaYupxg3xP95Rt5OAjQrvH9m7IY7NXX3TAindsw2hqrF-R68QTLDThQThOli4EpcqmcrhSujUXp6MAoCAGB_zPLE1yCr-JnYb29ctDRf7Xt0b9iV6Sh9567oI2hleAf1KjYvuJO7Bwia290sakCf6h_xr5brPENk"/>
+</div>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden bg-[#0b0b0b]">
+<!-- Sidebar (Gmail Style) -->
+<aside class="w-64 flex flex-col h-full shrink-0 z-40 bg-[#0b0b0b] pt-4 pr-3">
+<nav class="flex-1 overflow-y-auto space-y-[2px]">
+<div class="px-6 text-xs font-semibold text-secondary mb-2 tracking-wide font-mono-label uppercase mt-2">Mailbox</div>
+<a class="flex items-center justify-between px-6 py-1.5 bg-[#404040]/30 rounded-r-full text-on-primary font-body-md font-bold" href="#">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">inbox</span>
+                            Inbox
+                        </div>
+<span class="text-xs">14</span>
+</a>
+<a class="flex items-center justify-between px-6 py-1.5 rounded-r-full text-secondary hover:bg-[#202124] transition-colors font-body-md" href="#">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[20px]">all_inbox</span>
+                            All Mail
+                        </div>
+</a>
+<div class="pt-6 pb-2">
+<div class="px-6 text-xs font-semibold text-secondary mb-2 tracking-wide font-mono-label uppercase">Mailiac Security</div>
+<a class="flex items-center justify-between px-6 py-1.5 rounded-r-full text-error hover:bg-[#202124] transition-colors font-body-md" href="#">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[20px]">gpp_bad</span>
+                                Fraud
+                            </div>
+<span class="text-xs">3</span>
+</a>
+<a class="flex items-center justify-between px-6 py-1.5 rounded-r-full text-amber-500 hover:bg-[#202124] transition-colors font-body-md" href="#">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[20px]">report</span>
+                                Spam
+                            </div>
+<span class="text-xs">42</span>
+</a>
+<a class="flex items-center justify-between px-6 py-1.5 rounded-r-full text-green-500 hover:bg-[#202124] transition-colors font-body-md" href="#">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[20px]">verified</span>
+                                Good
+                            </div>
+<span class="text-xs">847</span>
+</a>
+<a class="flex items-center justify-between px-6 py-1.5 rounded-r-full text-secondary hover:bg-[#202124] transition-colors font-body-md" href="#">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[20px]">help_center</span>
+                                Unanalyzed
+                            </div>
+</a>
+</div>
+</nav>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 flex overflow-hidden bg-[#0b0b0b] rounded-tl-2xl border-t border-l border-[#333]">
+<!-- Email List -->
+<div class="w-1/2 h-full flex flex-col hairline-r bg-[#0b0b0b]">
+<!-- Toolbar -->
+<div class="px-4 py-2 flex justify-between items-center shrink-0 hairline-b bg-[#0b0b0b] sticky top-0 z-10 min-h-[48px]">
+<div class="flex items-center gap-4">
+<div class="flex items-center pl-1">
+<input class="gmail-checkbox" type="checkbox"/>
+<span class="material-symbols-outlined text-secondary text-[20px] cursor-pointer ml-1">arrow_drop_down</span>
+</div>
+<button class="p-1.5 text-secondary hover:bg-[#202124] rounded-full transition-colors">
+<span class="material-symbols-outlined text-[20px]">refresh</span>
+</button>
+</div>
+<div class="flex items-center gap-4 text-xs text-secondary font-body-md">
+<span>1-50 of 248</span>
+<div class="flex items-center">
+<button class="p-1.5 text-secondary hover:bg-[#202124] rounded-full transition-colors opacity-50 cursor-not-allowed">
+<span class="material-symbols-outlined text-[20px]">chevron_left</span>
+</button>
+<button class="p-1.5 text-secondary hover:bg-[#202124] rounded-full transition-colors">
+<span class="material-symbols-outlined text-[20px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto bg-[#0b0b0b]">
+<!-- Selected / Fraud Email -->
+<div class="email-row flex items-center px-4 py-2 cursor-pointer bg-[#202124] hairline-b text-on-primary group relative">
+<div class="flex items-center gap-3 w-8 shrink-0">
+<input class="gmail-checkbox ml-1" type="checkbox"/>
+</div>
+<div class="w-40 shrink-0 font-bold truncate text-[14px]">AAS Tech Support</div>
+<div class="flex items-center flex-1 min-w-0 mr-4 gap-2">
+<span class="px-1.5 py-0.5 rounded text-[10px] font-mono-label font-bold bg-error/10 text-error border border-error/20 shrink-0 uppercase tracking-wider">[FRAUD · 87]</span>
+<span class="font-bold truncate text-[14px]">URGENT: Your account requires immediate verification</span>
+<span class="text-secondary truncate text-[14px]">- We have detected unusual activity on your account. To prevent immediate suspension...</span>
+</div>
+<div class="text-[12px] font-bold text-on-primary shrink-0 w-16 text-right group-hover:hidden">10:42 AM</div>
+<div class="row-actions absolute right-4 top-1/2 -translate-y-1/2 bg-[#202124] shadow-[-10px_0_10px_#202124] pl-2 gap-2">
+<button class="text-[11px] font-mono-label font-bold text-error border border-error/30 bg-error/10 px-2 py-1 rounded hover:bg-error/20 flex items-center gap-1 transition-colors uppercase tracking-wider">
+                            View Report <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Unanalyzed Email -->
+<div class="email-row flex items-center px-4 py-2 cursor-pointer bg-[#0b0b0b] hover:bg-[#202124] hairline-b text-on-primary group relative transition-colors">
+<div class="flex items-center gap-3 w-8 shrink-0">
+<input class="gmail-checkbox ml-1" type="checkbox"/>
+</div>
+<div class="w-40 shrink-0 font-bold truncate text-[14px]">Internal Comm</div>
+<div class="flex items-center flex-1 min-w-0 mr-4 gap-2">
+<span class="px-1.5 py-0.5 rounded text-[10px] font-mono-label font-bold bg-[#333] text-secondary border border-[#444] shrink-0 uppercase tracking-wider">[UNANALYZED]</span>
+<span class="font-bold truncate text-[14px]">Q3 Financial Reporting Guidelines</span>
+<span class="text-secondary truncate text-[14px]">- Please find attached the updated guidelines for Q3 financial reporting. Ensure all departments...</span>
+</div>
+<div class="text-[12px] font-bold text-on-primary shrink-0 w-16 text-right group-hover:hidden">09:15 AM</div>
+<div class="row-actions absolute right-4 top-1/2 -translate-y-1/2 bg-[#202124] shadow-[-10px_0_10px_#202124] pl-2 gap-2">
+<button class="text-[11px] font-mono-label font-bold text-primary-container border border-primary-container/30 bg-primary-container/10 px-2 py-1 rounded hover:bg-primary-container/20 flex items-center gap-1 transition-colors uppercase tracking-wider">
+                            Analyze <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Clean Email -->
+<div class="email-row flex items-center px-4 py-2 cursor-pointer bg-[#0b0b0b] hover:bg-[#202124] hairline-b text-secondary group relative transition-colors opacity-75">
+<div class="flex items-center gap-3 w-8 shrink-0">
+<input class="gmail-checkbox ml-1" type="checkbox"/>
+</div>
+<div class="w-40 shrink-0 truncate text-[14px]">Client Services</div>
+<div class="flex items-center flex-1 min-w-0 mr-4 gap-2">
+<span class="px-1.5 py-0.5 rounded text-[10px] font-mono-label font-bold bg-green-500/10 text-green-500 border border-green-500/20 shrink-0 uppercase tracking-wider">[GOOD]</span>
+<span class="truncate text-[14px]">Re: Update on the project timeline</span>
+<span class="text-[#888] truncate text-[14px]">- Sounds great, we will proceed with the updated timeline as discussed in yesterday's sync...</span>
+</div>
+<div class="text-[12px] shrink-0 w-16 text-right group-hover:hidden">Yesterday</div>
+<div class="row-actions absolute right-4 top-1/2 -translate-y-1/2 bg-[#202124] shadow-[-10px_0_10px_#202124] pl-2 gap-2">
+<button class="text-[11px] font-mono-label font-bold text-green-500 border border-green-500/30 bg-green-500/10 px-2 py-1 rounded hover:bg-green-500/20 flex items-center gap-1 transition-colors uppercase tracking-wider">
+                            View Report <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Reading View -->
+<div class="w-1/2 h-full bg-[#0b0b0b] text-on-primary flex flex-col relative overflow-hidden">
+<!-- Toolbar -->
+<div class="px-4 py-2 flex items-center shrink-0 hairline-b bg-[#0b0b0b] sticky top-0 z-10 min-h-[48px] gap-4">
+<button class="p-1.5 text-secondary hover:bg-[#202124] rounded-full transition-colors">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+<div class="flex-1 overflow-y-auto">
+<!-- Mailiac Security Banner -->
+<div class="bg-error/10 border-b border-error/20 px-6 py-3 flex justify-between items-center text-error">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">warning</span>
+<span class="font-mono-label text-xs font-bold uppercase tracking-wider">⚠ FRAUDULENT EMAIL · RISK 87/100</span>
+</div>
+<button class="text-[11px] font-mono-label font-bold border border-error px-3 py-1 rounded hover:bg-error hover:text-white transition-colors uppercase tracking-wider flex items-center gap-1">
+                        View Report <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+<div class="p-8 pb-4">
+<div class="flex items-center justify-between mb-6">
+<h2 class="font-headline-md text-[22px] text-on-primary font-normal">URGENT: Your account requires immediate verification</h2>
+</div>
+<div class="flex justify-between items-start mb-8">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-low border border-[#333] text-on-primary flex items-center justify-center font-bold text-lg">A</div>
+<div>
+<div class="flex items-center gap-2">
+<span class="font-bold text-sm text-on-primary">AAS Tech Support</span>
+<span class="text-xs text-secondary">&lt;support@aas-tech-update.com&gt;</span>
+</div>
+<div class="text-xs text-secondary mt-0.5 flex items-center gap-1">
+                                to me
+                            </div>
+</div>
+</div>
+<div class="flex items-center gap-4 text-xs text-secondary">
+<span>Oct 24, 2023, 10:42 AM PST</span>
+</div>
+</div>
+<!-- Email Body (Simulated Light Theme for actual content) -->
+<div class="bg-white text-gray-800 p-8 rounded-lg border border-[#333]">
+<div class="font-body-lg text-[14px] leading-relaxed max-w-3xl">
+<p class="mb-4">Dear Customer,</p>
+<p class="mb-4">We have detected unusual activity on your account. To prevent immediate suspension, you must verify your identity within 24 hours.</p>
+<p class="mb-6">Please click the link below to access the secure verification portal:</p>
+<a class="inline-block bg-blue-600 text-white px-6 py-2 rounded mb-6 pointer-events-none opacity-50 relative text-sm font-medium" href="#">
+                                Verify Account Now
+                                <div class="absolute -top-3 -right-3 w-6 h-6 bg-error text-white rounded-full flex items-center justify-center font-mono-label text-[10px] border-2 border-white z-10 shadow-sm" title="Malicious Link Detected">!</div>
+</a>
+<p class="mb-4">Failure to complete this process will result in a permanent lock.</p>
+<p>Regards,<br/>AAS Technical Support Team</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>
