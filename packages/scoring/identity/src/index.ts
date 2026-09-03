@@ -252,6 +252,249 @@ export function calculateJaroWinkler(s1: string, s2: string): number {
   return Number((jaro + prefix * 0.1 * (1.0 - jaro)).toFixed(4));
 }
 
+/**
+ * Calculates the length of the common prefix between two strings from index 0.
+ */
+export function getCommonPrefixLength(a: string, b: string): number {
+  let i = 0;
+  const maxLen = Math.min(a.length, b.length);
+  while (i < maxLen && a[i] === b[i]) {
+    i++;
+  }
+  return i;
+}
+
+/**
+ * Calculates the length of the longest common contiguous substring between two strings.
+ */
+export function getLongestCommonSubstringLength(a: string, b: string): number {
+  if (!a || !b) return 0;
+  let maxLen = 0;
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+        if (dp[i][j] > maxLen) {
+          maxLen = dp[i][j];
+        }
+      }
+    }
+  }
+  return maxLen;
+}
+
+/** Named thresholds and parameters for evidence-gated typosquatting detection */
+export const SHORT_DOMAIN_MAX_LENGTH = 4;
+export const MAX_DISTANCE_FOR_SHORT_DOMAIN = 1;
+export const MIN_JARO_WINKLER_FOR_TYPOSQUAT = 0.88;
+export const MIN_JARO_WINKLER_HIGH = 0.90;
+export const MAX_EDIT_RATIO_HIGH = 0.25;
+export const MAX_EDIT_RATIO_MODERATE = 0.30;
+export const MIN_STEM_RATIO_FOR_TYPOSQUAT = 0.50;
+export const MIN_STEM_LENGTH_MODERATE = 4;
+export const MIN_LENGTH_FOR_DISTANCE_3 = 7;
+
+export interface TyposquatEvidence {
+  isMatch: boolean;
+  severity?: 'HIGH' | 'MEDIUM';
+  confidenceScore: number;
+  damerauDistance: number;
+  levenshteinDistance: number;
+  jaroWinkler: number;
+  editRatio: number;
+  sharedStemLength: number;
+  stemRatio: number;
+  commonPrefixLength: number;
+  reason?: string;
+}
+
+/**
+ * Evaluates candidate domain SLD against protected brand SLD using multi-metric evidence gating.
+ * Edit distance is treated as evidence rather than proof.
+ */
+export function evaluateTyposquatSimilarity(
+  candidateSLD: string,
+  protectedSLD: string,
+  options?: { isBrandImpersonation?: boolean }
+): TyposquatEvidence {
+  const cand = candidateSLD.toLowerCase().trim();
+  const prot = protectedSLD.toLowerCase().trim();
+
+  if (!cand || !prot || cand === prot) {
+    return {
+      isMatch: false,
+      confidenceScore: 0,
+      damerauDistance: 0,
+      levenshteinDistance: 0,
+      jaroWinkler: cand === prot ? 1.0 : 0.0,
+      editRatio: 0,
+      sharedStemLength: 0,
+      stemRatio: 0,
+      commonPrefixLength: 0,
+    };
+  }
+
+  const maxLen = Math.max(cand.length, prot.length);
+  const minLen = Math.min(cand.length, prot.length);
+
+  // Rapid length pruning on SLD
+  if (Math.abs(cand.length - prot.length) > 3) {
+    return {
+      isMatch: false,
+      confidenceScore: 0,
+      damerauDistance: Infinity,
+      levenshteinDistance: Infinity,
+      jaroWinkler: 0,
+      editRatio: 1,
+      sharedStemLength: 0,
+      stemRatio: 0,
+      commonPrefixLength: 0,
+    };
+  }
+
+  const damerau = calculateDamerauLevenshtein(cand, prot);
+  const lev = calculateLevenshtein(cand, prot);
+  const jw = calculateJaroWinkler(cand, prot);
+  const editRatio = damerau / maxLen;
+  const cp = getCommonPrefixLength(cand, prot);
+  const lcs = getLongestCommonSubstringLength(cand, prot);
+  const sharedStem = Math.max(cp, lcs);
+  const stemRatio = sharedStem / prot.length;
+
+  const baseEvidence: Omit<TyposquatEvidence, 'isMatch' | 'confidenceScore'> = {
+    damerauDistance: damerau,
+    levenshteinDistance: lev,
+    jaroWinkler: jw,
+    editRatio,
+    sharedStemLength: sharedStem,
+    stemRatio,
+    commonPrefixLength: cp,
+  };
+
+  // Anything with distance > 3 is not a typosquat
+  if (damerau > 3) {
+    return { ...baseEvidence, isMatch: false, confidenceScore: 0 };
+  }
+
+  const isShortBrand = prot.length <= SHORT_DOMAIN_MAX_LENGTH;
+
+  // Short protected brands (e.g. sap, visa, meta, uber)
+  if (isShortBrand) {
+    if (damerau > MAX_DISTANCE_FOR_SHORT_DOMAIN) {
+      return { ...baseEvidence, isMatch: false, confidenceScore: 0 };
+    }
+    if (options?.isBrandImpersonation) {
+      return {
+        ...baseEvidence,
+        isMatch: true,
+        severity: 'HIGH',
+        confidenceScore: 100,
+        reason: 'Display name corroborates brand claim on short domain',
+      };
+    }
+    if (
+      damerau === 1 &&
+      editRatio <= MAX_EDIT_RATIO_HIGH &&
+      jw >= MIN_JARO_WINKLER_FOR_TYPOSQUAT &&
+      sharedStem >= 3 &&
+      stemRatio >= 0.75
+    ) {
+      return {
+        ...baseEvidence,
+        isMatch: true,
+        severity: 'HIGH',
+        confidenceScore: 100,
+        reason: 'High structural similarity to short protected brand',
+      };
+    }
+    return { ...baseEvidence, isMatch: false, confidenceScore: 0 };
+  }
+
+  // Standard protected brand (prot.length >= 5)
+  // 1. Single edit mutation (distance 1)
+  if (damerau === 1) {
+    if (
+      editRatio <= MAX_EDIT_RATIO_HIGH &&
+      jw >= MIN_JARO_WINKLER_FOR_TYPOSQUAT &&
+      sharedStem >= 3 &&
+      stemRatio >= MIN_STEM_RATIO_FOR_TYPOSQUAT &&
+      (cp >= 2 || (jw >= MIN_JARO_WINKLER_HIGH && sharedStem >= 4))
+    ) {
+      return {
+        ...baseEvidence,
+        isMatch: true,
+        severity: 'HIGH',
+        confidenceScore: 100,
+        reason: 'High-confidence single-edit mutation retaining brand stem',
+      };
+    }
+    return { ...baseEvidence, isMatch: false, confidenceScore: 0 };
+  }
+
+  // 2. Double edit mutation (distance 2)
+  if (damerau === 2) {
+    // High severity (e.g. docusn vs docusign, micros0ftt vs microsoft)
+    if (
+      editRatio <= MAX_EDIT_RATIO_HIGH &&
+      jw >= MIN_JARO_WINKLER_HIGH &&
+      sharedStem >= 4 &&
+      stemRatio >= 0.60 &&
+      cp >= 2
+    ) {
+      return {
+        ...baseEvidence,
+        isMatch: true,
+        severity: 'HIGH',
+        confidenceScore: 100,
+        reason: 'High-confidence multi-edit brand mutation with strong structural alignment',
+      };
+    }
+    // Moderate severity
+    if (
+      editRatio <= MAX_EDIT_RATIO_MODERATE &&
+      jw >= MIN_JARO_WINKLER_FOR_TYPOSQUAT &&
+      sharedStem >= MIN_STEM_LENGTH_MODERATE &&
+      stemRatio >= MIN_STEM_RATIO_FOR_TYPOSQUAT &&
+      cp >= 2
+    ) {
+      return {
+        ...baseEvidence,
+        isMatch: true,
+        severity: 'MEDIUM',
+        confidenceScore: 70,
+        reason: 'Moderate multi-edit brand mutation with preserved prefix and stem',
+      };
+    }
+    return { ...baseEvidence, isMatch: false, confidenceScore: 0 };
+  }
+
+  // 3. Triple edit mutation (distance 3) - strictly gated to long domains
+  if (damerau === 3) {
+    if (
+      minLen >= MIN_LENGTH_FOR_DISTANCE_3 &&
+      editRatio <= MAX_EDIT_RATIO_MODERATE &&
+      jw >= MIN_JARO_WINKLER_FOR_TYPOSQUAT &&
+      sharedStem >= MIN_STEM_LENGTH_MODERATE &&
+      stemRatio >= MIN_STEM_RATIO_FOR_TYPOSQUAT &&
+      cp >= 2
+    ) {
+      return {
+        ...baseEvidence,
+        isMatch: true,
+        severity: 'MEDIUM',
+        confidenceScore: 70,
+        reason: 'Moderate triple-edit mutation on long brand retaining substantial stem',
+      };
+    }
+    return { ...baseEvidence, isMatch: false, confidenceScore: 0 };
+  }
+
+  return { ...baseEvidence, isMatch: false, confidenceScore: 0 };
+}
+
 export interface DisplayNameMismatchResult {
   isMismatch: boolean;
   claimedBrand?: string;
@@ -596,7 +839,8 @@ export function scoreIdentity(
   let minDamerauLevenshtein = Infinity;
   let maxJaroWinkler = 0;
   let homoglyphMatchDetected = false;
-  let bestDistanceBrand: string | undefined = undefined;
+  let homoglyphMatchedBrand: string | undefined = undefined;
+  let bestTyposquatMatch: { brand: string; evidence: TyposquatEvidence } | undefined = undefined;
 
   if (!isExactSldCousin) {
     for (const rawProtected of combinedProtected) {
@@ -609,7 +853,7 @@ export function scoreIdentity(
       const isSkeletonMatch = senderSkeleton === protectedSkeleton;
       if (isSkeletonMatch && senderSLD !== protSLD) {
         homoglyphMatchDetected = true;
-        bestDistanceBrand = rawProtected;
+        homoglyphMatchedBrand = rawProtected;
       }
 
       // Length pruning on SLD
@@ -632,57 +876,55 @@ export function scoreIdentity(
         minLevenshtein = lev;
         minDamerauLevenshtein = damerau;
         maxJaroWinkler = jaroWinkler;
-        bestDistanceBrand = rawProtected;
+      }
+
+      // Evidence-gated similarity evaluation
+      const evidence = evaluateTyposquatSimilarity(senderSLD, protSLD, { isBrandImpersonation });
+      if (evidence.isMatch) {
+        if (
+          !bestTyposquatMatch ||
+          evidence.confidenceScore > bestTyposquatMatch.evidence.confidenceScore ||
+          (evidence.confidenceScore === bestTyposquatMatch.evidence.confidenceScore &&
+            evidence.damerauDistance < bestTyposquatMatch.evidence.damerauDistance) ||
+          (evidence.confidenceScore === bestTyposquatMatch.evidence.confidenceScore &&
+            evidence.damerauDistance === bestTyposquatMatch.evidence.damerauDistance &&
+            evidence.jaroWinkler > bestTyposquatMatch.evidence.jaroWinkler)
+        ) {
+          bestTyposquatMatch = { brand: rawProtected, evidence };
+        }
       }
     }
   }
 
-  const isShortDomain = senderSLD.length <= 4;
-
   if (homoglyphMatchDetected) {
     candidateScores.push(100);
-    matchedBrand = bestDistanceBrand || matchedBrand;
+    matchedBrand = homoglyphMatchedBrand || matchedBrand;
     findings.push({
       type: 'HOMOGLYPH_DETECTED',
       severity: 'HIGH',
       description: 'Domain contains confusable non-ASCII characters visually identical to a protected brand',
     });
-  } else if (
-    minDamerauLevenshtein <= 2 &&
-    (!isShortDomain || (minDamerauLevenshtein === 1 && maxJaroWinkler >= 0.88) || isBrandImpersonation)
-  ) {
-    // If exact typosquatting match is found, prefer this closest brand
-    matchedBrand = bestDistanceBrand || matchedBrand;
-    candidateScores.push(100);
-    findings.push({
-      type: 'TYPOSQUATTING',
-      severity: 'HIGH',
-      description: `Domain is highly similar to protected brand: ${bestDistanceBrand} (Distance: ${minDamerauLevenshtein})`,
-    });
-  } else if (!isCombosquattingMatched && maxJaroWinkler >= 0.88 && !isShortDomain) {
-    matchedBrand = bestDistanceBrand || matchedBrand;
-    candidateScores.push(90);
-    findings.push({
-      type: 'COMBOSQUATTING',
-      severity: 'HIGH',
-      description: `Domain string strongly resembles protected brand: ${bestDistanceBrand} (Similarity: ${(maxJaroWinkler * 100).toFixed(1)}%)`,
-    });
-  } else if (minDamerauLevenshtein === 3 && !isShortDomain) {
-    matchedBrand = bestDistanceBrand || matchedBrand;
-    candidateScores.push(70);
-    findings.push({
-      type: 'TYPOSQUATTING_MODERATE',
-      severity: 'MEDIUM',
-      description: `Domain is somewhat similar to protected brand: ${bestDistanceBrand} (Distance: 3)`,
-    });
-  } else if (!isCombosquattingMatched && maxJaroWinkler >= 0.78 && !isShortDomain) {
-    matchedBrand = bestDistanceBrand || matchedBrand;
-    candidateScores.push(50);
-    findings.push({
-      type: 'COMBOSQUATTING_MODERATE',
-      severity: 'MEDIUM',
-      description: `Domain partially resembles protected brand: ${bestDistanceBrand} (Similarity: ${(maxJaroWinkler * 100).toFixed(1)}%)`,
-    });
+  } else if (bestTyposquatMatch) {
+    const { brand, evidence } = bestTyposquatMatch;
+    matchedBrand = brand || matchedBrand;
+    candidateScores.push(evidence.confidenceScore);
+    minLevenshtein = evidence.levenshteinDistance;
+    minDamerauLevenshtein = evidence.damerauDistance;
+    maxJaroWinkler = evidence.jaroWinkler;
+
+    if (evidence.severity === 'HIGH') {
+      findings.push({
+        type: 'TYPOSQUATTING',
+        severity: 'HIGH',
+        description: `Domain is highly similar to protected brand: ${brand} (Distance: ${evidence.damerauDistance}, Similarity: ${(evidence.jaroWinkler * 100).toFixed(1)}%)`,
+      });
+    } else {
+      findings.push({
+        type: 'TYPOSQUATTING_MODERATE',
+        severity: 'MEDIUM',
+        description: `Domain is moderately similar to protected brand: ${brand} (Distance: ${evidence.damerauDistance}, Similarity: ${(evidence.jaroWinkler * 100).toFixed(1)}%)`,
+      });
+    }
   }
 
   // 6. Generic Display Name Mismatch (when no protected brand is claimed)

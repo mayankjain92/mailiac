@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { scoreIntent } from '../src/index.js';
+import { scoreIntent, defaultHealthTracker } from '../src/index.js';
 import { GoogleGenAI } from '@google/genai';
 
 vi.mock('@google/genai', () => {
@@ -20,6 +20,7 @@ describe('AI Intent Scoring (@mailiac/parsing-ai-intent)', () => {
     vi.clearAllMocks();
     process.env = { ...originalEnv };
     process.env['GEMINI_API_KEY'] = 'test-gemini-key';
+    defaultHealthTracker.reset();
   });
 
   afterEach(() => {
@@ -370,6 +371,41 @@ describe('AI Intent Scoring (@mailiac/parsing-ai-intent)', () => {
           type: 'EMPTY_PAYLOAD',
         })
       );
+    });
+
+    it('9. False-positive suppression: URL parameters like otpToken do not trigger CREDENTIAL_HARVESTING', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const text = 'You have 1 new invitation. View invitations: https://www.linkedin.com/comm/mynetwork/?eid=jcpal9&otpToken=3DNDgxN2Nh';
+      const result = await scoreIntent({
+        text,
+        subject: 'You have 1 new invitation',
+        senderDomain: 'linkedin.com',
+        urls: [{ href: 'https://www.linkedin.com/comm/mynetwork/?eid=jcpal9&otpToken=3DNDgxN2Nh', domain: 'linkedin.com' }],
+      });
+
+      expect(result.intentLabels).not.toContain('CREDENTIAL_HARVESTING');
+      expect(result.findings.some((f) => f.type === 'HEURISTIC_CREDENTIAL')).toBe(false);
+      expect(result.nlpScore).toBeLessThan(50);
+    });
+
+    it('10. True-positive preservation: explicit OTP in body prose correctly flags CREDENTIAL_HARVESTING', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const text = 'Your one-time passcode is ready. Please enter your otp immediately to verify your account.';
+      const result = await scoreIntent({
+        text,
+        subject: 'Account Verification',
+      });
+
+      expect(result.intentLabels).toContain('CREDENTIAL_HARVESTING');
+      expect(result.findings).toContainEqual(
+        expect.objectContaining({
+          type: 'HEURISTIC_CREDENTIAL',
+          severity: 'HIGH',
+        })
+      );
+      expect(result.credentialHarvestingScore).toBe(85);
     });
   });
 });

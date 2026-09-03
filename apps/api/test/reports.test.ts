@@ -5,6 +5,13 @@ import { errorHandler } from '../src/middleware/error.js';
 import type { AddressInfo } from 'net';
 import type { AnalysisReport } from '@mailiac/shared-types';
 
+vi.mock('../src/queue.js', () => ({
+  emailQueue: {
+    getJob: vi.fn(),
+    add: vi.fn(),
+  },
+}));
+
 vi.mock('@mailiac/db', () => ({
   connectDb: vi.fn().mockResolvedValue(undefined),
   AnalysisReportModel: {
@@ -12,14 +19,20 @@ vi.mock('@mailiac/db', () => ({
   },
   EmailAnalysisRecordModel: {
     find: vi.fn(),
+    findOne: vi.fn(),
   },
   AnalystFeedbackModel: {
     findOneAndUpdate: vi.fn(),
     findOne: vi.fn(),
   },
+  RawEmailModel: {
+    findOne: vi.fn(),
+    findOneAndUpdate: vi.fn(),
+  },
 }));
 
-import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel, AnalystFeedbackModel } from '@mailiac/db';
+import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel, AnalystFeedbackModel, RawEmailModel } from '@mailiac/db';
+import { emailQueue } from '../src/queue.js';
 
 describe('GET /api/reports/:id', () => {
   let server: ReturnType<ReturnType<typeof express>['listen']>;
@@ -285,6 +298,166 @@ describe('GET /api/reports/:id', () => {
       expect(res.status).toBe(200);
       const json = await res.json();
       expect(json.feedback?.analystVerdict).toBe('FALSE_POSITIVE');
+    });
+  });
+
+  describe('POST /api/reports/:id/reanalyze', () => {
+    it('returns 400 when report ID is empty or whitespace', async () => {
+      const res = await fetch(`${baseUrl}/api/reports/%20/reanalyze`, { method: 'POST' });
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toContain('Report ID is required');
+    });
+
+    it('returns 404 when report does not exist', async () => {
+      (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue(null),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/non-existent-case/reanalyze`, { method: 'POST' });
+      expect(res.status).toBe(404);
+      const json = await res.json();
+      expect(json.error).toContain('Report not found');
+    });
+
+    it('returns 409 Conflict when re-analysis is already in progress (active/waiting)', async () => {
+      (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({ messageId: 'active-case-123' }),
+      });
+
+      (emailQueue.getJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+        getState: vi.fn().mockResolvedValue('active'),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/active-case-123/reanalyze`, { method: 'POST' });
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.error).toContain('already in progress');
+      expect(json.status).toBe('processing');
+      expect(json.jobId).toBe('active-case-123');
+    });
+
+    it('returns 422 when original payload buffer is completely unavailable', async () => {
+      (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({ messageId: 'no-buf-case' }),
+      });
+
+      (emailQueue.getJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+        getState: vi.fn().mockResolvedValue('completed'),
+        data: {},
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      (RawEmailModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue(null),
+      });
+
+      (EmailAnalysisRecordModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue(null),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/no-buf-case/reanalyze`, { method: 'POST' });
+      expect(res.status).toBe(422);
+      const json = await res.json();
+      expect(json.error).toContain('no longer available');
+    });
+
+    it('happy path: successfully schedules re-analysis using RawEmailModel buffer', async () => {
+      const mockRawBuffer = Buffer.from('From: test@example.com\r\nSubject: Re-test\r\n\r\nBody');
+
+      (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({ messageId: 'case-re-123', senderDomain: 'example.com' }),
+      });
+
+      const removeJobMock = vi.fn().mockResolvedValue(undefined);
+      (emailQueue.getJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+        getState: vi.fn().mockResolvedValue('completed'),
+        remove: removeJobMock,
+      });
+
+      (RawEmailModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          messageId: 'case-re-123',
+          buffer: mockRawBuffer,
+          source: 'eml',
+        }),
+      });
+
+      (RawEmailModel.findOneAndUpdate as ReturnType<typeof vi.fn>).mockResolvedValue({});
+      (emailQueue.add as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'case-re-123' });
+
+      const res = await fetch(`${baseUrl}/api/reports/case-re-123/reanalyze`, { method: 'POST' });
+      expect(res.status).toBe(202);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.jobId).toBe('case-re-123');
+      expect(json.messageId).toBe('case-re-123');
+      expect(json.status).toBe('queued');
+
+      expect(removeJobMock).toHaveBeenCalled();
+      expect(emailQueue.add).toHaveBeenCalledWith(
+        'process-email',
+        expect.objectContaining({
+          messageId: 'case-re-123',
+          isReanalysis: true,
+        }),
+        { jobId: 'case-re-123' }
+      );
+    });
+
+    it('happy path: successfully schedules re-analysis using BullMQ job buffer fallback', async () => {
+      const mockRawBuffer = Buffer.from('From: test@example.com\r\nSubject: Fallback\r\n\r\nBody');
+
+      (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({ messageId: 'case-bull-fallback', senderDomain: 'example.com' }),
+      });
+
+      // RawEmailModel has no record
+      (RawEmailModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue(null),
+      });
+
+      const removeJobMock = vi.fn().mockResolvedValue(undefined);
+      (emailQueue.getJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+        getState: vi.fn().mockResolvedValue('completed'),
+        data: {
+          buffer: mockRawBuffer,
+          source: 'gmail',
+          gmailMessageId: 'gmail-msg-999',
+        },
+        remove: removeJobMock,
+      });
+
+      (RawEmailModel.findOneAndUpdate as ReturnType<typeof vi.fn>).mockResolvedValue({});
+      (emailQueue.add as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'case-bull-fallback' });
+
+      const res = await fetch(`${baseUrl}/api/reports/case-bull-fallback/reanalyze`, { method: 'POST' });
+      expect(res.status).toBe(202);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.jobId).toBe('case-bull-fallback');
+
+      expect(RawEmailModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { messageId: 'case-bull-fallback' },
+        expect.objectContaining({
+          $set: expect.objectContaining({
+            messageId: 'case-bull-fallback',
+            source: 'gmail',
+            gmailMessageId: 'gmail-msg-999',
+          }),
+        }),
+        { upsert: true }
+      );
+
+      expect(emailQueue.add).toHaveBeenCalledWith(
+        'process-email',
+        expect.objectContaining({
+          messageId: 'case-bull-fallback',
+          source: 'gmail',
+          gmailMessageId: 'gmail-msg-999',
+        }),
+        { jobId: 'case-bull-fallback' }
+      );
     });
   });
 });

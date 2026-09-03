@@ -101,7 +101,7 @@ const riskMatrixSchema = new Schema(
 
 const analysisReportSchema = new Schema<AnalysisReportDocument>(
   {
-    messageId: { type: String, required: true, index: true },
+    messageId: { type: String, required: true },
     senderDomain: { type: String, required: true, index: true },
     timestamp: { type: String, required: true },
     executionTimeMs: { type: Number },
@@ -124,10 +124,42 @@ const analysisReportSchema = new Schema<AnalysisReportDocument>(
   { timestamps: false }
 );
 
-export const AnalysisReportModel = model<AnalysisReportDocument>(
-  'AnalysisReport',
-  analysisReportSchema
+analysisReportSchema.index({ messageId: 1 }, { unique: true });
+
+export const AnalysisReportModel =
+  (mongoose.models?.['AnalysisReport'] as mongoose.Model<AnalysisReportDocument>) ||
+  model<AnalysisReportDocument>('AnalysisReport', analysisReportSchema);
+
+// ---------------------------------------------------------------------------
+// RawEmail Mongoose schema + model (Preserves original EML payloads)
+// ---------------------------------------------------------------------------
+
+export interface RawEmailRecord {
+  messageId: string;
+  buffer: Uint8Array | unknown;
+  source?: 'eml' | 'gmail';
+  gmailMessageId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type RawEmailDocument = RawEmailRecord & Document;
+
+const rawEmailSchema = new Schema<RawEmailDocument>(
+  {
+    messageId: { type: String, required: true },
+    buffer: { type: Schema.Types.Buffer, required: true },
+    source: { type: String, enum: ['eml', 'gmail'], default: 'eml' },
+    gmailMessageId: { type: String },
+  },
+  { timestamps: true }
 );
+
+rawEmailSchema.index({ messageId: 1 }, { unique: true });
+
+export const RawEmailModel =
+  (mongoose.models?.['RawEmail'] as mongoose.Model<RawEmailDocument>) ||
+  model<RawEmailDocument>('RawEmail', rawEmailSchema);
 
 // ---------------------------------------------------------------------------
 // GmailAccount Mongoose schema + model
@@ -258,11 +290,55 @@ export async function cleanupDuplicateGmailRecords(): Promise<{ duplicatesRemove
 }
 
 /**
- * Safely synchronizes indexes on EmailAnalysisRecordModel after deduplication cleanup.
+ * Migration cleanup routine to collapse any duplicate AnalysisReport records
+ * down to the most recent one (by timestamp).
+ */
+export async function cleanupDuplicateAnalysisReports(): Promise<{ duplicatesRemoved: number }> {
+  try {
+    const duplicates = await AnalysisReportModel.aggregate([
+      {
+        $group: {
+          _id: '$messageId',
+          count: { $sum: 1 },
+          docs: { $push: { id: '$_id', timestamp: '$timestamp' } },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+    ]);
+
+    let duplicatesRemoved = 0;
+
+    for (const group of duplicates) {
+      const sorted = group.docs.sort(
+        (a: { timestamp?: string; id: unknown }, b: { timestamp?: string; id: unknown }) => {
+          const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+          const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+          return timeB - timeA;
+        }
+      );
+
+      // Keep the newest (index 0), delete older duplicates
+      const idsToDelete = sorted.slice(1).map((d: { id: unknown }) => d.id);
+      const deleteResult = await AnalysisReportModel.deleteMany({ _id: { $in: idsToDelete } });
+      duplicatesRemoved += deleteResult.deletedCount || 0;
+    }
+
+    return { duplicatesRemoved };
+  } catch (err) {
+    console.error('[db] Error cleaning up duplicate AnalysisReport records:', err);
+    throw err;
+  }
+}
+
+/**
+ * Safely synchronizes indexes across forensic models after deduplication cleanup.
  */
 export async function syncEmailAnalysisIndexes(): Promise<void> {
   await cleanupDuplicateGmailRecords();
+  await cleanupDuplicateAnalysisReports();
   await EmailAnalysisRecordModel.syncIndexes();
+  await AnalysisReportModel.syncIndexes();
+  await RawEmailModel.syncIndexes();
 }
 
 // ---------------------------------------------------------------------------
