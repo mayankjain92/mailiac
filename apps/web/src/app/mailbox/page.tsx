@@ -29,6 +29,8 @@ import {
 } from 'lucide-react';
 
 import { useTheme } from '@/components/ThemeProvider';
+import { decodeHtmlEntities } from '@/lib/utils';
+import VerdictBadge from '@/components/VerdictBadge';
 
 export interface GmailMessageSummary extends Partial<GmailMessageAnalysisEnrichment> {
   id: string;
@@ -38,9 +40,20 @@ export interface GmailMessageSummary extends Partial<GmailMessageAnalysisEnrichm
   date: string;
   snippet: string;
   unread?: boolean;
+  messageIdHeader?: string;
 }
 
-type MailboxFilter = 'inbox' | 'all' | 'fraud' | 'spam' | 'good' | 'unanalyzed';
+export interface RecentReportItem {
+  jobId: string;
+  subject?: string;
+  sender?: string;
+  finalScore: number;
+  verdict: 'QUARANTINE' | 'FLAG' | 'SAFE';
+  timestamp?: string;
+  createdAt?: string;
+}
+
+type MailboxFilter = 'inbox' | 'all' | 'quarantine' | 'suspicious' | 'safe' | 'unanalyzed';
 
 export default function MailboxPage(): React.JSX.Element {
   const router = useRouter();
@@ -56,6 +69,7 @@ export default function MailboxPage(): React.JSX.Element {
   const [activeFilter, setActiveFilter] = useState<MailboxFilter>('inbox');
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [selectedCheckboxIds, setSelectedCheckboxIds] = useState<Set<string>>(new Set());
+  const [recentReports, setRecentReports] = useState<RecentReportItem[]>([]);
 
   // UI state
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -184,10 +198,10 @@ export default function MailboxPage(): React.JSX.Element {
         throw new Error('No job ID returned from server.');
       }
 
-      // Navigate to existing forensic analysis console
+      // Navigate to real-time sequential pipeline execution console
       router.push(
-        `/forensic-analysis?jobId=${data.jobId}&fileName=${encodeURIComponent(
-          message.subject || 'Gmail Sample'
+        `/forensic-analysis?jobId=${encodeURIComponent(data.jobId)}&fileName=${encodeURIComponent(
+          message.subject || 'Gmail Forensics Sample'
         )}`
       );
     } catch (err: unknown) {
@@ -198,31 +212,32 @@ export default function MailboxPage(): React.JSX.Element {
     }
   };
 
+
   // Counts for Mailiac Security Filters
   const counts = useMemo(() => {
-    let fraud = 0;
-    let spam = 0;
-    let good = 0;
+    let quarantine = 0;
+    let suspicious = 0;
+    let safe = 0;
     let unanalyzed = 0;
 
     for (const msg of messages) {
       if (!msg.analyzed) {
         unanalyzed++;
       } else if (msg.verdict === 'QUARANTINE' || (typeof msg.finalScore === 'number' && msg.finalScore >= 70)) {
-        fraud++;
+        quarantine++;
       } else if (msg.verdict === 'FLAG' || (typeof msg.finalScore === 'number' && msg.finalScore >= 30)) {
-        spam++;
+        suspicious++;
       } else {
-        good++;
+        safe++;
       }
     }
 
     return {
       inbox: messages.length,
       all: messages.length,
-      fraud,
-      spam,
-      good,
+      quarantine,
+      suspicious,
+      safe,
       unanalyzed,
     };
   }, [messages]);
@@ -234,11 +249,11 @@ export default function MailboxPage(): React.JSX.Element {
         case 'inbox':
         case 'all':
           return true;
-        case 'fraud':
+        case 'quarantine':
           return msg.analyzed && (msg.verdict === 'QUARANTINE' || (typeof msg.finalScore === 'number' && msg.finalScore >= 70));
-        case 'spam':
+        case 'suspicious':
           return msg.analyzed && (msg.verdict === 'FLAG' || (typeof msg.finalScore === 'number' && msg.finalScore >= 30 && msg.finalScore < 70));
-        case 'good':
+        case 'safe':
           return msg.analyzed && (msg.verdict === 'SAFE' || (typeof msg.finalScore === 'number' && msg.finalScore < 30));
         case 'unanalyzed':
           return !msg.analyzed;
@@ -248,6 +263,28 @@ export default function MailboxPage(): React.JSX.Element {
     });
   }, [messages, activeFilter]);
 
+  // Fetch recent forensic reports from backend API (capped at 5)
+  const fetchRecentReports = useCallback(async (): Promise<void> => {
+    try {
+      const res = await fetch('/api/reports/history?limit=5');
+      if (res.ok) {
+        const data = await res.json();
+        const records: RecentReportItem[] = Array.isArray(data?.records)
+          ? data.records
+          : Array.isArray(data)
+          ? data
+          : [];
+        setRecentReports(records.slice(0, 5));
+      }
+    } catch {
+      // Graceful fallback on network glitch
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRecentReports();
+  }, [fetchRecentReports]);
+
   // Selected email object
   const selectedEmail = useMemo(() => {
     return messages.find((m) => m.id === selectedEmailId) || null;
@@ -256,11 +293,12 @@ export default function MailboxPage(): React.JSX.Element {
   // Helper to parse sender display name and email address
   const parseSender = (senderStr: string): { name: string; email: string } => {
     if (!senderStr) return { name: 'Unknown', email: '' };
-    const match = senderStr.match(/^(.*?)\s*<([^>]+)>$/);
+    const decoded = decodeHtmlEntities(senderStr);
+    const match = decoded.match(/^(.*?)\s*<([^>]+)>$/);
     if (match) {
       return { name: match[1].replace(/["']/g, '').trim() || match[2], email: match[2] };
     }
-    return { name: senderStr, email: senderStr };
+    return { name: decoded, email: decoded };
   };
 
   // Helper to format date string
@@ -479,6 +517,7 @@ export default function MailboxPage(): React.JSX.Element {
                 <Mail className="w-4 h-4" />
                 <span>All Mail</span>
               </div>
+              <span className="text-[11px] opacity-80">{counts.all}</span>
             </button>
 
             {/* Mailiac Security Filters */}
@@ -488,60 +527,54 @@ export default function MailboxPage(): React.JSX.Element {
               </div>
 
               <button
-                onClick={() => setActiveFilter('fraud')}
+                onClick={() => setActiveFilter('quarantine')}
                 className={`w-full flex items-center justify-between px-5 py-2 rounded-r-full transition-colors ${
-                  activeFilter === 'fraud'
+                  activeFilter === 'quarantine'
                     ? 'bg-red-500/10 dark:bg-[#ef4444]/20 text-red-600 dark:text-[#ef4444] font-bold border-l-2 border-red-600 dark:border-[#ef4444]'
                     : 'text-red-600 dark:text-[#ef4444] hover:bg-red-500/10'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <ShieldAlert className="w-4 h-4" />
-                  <span>Fraud</span>
+                  <span>Quarantine</span>
                 </div>
-                {counts.fraud > 0 && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-red-500/15 text-red-600 dark:text-[#ef4444] font-bold">
-                    {counts.fraud}
-                  </span>
-                )}
+                <span className="px-1.5 py-0.5 rounded text-[10px] bg-red-500/15 text-red-600 dark:text-[#ef4444] font-bold">
+                  {counts.quarantine}
+                </span>
               </button>
 
               <button
-                onClick={() => setActiveFilter('spam')}
+                onClick={() => setActiveFilter('suspicious')}
                 className={`w-full flex items-center justify-between px-5 py-2 rounded-r-full transition-colors ${
-                  activeFilter === 'spam'
+                  activeFilter === 'suspicious'
                     ? 'bg-amber-500/10 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold border-l-2 border-amber-600 dark:border-amber-500'
                     : 'text-amber-700 dark:text-amber-400 hover:bg-amber-500/10'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <AlertTriangle className="w-4 h-4" />
-                  <span>Spam</span>
+                  <span>Suspicious</span>
                 </div>
-                {counts.spam > 0 && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold">
-                    {counts.spam}
-                  </span>
-                )}
+                <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold">
+                  {counts.suspicious}
+                </span>
               </button>
 
               <button
-                onClick={() => setActiveFilter('good')}
+                onClick={() => setActiveFilter('safe')}
                 className={`w-full flex items-center justify-between px-5 py-2 rounded-r-full transition-colors ${
-                  activeFilter === 'good'
+                  activeFilter === 'safe'
                     ? 'bg-emerald-500/10 dark:bg-green-500/20 text-emerald-700 dark:text-green-400 font-bold border-l-2 border-emerald-600 dark:border-green-500'
                     : 'text-emerald-700 dark:text-green-400 hover:bg-emerald-500/10'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Good</span>
+                  <span>Safe</span>
                 </div>
-                {counts.good > 0 && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/15 text-emerald-700 dark:text-green-400 font-bold">
-                    {counts.good}
-                  </span>
-                )}
+                <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/15 text-emerald-700 dark:text-green-400 font-bold">
+                  {counts.safe}
+                </span>
               </button>
 
               <button
@@ -556,25 +589,62 @@ export default function MailboxPage(): React.JSX.Element {
                   <HelpCircle className="w-4 h-4" />
                   <span>Unanalyzed</span>
                 </div>
-                {counts.unanalyzed > 0 && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#EAEAE5] dark:bg-[#333] text-[#434656] dark:text-[#A0A7A3] font-bold border border-[#D5D5CE] dark:border-transparent">
-                    {counts.unanalyzed}
-                  </span>
-                )}
+                <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#EAEAE5] dark:bg-[#333] text-[#434656] dark:text-[#A0A7A3] font-bold border border-[#D5D5CE] dark:border-transparent">
+                  {counts.unanalyzed}
+                </span>
               </button>
+            </div>
+
+            {/* Recent Investigations Section (Capped at 5) */}
+            <div className="pt-6 pb-2">
+              <div className="px-5 text-[10px] font-bold text-[#737688] dark:text-[#7D8681] uppercase tracking-widest mb-2 flex items-center justify-between">
+                <span>RECENT INVESTIGATIONS</span>
+                <span className="text-[9px] font-mono opacity-60">LAST 5</span>
+              </div>
+
+              {recentReports.length === 0 ? (
+                <div className="px-5 py-1.5 text-[11px] font-mono text-[#737688] dark:text-[#656464]">
+                  No recent investigations
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {recentReports.map((report) => (
+                    <Link
+                      key={report.jobId}
+                      href={`/analysis-console/${encodeURIComponent(report.jobId)}/evidence`}
+                      className="w-full flex flex-col px-4 py-2 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#1B211E] transition-colors group text-left border border-transparent hover:border-[#D5D5CE] dark:hover:border-[#29342F]"
+                      title={report.subject || '(No Subject)'}
+                    >
+                      <div className="flex items-center justify-between gap-1.5 mb-1">
+                        <VerdictBadge
+                          verdict={report.verdict}
+                          score={report.finalScore}
+                          size="sm"
+                        />
+                        <span className="text-[10px] font-mono text-[#737688] dark:text-[#7D8681] shrink-0">
+                          {formatTimestamp(report.timestamp || report.createdAt || '')}
+                        </span>
+                      </div>
+                      <span className="truncate text-xs text-[#333] dark:text-[#d0d0d0] group-hover:text-[#0052ff] dark:group-hover:text-[#3b82f6] transition-colors">
+                        {decodeHtmlEntities(report.subject || '') || '(No Subject)'}
+                      </span>
+                    </Link>
+                  ))}
+
+                  <div className="pt-2 px-3 mt-1 border-t border-[#D5D5CE]/50 dark:border-[#29342F]/50">
+                    <Link
+                      href="/history"
+                      className="text-[10px] font-mono text-[#0052ff] dark:text-[#3b82f6] hover:underline flex items-center justify-between font-bold uppercase tracking-wider"
+                    >
+                      <span>View full audit log</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </div>
+                </div>
+              )}
             </div>
           </nav>
 
-          {/* Sidebar Footer Link */}
-          <div className="p-3 border-t border-[#D5D5CE] dark:border-[#29342F]">
-            <Link
-              href="/forensic-analysis"
-              className="flex items-center justify-between px-3 py-2 rounded bg-[#EAEAE5] dark:bg-[#151A17] hover:bg-[#DDDCD7] dark:hover:bg-[#202124] text-[#434656] dark:text-[#A0A7A3] hover:text-[#0052ff] dark:hover:text-[#3b82f6] text-[11px] font-mono transition-colors border border-[#D5D5CE] dark:border-[#29342F]"
-            >
-              <span>Forensic Console</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
         </aside>
 
         {/* Center: Email List + Right: Reading Pane */}
@@ -734,37 +804,32 @@ export default function MailboxPage(): React.JSX.Element {
                       <div className="flex items-center flex-1 min-w-0 mr-3 gap-2">
                         {/* Security Tag */}
                         {msg.analyzed ? (
-                          msg.verdict === 'QUARANTINE' || (typeof msg.finalScore === 'number' && msg.finalScore >= 70) ? (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-red-50 dark:bg-[#ef4444]/15 text-red-700 dark:text-[#ef4444] border border-red-200 dark:border-[#ef4444]/30 shrink-0 uppercase tracking-wider">
-                              [FRAUD · {msg.finalScore ?? 87}]
-                            </span>
-                          ) : msg.verdict === 'FLAG' || (typeof msg.finalScore === 'number' && msg.finalScore >= 30) ? (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 shrink-0 uppercase tracking-wider">
-                              [SPAM · {msg.finalScore ?? 45}]
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 dark:bg-green-500/15 text-emerald-700 dark:text-green-400 border border-emerald-200 dark:border-green-500/30 shrink-0 uppercase tracking-wider">
-                              [GOOD · {msg.finalScore ?? 12}]
-                            </span>
-                          )
+                          <VerdictBadge
+                            verdict={msg.verdict}
+                            score={msg.finalScore}
+                            size="sm"
+                          />
                         ) : (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#EAEAE5] dark:bg-[#202124] text-[#555] dark:text-[#737688] border border-[#D5D5CE] dark:border-[#333] shrink-0 uppercase tracking-wider">
+                          <span
+                            title="Unanalyzed email · Click to run forensic pipeline"
+                            className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#EAEAE5] dark:bg-[#202124] text-[#555] dark:text-[#737688] border border-[#D5D5CE] dark:border-[#333] shrink-0 uppercase tracking-wider cursor-help"
+                          >
                             [UNANALYZED]
                           </span>
                         )}
 
                         <span
-                          className={`truncate text-xs ${
+                          className={`truncate text-xs shrink-0 max-w-[65%] ${
                             isSelected || msg.unread
                               ? 'font-bold text-[#1a1c1c] dark:text-[#fdfcf8]'
                               : 'font-normal text-[#333] dark:text-[#d0d0d0]'
                           }`}
                         >
-                          {msg.subject || '(No Subject)'}
+                          {decodeHtmlEntities(msg.subject) || '(No Subject)'}
                         </span>
 
-                        <span className="text-[#737688] dark:text-[#656464] truncate text-xs font-mono hidden md:inline">
-                          — {msg.snippet}
+                        <span className="text-[#737688] dark:text-[#656464] truncate text-xs font-mono hidden md:inline flex-1 min-w-0">
+                          — {decodeHtmlEntities(msg.snippet)}
                         </span>
                       </div>
 
@@ -828,7 +893,7 @@ export default function MailboxPage(): React.JSX.Element {
                 </div>
 
                 <div className="flex items-center gap-2 text-xs font-mono">
-                  {selectedEmail.analyzed && selectedEmail.jobId ? (
+                  {selectedEmail.analyzed && selectedEmail.jobId && (
                     <Link
                       href={`/analysis-console/${selectedEmail.jobId}/evidence`}
                       className="text-xs font-mono font-bold text-[#0052ff] dark:text-[#3b82f6] hover:underline inline-flex items-center gap-1"
@@ -836,24 +901,6 @@ export default function MailboxPage(): React.JSX.Element {
                       <span>Full Evidence Explorer</span>
                       <ExternalLink className="w-3.5 h-3.5" />
                     </Link>
-                  ) : (
-                    <button
-                      onClick={() => handleAnalyze(selectedEmail)}
-                      disabled={analyzingMessageId === selectedEmail.id}
-                      className="bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white text-xs font-mono font-semibold px-3 py-1.5 rounded transition-colors flex items-center gap-1.5 disabled:opacity-50"
-                    >
-                      {analyzingMessageId === selectedEmail.id ? (
-                        <>
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          <span>Deconstructing...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>Analyze Forensics</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </>
-                      )}
-                    </button>
                   )}
                 </div>
               </div>
@@ -868,7 +915,7 @@ export default function MailboxPage(): React.JSX.Element {
                       <div className="flex items-center gap-3">
                         <ShieldAlert className="w-5 h-5 shrink-0" />
                         <span className="font-mono text-xs font-bold uppercase tracking-wider">
-                          ⚠ FRAUDULENT EMAIL · RISK {selectedEmail.finalScore ?? 87}/100
+                          ⚠ QUARANTINE · RISK {selectedEmail.finalScore ?? 87}/100
                         </span>
                       </div>
                       <Link
@@ -884,7 +931,7 @@ export default function MailboxPage(): React.JSX.Element {
                       <div className="flex items-center gap-3">
                         <AlertTriangle className="w-5 h-5 shrink-0" />
                         <span className="font-mono text-xs font-bold uppercase tracking-wider">
-                          ⚠ SUSPICIOUS SPAM · RISK {selectedEmail.finalScore ?? 45}/100
+                          ⚠ SUSPICIOUS · RISK {selectedEmail.finalScore ?? 45}/100
                         </span>
                       </div>
                       <Link
@@ -897,9 +944,9 @@ export default function MailboxPage(): React.JSX.Element {
                   ) : (
                     <div className="bg-emerald-50 dark:bg-green-500/10 border-b border-emerald-200 dark:border-green-500/20 px-6 py-3 flex justify-between items-center text-emerald-700 dark:text-green-400 animate-fadeIn">
                       <div className="flex items-center gap-3">
-                        <CheckCircle2 className="w-5 h-5 shrink-0" />
+                        <CheckCircle2 className="w-4 h-4" />
                         <span className="font-mono text-xs font-bold uppercase tracking-wider">
-                          ✓ VERIFIED GOOD · RISK {selectedEmail.finalScore ?? 12}/100
+                          ✓ SAFE · RISK {selectedEmail.finalScore ?? 12}/100
                         </span>
                       </div>
                       <Link
@@ -921,13 +968,17 @@ export default function MailboxPage(): React.JSX.Element {
                     <button
                       onClick={() => handleAnalyze(selectedEmail)}
                       disabled={analyzingMessageId === selectedEmail.id}
-                      className="text-[11px] font-mono font-bold border border-[#0052ff] bg-[#0052ff] text-white px-3 py-1 rounded hover:bg-[#004ced] transition-colors uppercase tracking-wider flex items-center gap-1 disabled:opacity-50"
+                      className="text-[11px] font-mono font-bold border border-[#0052ff] bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white px-3 py-1.5 rounded transition-colors uppercase tracking-wider flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
                     >
                       {analyzingMessageId === selectedEmail.id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Deconstructing...</span>
+                        </>
                       ) : (
                         <>
-                          Analyze email <ArrowRight className="w-3.5 h-3.5" />
+                          <span>Analyze Email</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
                         </>
                       )}
                     </button>
@@ -937,7 +988,7 @@ export default function MailboxPage(): React.JSX.Element {
                 {/* Email Metadata Details */}
                 <div className="p-8 pb-4">
                   <h1 className="text-xl md:text-2xl font-bold text-[#1a1c1c] dark:text-[#fdfcf8] mb-6 leading-snug">
-                    {selectedEmail.subject || '(No Subject)'}
+                    {decodeHtmlEntities(selectedEmail.subject) || '(No Subject)'}
                   </h1>
 
                   <div className="flex justify-between items-start mb-8 pb-6 border-b border-[#D5D5CE] dark:border-[#29342F]">
@@ -972,11 +1023,11 @@ export default function MailboxPage(): React.JSX.Element {
                   {/* Email Body Container */}
                   <div className="bg-white dark:bg-[#121614] text-[#2a2c2c] dark:text-[#d0d0d0] p-6 rounded border border-[#D5D5CE] dark:border-[#29342F] font-sans leading-relaxed space-y-4 shadow-sm">
                     <div className="text-sm">
-                      <p className="whitespace-pre-wrap">{selectedEmail.snippet}</p>
+                      <p className="whitespace-pre-wrap">{decodeHtmlEntities(selectedEmail.snippet)}</p>
                     </div>
 
                     <div className="pt-6 border-t border-[#D5D5CE] dark:border-[#29342F] text-[11px] font-mono text-[#737688] dark:text-[#7D8681] flex items-center justify-between">
-                      <span>RFC 822 MIME Identifier: {selectedEmail.id}</span>
+                      <span>Message-ID: {selectedEmail.messageIdHeader || selectedEmail.id}</span>
                       <button
                         onClick={() => handleAnalyze(selectedEmail)}
                         className="text-[#0052ff] dark:text-[#3b82f6] hover:underline"
@@ -1012,7 +1063,11 @@ export default function MailboxPage(): React.JSX.Element {
           });
         }}
         onJobCreated={(jobId, fileName) => {
-          router.push(`/forensic-analysis?jobId=${jobId}&fileName=${encodeURIComponent(fileName)}`);
+          router.push(
+            `/forensic-analysis?jobId=${encodeURIComponent(jobId)}&fileName=${encodeURIComponent(
+              fileName || 'Uploaded EML Sample'
+            )}`
+          );
         }}
       />
     </div>

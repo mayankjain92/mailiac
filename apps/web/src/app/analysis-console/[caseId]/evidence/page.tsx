@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import StitchLandingHeader from '@/components/StitchLandingHeader';
 import EvidenceExplorer from '@/components/EvidenceExplorer';
 import type { AnalysisReport } from '@mailiac/shared-types';
@@ -10,6 +10,7 @@ import Link from 'next/link';
 
 export default function EvidenceExplorerPage(): React.JSX.Element {
   const params = useParams();
+  const router = useRouter();
   const rawCaseId = params?.['caseId'];
   const caseId = Array.isArray(rawCaseId) ? rawCaseId[0] : rawCaseId;
 
@@ -43,9 +44,9 @@ export default function EvidenceExplorerPage(): React.JSX.Element {
         const jobData = await jobRes.json();
         setJobStatus(jobData.status);
 
-        if (jobData.status === 'processing' || jobData.status === 'queued') {
-          // Still processing, poll shortly
-          setTimeout(fetchAnalysisReport, 1500);
+        if (jobData.status === 'processing' || jobData.status === 'queued' || jobData.status === 'active') {
+          // If job is still in-flight, show real-time sequential pipeline execution
+          router.replace(`/forensic-analysis?jobId=${encodeURIComponent(caseId)}`);
           return;
         } else if (jobData.status === 'failed') {
           setError(jobData.failedReason || 'Forensic analysis job failed during execution.');
@@ -62,7 +63,7 @@ export default function EvidenceExplorerPage(): React.JSX.Element {
     } finally {
       setIsLoading(false);
     }
-  }, [caseId]);
+  }, [caseId, router]);
 
   useEffect(() => {
     fetchAnalysisReport();

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import type { AnalysisReport } from '@mailiac/shared-types';
 import {
@@ -24,6 +24,8 @@ import {
   Radio,
 } from 'lucide-react';
 import AnalystFeedbackModal from './AnalystFeedbackModal';
+import { getExecutiveVerdictDetails } from '@/lib/findings';
+import VerdictBadge from '@/components/VerdictBadge';
 
 export interface ForensicJob {
   id: string;
@@ -62,7 +64,7 @@ const PIPELINE_STAGES: PipelineStageDef[] = [
 export default function ForensicAnalysisConsole({
   job,
   onReset,
-  onViewReport,
+  onViewReport: _onViewReport,
 }: ForensicAnalysisConsoleProps): React.JSX.Element {
   const [elapsedMs, setElapsedMs] = useState<number>(0);
   const [activeStageIndex, setActiveStageIndex] = useState<number>(0);
@@ -73,6 +75,9 @@ export default function ForensicAnalysisConsole({
   const isFailed = job.status === 'failed';
   const isProcessing = job.status === 'processing' || job.status === 'active';
   const isQueued = job.status === 'queued';
+
+  // Executive verdict strictly derived from report
+  const verdict = useMemo(() => getExecutiveVerdictDetails(job.report), [job.report]);
 
   // Real-time elapsed execution timer while running
   useEffect(() => {
@@ -145,17 +150,6 @@ export default function ForensicAnalysisConsole({
 
   const caseIdDisplay = job.id.length > 8 ? job.id.slice(0, 8).toUpperCase() : job.id.toUpperCase();
 
-  const handleScrollToReport = (): void => {
-    if (onViewReport) {
-      onViewReport();
-    } else {
-      const riskEl = document.getElementById('risk-engine');
-      if (riskEl) {
-        riskEl.scrollIntoView({ behavior: 'smooth' });
-      }
-    }
-  };
-
   return (
     <div className="w-full max-w-[1440px] mx-auto px-6 md:px-16 py-12 transition-colors duration-200">
       
@@ -187,6 +181,11 @@ export default function ForensicAnalysisConsole({
               <span className="w-2 h-2 rounded-full bg-[#ef4444]"></span>
               FAILED
             </span>
+          ) : isQueued ? (
+            <span className="text-amber-500 font-bold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+              QUEUED
+            </span>
           ) : (
             <span className="text-[#0052ff] dark:text-[#3b82f6] font-bold flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#0052ff] dark:bg-[#3b82f6] animate-ping"></span>
@@ -198,18 +197,61 @@ export default function ForensicAnalysisConsole({
 
       {/* Analysis Main Header */}
       <section className="mb-14 text-center max-w-3xl mx-auto">
-        <div className="inline-flex items-center gap-2 px-3 py-1 mb-4 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 border border-[#0052ff]/20 dark:border-[#3b82f6]/30 text-[#0052ff] dark:text-[#3b82f6] text-[11px] font-mono font-bold tracking-wider uppercase">
-          <Radio className="w-3.5 h-3.5 animate-pulse" />
-          Real-Time Pipeline Execution
-        </div>
+        {/* State-Aware Pipeline Status Pill */}
+        {isCompleted ? (
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 mb-4 rounded-full bg-[#10b981]/10 dark:bg-[#10b981]/20 border border-[#10b981]/30 text-[#10b981] dark:text-[#34d399] text-[11px] font-mono font-bold tracking-wider uppercase">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Forensic Triage Complete
+          </div>
+        ) : isFailed ? (
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 mb-4 rounded-full bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-[11px] font-mono font-bold tracking-wider uppercase">
+            <XCircle className="w-3.5 h-3.5" />
+            Analysis Interrupted
+          </div>
+        ) : isQueued ? (
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 mb-4 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[11px] font-mono font-bold tracking-wider uppercase">
+            <Clock className="w-3.5 h-3.5" />
+            Pipeline Queued
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 mb-4 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 border border-[#0052ff]/20 dark:border-[#3b82f6]/30 text-[#0052ff] dark:text-[#3b82f6] text-[11px] font-mono font-bold tracking-wider uppercase">
+            <Radio className="w-3.5 h-3.5 animate-pulse" />
+            Real-Time Pipeline Execution
+          </div>
+        )}
 
         <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-[#1a1c1c] dark:text-[#F2F2EE] mb-4">
           FORENSIC ANALYSIS
         </h1>
 
-        <p className="text-base text-[#434656] dark:text-[#A0A7A3] mb-6 leading-relaxed">
-          Deep inspection of the submitted email is in progress. Our multi-stage pipeline is dissecting headers, attachments, and intent.
-        </p>
+        {/* State-Aware Subtitle */}
+        {isCompleted ? (
+          <p className="text-base text-[#434656] dark:text-[#A0A7A3] mb-6 leading-relaxed">
+            Multi-stage dissection completed in {(elapsedMs / 1000).toFixed(2)}s. All 9 forensic engines evaluated.{' '}
+            {job.report && (
+              <span className="inline-flex items-center gap-2 mt-2 sm:mt-0 font-mono text-xs font-semibold text-[#1a1c1c] dark:text-[#F2F2EE]">
+                <span>Forensic Verdict:</span>
+                <VerdictBadge
+                  verdict={verdict.severityLabel}
+                  score={job.report.riskMatrix.finalScore}
+                  size="sm"
+                />
+              </span>
+            )}
+          </p>
+        ) : isFailed ? (
+          <p className="text-base text-[#434656] dark:text-[#A0A7A3] mb-6 leading-relaxed">
+            Pipeline inspection halted: {job.error || 'The forensic worker encountered an unrecoverable processing error.'}
+          </p>
+        ) : isQueued ? (
+          <p className="text-base text-[#434656] dark:text-[#A0A7A3] mb-6 leading-relaxed">
+            Submitted sample is queued for forensic worker pickup. Preparing asynchronous RFC822 parser and queue dispatcher.
+          </p>
+        ) : (
+          <p className="text-base text-[#434656] dark:text-[#A0A7A3] mb-6 leading-relaxed">
+            Deep inspection of the submitted email is in progress. Our multi-stage pipeline is dissecting headers, attachments, and intent.
+          </p>
+        )}
 
         {/* Uploaded File Chip */}
         <div className="inline-flex items-center gap-2.5 border border-[#D5D5CE] dark:border-[#29342F] bg-[#F2F2EE] dark:bg-[#1B211E] px-4 py-2 rounded shadow-sm">
@@ -523,14 +565,28 @@ export default function ForensicAnalysisConsole({
               FORENSIC ANALYSIS COMPLETE
             </div>
             <p className="text-xs text-[#434656] dark:text-[#A0A7A3]">
-              All 9 pipeline stages completed successfully in {(elapsedMs / 1000).toFixed(2)}s. Final Risk Score:{' '}
-              <strong className="text-[#0052ff] dark:text-[#3b82f6]">
-                {job.report?.riskMatrix.finalScore}/100
-              </strong>.
+              All 9 pipeline stages completed successfully in {(elapsedMs / 1000).toFixed(2)}s.{' '}
+              {job.report && (
+                <span className="inline-flex items-center gap-1.5 ml-1">
+                  <span>Verdict:</span>
+                  <VerdictBadge
+                    verdict={verdict.severityLabel}
+                    score={job.report.riskMatrix.finalScore}
+                    size="sm"
+                  />
+                </span>
+              )}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href={`/analysis-console/${job.id}/evidence`}
+              className="bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold px-5 py-2.5 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 shadow-sm font-mono"
+            >
+              <FileText className="w-4 h-4" /> View Full Evidence Explorer <ArrowRight className="w-4 h-4" />
+            </Link>
+
             <button
               onClick={() => setIsFeedbackModalOpen(true)}
               className="border border-[#0052ff] dark:border-[#3b82f6] text-[#0052ff] dark:text-[#3b82f6] hover:bg-[#0052ff]/10 dark:hover:bg-[#3b82f6]/20 bg-white dark:bg-[#151A17] text-xs font-bold px-4 py-2.5 rounded transition-colors flex items-center gap-2 font-mono shadow-sm"
@@ -539,18 +595,6 @@ export default function ForensicAnalysisConsole({
               <ShieldCheck className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" /> Submit Feedback
             </button>
 
-            <Link
-              href={`/analysis-console/${job.id}/evidence`}
-              className="bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold px-5 py-2.5 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 shadow-sm font-mono"
-            >
-              <FileText className="w-4 h-4" /> View Full Evidence Explorer <ArrowRight className="w-4 h-4" />
-            </Link>
-            <button
-              onClick={handleScrollToReport}
-              className="border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold px-4 py-2.5 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-colors font-mono"
-            >
-              Overview Score
-            </button>
             {onReset && (
               <button
                 onClick={onReset}
