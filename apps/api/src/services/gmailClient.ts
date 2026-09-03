@@ -8,6 +8,7 @@ export interface GmailMessageSummary {
   subject: string;
   date: string;
   snippet: string;
+  messageIdHeader?: string;
 }
 
 export interface ListMessagesOptions {
@@ -30,6 +31,85 @@ export class GmailClientError extends Error {
     super(message);
     this.name = 'GmailClientError';
   }
+}
+
+/**
+ * Decodes standard HTML entities (named, decimal, hex) from text strings.
+ */
+export function decodeHtmlEntities(str: string): string {
+  if (!str) return '';
+  return str
+    // Hex numeric entities: &#x1f600;
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+      try {
+        const codePoint = parseInt(hex, 16);
+        return String.fromCodePoint(codePoint);
+      } catch {
+        return _;
+      }
+    })
+    // Decimal numeric entities: &#39;
+    .replace(/&#([0-9]+);/g, (_, dec) => {
+      try {
+        const codePoint = parseInt(dec, 10);
+        return String.fromCodePoint(codePoint);
+      } catch {
+        return _;
+      }
+    })
+    // Named entities
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&copy;/g, '©')
+    .replace(/&reg;/g, '®')
+    .replace(/&trade;/g, '™')
+    .replace(/&hellip;/g, '…')
+    .replace(/&ndash;/g, '–')
+    .replace(/&mdash;/g, '—')
+    .replace(/&lsquo;/g, '‘')
+    .replace(/&rsquo;/g, '’')
+    .replace(/&ldquo;/g, '“')
+    .replace(/&rdquo;/g, '”')
+    .replace(/&bull;/g, '•')
+    .replace(/&pound;/g, '£')
+    .replace(/&euro;/g, '€');
+}
+
+/**
+ * Decodes RFC 2047 MIME encoded words in email headers (e.g. =?UTF-8?B?...?= or =?UTF-8?Q?...?=).
+ */
+export function decodeRfc2047(text: string): string {
+  if (!text || !text.includes('=?')) return text;
+
+  // RFC 2047 linear-white-space between adjacent encoded-words is ignored
+  const collapsed = text.replace(/(\?=\s+=\?)/g, '?==?');
+
+  return collapsed.replace(
+    /=\?([^?]+)\?([bBqQ])\?([^?]+)\?=/g,
+    (_, _charset, encoding, encodedText) => {
+      try {
+        const enc = encoding.toUpperCase();
+        if (enc === 'B') {
+          return Buffer.from(encodedText, 'base64').toString('utf-8');
+        }
+        if (enc === 'Q') {
+          const binary = encodedText
+            .replace(/_/g, ' ')
+            .replace(/=([0-9A-Fa-f]{2})/g, (_m: string, hex: string) =>
+              String.fromCharCode(parseInt(hex, 16))
+            );
+          return Buffer.from(binary, 'binary').toString('utf-8');
+        }
+        return _;
+      } catch {
+        return _;
+      }
+    }
+  );
 }
 
 /**
@@ -79,7 +159,7 @@ export async function executeWithRetry<T>(
 }
 
 /**
- * Lists messages from Gmail with lightweight metadata headers (From, Subject, Date, Snippet).
+ * Lists messages from Gmail with lightweight metadata headers (From, Subject, Date, Message-ID, Snippet).
  */
 export async function listMessages(
   auth: OAuth2Client,
@@ -113,7 +193,7 @@ export async function listMessages(
             userId: 'me',
             id: msg.id!,
             format: 'metadata',
-            metadataHeaders: ['From', 'Subject', 'Date'],
+            metadataHeaders: ['From', 'Subject', 'Date', 'Message-ID'],
           })
         );
         return detailRes.data;
@@ -124,30 +204,40 @@ export async function listMessages(
   );
 
   const summaries: GmailMessageSummary[] = [];
+  const seenIds = new Set<string>();
 
   for (const detail of messageDetails) {
-    if (!detail || !detail.id) continue;
+    if (!detail || !detail.id || seenIds.has(detail.id)) continue;
+    seenIds.add(detail.id);
 
     const headers = detail.payload?.headers ?? [];
-    const fromHeader =
+    const rawFromHeader =
       headers.find((h) => h.name?.toLowerCase() === 'from')?.value ??
       '(Unknown Sender)';
-    const subjectHeader =
+    const rawSubjectHeader =
       headers.find((h) => h.name?.toLowerCase() === 'subject')?.value ??
       '(No Subject)';
+    const messageIdHeader = headers.find(
+      (h) => h.name?.toLowerCase() === 'message-id'
+    )?.value;
     const dateHeader =
       headers.find((h) => h.name?.toLowerCase() === 'date')?.value ??
       (detail.internalDate
         ? new Date(Number(detail.internalDate)).toISOString()
         : new Date().toISOString());
 
+    const decodedSender = decodeHtmlEntities(decodeRfc2047(rawFromHeader));
+    const decodedSubject = decodeHtmlEntities(decodeRfc2047(rawSubjectHeader));
+    const decodedSnippet = decodeHtmlEntities(detail.snippet ?? '');
+
     summaries.push({
       id: detail.id,
       threadId: detail.threadId ?? undefined,
-      sender: fromHeader,
-      subject: subjectHeader,
+      sender: decodedSender,
+      subject: decodedSubject,
       date: dateHeader,
-      snippet: detail.snippet ?? '',
+      snippet: decodedSnippet,
+      messageIdHeader: messageIdHeader ?? undefined,
     });
   }
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import type { AnalysisReport, Finding, ForensicHop } from '@mailiac/shared-types';
+import type { AnalysisReport, ForensicHop } from '@mailiac/shared-types';
 import {
   Shield,
   ShieldAlert,
@@ -21,10 +21,20 @@ import {
   Globe,
   ArrowRight,
   Sparkles,
-  Paperclip,
-  Link2,
+  Zap,
+  Info,
 } from 'lucide-react';
 import AnalystFeedbackModal from './AnalystFeedbackModal';
+import ReverseHopMapVisualizer from './ReverseHopMapVisualizer';
+import {
+  getPartitionedFindings,
+  getAuthPostureSummary,
+  classifyForensicHop,
+  getOverrideDetails,
+  getReportMetadataSummary,
+  getAiDiagnosticsSummary,
+  normalizeIntents,
+} from '@/lib/findings';
 
 interface EvidenceExplorerProps {
   report: AnalysisReport;
@@ -42,83 +52,66 @@ interface RiskVisuals {
 }
 
 function getDynamicRiskVisuals(score: number, intentLabels: string[] = []): RiskVisuals {
-  const primaryIntent = (intentLabels[0] || 'BENIGN').replace(/_/g, ' ').toUpperCase();
+  const joinedIntents = intentLabels.join(' ').toUpperCase();
 
-  if (score <= 20) {
+  if (score < 30) {
     return {
-      hex: '#10B981', // Vibrant Emerald Green
-      badgeBg: 'bg-[#10B981]/10',
-      badgeText: 'text-[#10B981]',
-      badgeBorder: 'border-[#10B981]/30',
-      label: 'LOW RISK · BENIGN',
+      hex: '#10B981', // Emerald Green
+      badgeBg: 'bg-emerald-50 dark:bg-green-500/15',
+      badgeText: 'text-emerald-700 dark:text-green-400',
+      badgeBorder: 'border-emerald-200 dark:border-green-500/30',
+      label: 'SAFE',
       verdictTitle: 'This email shows no significant indicators of malicious intent.',
       recommendation: 'Safe to review. No immediate action required.',
     };
   }
-  if (score <= 40) {
-    return {
-      hex: '#84CC16', // Lime / Yellow-Green
-      badgeBg: 'bg-[#84CC16]/10',
-      badgeText: 'text-[#84CC16] dark:text-[#a3e635]',
-      badgeBorder: 'border-[#84CC16]/30',
-      label: 'LOW-MODERATE RISK · REVIEW',
-      verdictTitle: 'This email exhibits minor anomalies but no definitive malicious payload.',
-      recommendation: 'Review the sender and links carefully before interacting.',
-    };
-  }
-  if (score <= 60) {
-    return {
-      hex: '#F59E0B', // Amber / Yellow
-      badgeBg: 'bg-[#F59E0B]/10',
-      badgeText: 'text-[#F59E0B] dark:text-[#fbbf24]',
-      badgeBorder: 'border-[#F59E0B]/30',
-      label: 'MEDIUM RISK · SUSPICIOUS',
-      verdictTitle: 'This email exhibits suspicious characteristics and should be inspected before trusting.',
-      recommendation: 'Review the sender and links carefully before interacting.',
-    };
-  }
-  if (score <= 80) {
-    let specificVerdict = `This email contains elevated risk indicators associated with ${primaryIntent.toLowerCase()}.`;
-    if (primaryIntent.includes('CREDENTIAL') || primaryIntent.includes('HARVESTING')) {
-      specificVerdict = 'This email contains multiple indicators associated with credential harvesting and sender impersonation.';
-    } else if (primaryIntent.includes('FINANCIAL') || primaryIntent.includes('WIRE')) {
-      specificVerdict = 'This email contains patterns associated with unauthorized financial requests and wire diversion.';
+
+  if (score < 70) {
+    let specificVerdict = `This email exhibits suspicious characteristics and should be inspected before trusting.`;
+    if (joinedIntents.includes('CREDENTIAL') || joinedIntents.includes('HARVESTING')) {
+      specificVerdict = 'This email exhibits suspicious characteristics associated with credential harvesting or sender impersonation.';
+    } else if (joinedIntents.includes('FINANCIAL') || joinedIntents.includes('WIRE') || joinedIntents.includes('COERCION')) {
+      specificVerdict = 'This email exhibits suspicious characteristics associated with financial requests and coercion.';
     }
 
     return {
-      hex: '#F97316', // Orange / Red-Orange
-      badgeBg: 'bg-[#F97316]/10',
-      badgeText: 'text-[#F97316] dark:text-[#fb923c]',
-      badgeBorder: 'border-[#F97316]/30',
-      label: 'HIGH RISK · DANGEROUS',
+      hex: '#F59E0B', // Amber
+      badgeBg: 'bg-amber-50 dark:bg-amber-500/15',
+      badgeText: 'text-amber-700 dark:text-amber-400',
+      badgeBorder: 'border-amber-200 dark:border-amber-500/30',
+      label: 'SUSPICIOUS',
       verdictTitle: specificVerdict,
-      recommendation: 'Do not click links or open attachments until the sender is verified.',
+      recommendation: 'Review the sender and links carefully before interacting.',
     };
   }
 
-  // score > 80
+  // score >= 70
   let criticalVerdict = 'High-confidence malicious email identified with critical threat indicators.';
-  if (primaryIntent.includes('CREDENTIAL')) {
+  if (joinedIntents.includes('CREDENTIAL') || joinedIntents.includes('HARVESTING')) {
     criticalVerdict = 'Critical threat: High-confidence credential harvesting and domain spoofing detected.';
+  } else if (joinedIntents.includes('FINANCIAL') || joinedIntents.includes('COERCION')) {
+    criticalVerdict = 'Critical threat: Aggressive financial coercion and unauthorized transaction pressure detected.';
   }
 
   return {
-    hex: '#EF4444', // Strong Red
-    badgeBg: 'bg-[#EF4444]/10',
-    badgeText: 'text-[#EF4444] dark:text-[#f87171]',
-    badgeBorder: 'border-[#EF4444]/30',
-    label: 'CRITICAL RISK · MALICIOUS',
+    hex: '#EF4444', // Red
+    badgeBg: 'bg-red-50 dark:bg-[#EF4444]/15',
+    badgeText: 'text-red-700 dark:text-[#EF4444]',
+    badgeBorder: 'border-red-200 dark:border-[#EF4444]/30',
+    label: 'QUARANTINE',
     verdictTitle: criticalVerdict,
-    recommendation: 'Do not interact with this email. Treat it as potentially malicious.',
+    recommendation: 'Do not interact with this email. Quarantine and verify sender authenticity.',
   };
 }
 
 function synthesizeAiInterpretation(
-  intent: string,
+  intentLabels: string[],
   score: number,
   senderDomain: string
 ): string {
-  const primaryIntent = intent.toUpperCase().replace(/_/g, ' ');
+  const joinedIntents = intentLabels.join(' ').toUpperCase();
+  const humanIntents = intentLabels.map((i) => i.replace(/_/g, ' ').toLowerCase()).filter(Boolean);
+  const primaryIntent = humanIntents[0] || 'benign communication';
 
   if (score <= 20) {
     if (senderDomain && senderDomain !== 'unknown') {
@@ -136,30 +129,38 @@ function synthesizeAiInterpretation(
   }
 
   if (score <= 80) {
-    if (primaryIntent.includes('CREDENTIAL') || primaryIntent.includes('HARVESTING')) {
+    if (joinedIntents.includes('CREDENTIAL') || joinedIntents.includes('HARVESTING')) {
       return `The AI identified high-urgency credential harvesting patterns and deceptive authentication prompts. The sender domain or message structure is consistent with targeted phishing tactics.`;
     }
-    if (primaryIntent.includes('FINANCIAL') || primaryIntent.includes('WIRE')) {
+    if (joinedIntents.includes('FINANCIAL') || joinedIntents.includes('WIRE') || joinedIntents.includes('COERCION')) {
       return `The AI identified suspicious financial or invoice diversion requests using coercive urgency. The communication patterns deviate significantly from verified organizational protocols.`;
     }
-    return `The AI detected multiple indicators of malicious intent associated with ${primaryIntent.toLowerCase()} and deceptive payload behavior.`;
+    return `The AI detected multiple indicators of malicious intent associated with ${primaryIntent} and deceptive payload behavior.`;
   }
 
   // score > 80
+  if (humanIntents.length > 1) {
+    const listStr = humanIntents.slice(0, -1).join(', ') + ' and ' + humanIntents[humanIntents.length - 1];
+    return `High-confidence malicious threat detected. The AI identified concurrent threat indicators including ${listStr}, deceptive sender impersonation, and fraudulent payload triggers requiring immediate quarantine.`;
+  }
+
   return `High-confidence malicious threat detected. The AI identified aggressive deceptive intent, deceptive sender impersonation, and fraudulent payload triggers requiring immediate quarantine.`;
 }
 
 export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerProps): React.JSX.Element {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
-  const [showDetailedAiFindings, setShowDetailedAiFindings] = useState<boolean>(false);
   const [isTechnicalExpanded, setIsTechnicalExpanded] = useState<boolean>(false);
   const [showRawJson, setShowRawJson] = useState<boolean>(false);
   const [animatedScore, setAnimatedScore] = useState<number>(0);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
+  const [showMinorAnomalies, setShowMinorAnomalies] = useState<boolean>(false);
+  const [selectedHopIndex, setSelectedHopIndex] = useState<number | null>(null);
+  const [showHopMap, setShowHopMap] = useState<boolean>(true);
 
   const finalScore = Math.max(0, Math.min(100, report?.riskMatrix?.finalScore ?? 0));
-  const intentList = report?.aiSummary?.intent || ['BENIGN'];
+  const normalizedIntents = useMemo(() => normalizeIntents(report?.aiSummary?.intent), [report?.aiSummary?.intent]);
+  const intentList = useMemo(() => normalizedIntents.map((i) => i.raw), [normalizedIntents]);
   const riskVisuals = useMemo(() => getDynamicRiskVisuals(finalScore, intentList), [finalScore, intentList]);
 
   // Smooth score entrance animation
@@ -167,7 +168,9 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
     const timer = setTimeout(() => {
       setAnimatedScore(finalScore);
     }, 100);
-    return () => clearTimeout(timer);
+    return (): void => {
+      clearTimeout(timer);
+    };
   }, [finalScore]);
 
   // SVG Circle Calculations
@@ -210,56 +213,27 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
   const infraScore = pillars?.infrastructure?.score ?? report?.riskMatrix?.ipScore ?? 0;
   const nlpScore = pillars?.nlp?.score ?? report?.riskMatrix?.nlpScore ?? 0;
 
-  // AI Summary Metadata
-  const primaryIntent = (intentList[0] || 'BENIGN').replace(/_/g, ' ').toUpperCase();
-  const rawConfidence = report?.aiSummary?.confidence ?? 0.95;
-  const aiConfidencePercent = Math.round(rawConfidence <= 1 ? rawConfidence * 100 : rawConfidence);
-  
-  // Format Urgency
-  const rawUrgency = report?.aiSummary?.urgency ?? (nlpScore > 40 ? 75 : 10);
-  const urgencyLabel = rawUrgency >= 70 ? 'HIGH' : rawUrgency >= 35 ? 'MODERATE' : 'LOW';
-
-  // Formatted Execution Time
-  const executionTimeFormatted = report?.executionTimeMs
-    ? `${(report.executionTimeMs / 1000).toFixed(3)}s`
-    : '0.842s';
+  // Traceable, Data-Driven Metadata Summary (Audited against API response)
+  const metaSummary = useMemo(() => getReportMetadataSummary(report), [report]);
 
   // Synthesized AI Interpretation Narrative (1-3 sentences)
   const aiInterpretationNarrative = useMemo(() => {
-    return synthesizeAiInterpretation(primaryIntent, finalScore, report?.senderDomain || '');
-  }, [primaryIntent, finalScore, report?.senderDomain]);
+    return synthesizeAiInterpretation(intentList, finalScore, report?.senderDomain || '');
+  }, [intentList, finalScore, report?.senderDomain]);
 
-  // Underlying detailed AI findings
-  const aiDetailedFindings = useMemo(() => {
-    return report?.aiSummary?.findings || report?.riskMatrix?.pillars?.nlp?.findings || [];
-  }, [report]);
+  // Risk Matrix Override details
+  const overrideDetails = useMemo(() => getOverrideDetails(report?.riskMatrix), [report?.riskMatrix]);
+
+  // Grounded AI Diagnostics Summary
+  const aiDiagnostics = useMemo(() => getAiDiagnosticsSummary(report), [report]);
 
   // "What This Means For You" Dynamic Synthesized Findings (3-5 human points max)
   const synthesizedKeyFindings = useMemo(() => {
     const bullets: { id: string; status: 'pass' | 'warn' | 'fail'; text: string }[] = [];
 
-    // 1. Authentication Check
-    const spfPass = report?.authResults?.spf === 'pass';
-    const dkimPass = report?.authResults?.dkim === 'pass';
-    if (spfPass && dkimPass) {
-      bullets.push({
-        id: 'auth-pass',
-        status: 'pass',
-        text: 'Sender authentication passed',
-      });
-    } else if (report?.authResults?.spf === 'fail' || report?.authResults?.dkim === 'fail') {
-      bullets.push({
-        id: 'auth-fail',
-        status: 'fail',
-        text: 'Sender cryptographic authentication failed or was forged',
-      });
-    } else {
-      bullets.push({
-        id: 'auth-warn',
-        status: 'warn',
-        text: 'Sender authentication records are partial or unaligned',
-      });
-    }
+    // 1. Authentication Check (Evaluated directly from real RFC/SPF/DKIM/DMARC/ARC fields)
+    const authSummary = getAuthPostureSummary(report?.authResults);
+    bullets.push(authSummary);
 
     // 2. Domain Legitimacy Check
     const domainText = report?.senderDomain ? ` (${report.senderDomain})` : '';
@@ -283,24 +257,31 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
       });
     }
 
-    // 3. AI / Phishing Intent Check
-    if (nlpScore < 25 && primaryIntent === 'BENIGN') {
+    // 3. AI / Phishing Intent Check (inspects across all detected intents)
+    const joinedIntents = intentList.join(' ').toUpperCase();
+    if (nlpScore < 25 && (joinedIntents.length === 0 || joinedIntents.includes('BENIGN'))) {
       bullets.push({
         id: 'nlp-pass',
         status: 'pass',
         text: 'No strong malicious intent detected by AI',
       });
-    } else if (primaryIntent.includes('CREDENTIAL')) {
+    } else if (joinedIntents.includes('CREDENTIAL') || joinedIntents.includes('HARVESTING')) {
       bullets.push({
         id: 'nlp-cred',
         status: 'fail',
         text: 'AI detected credential harvesting patterns and phishing tactics',
       });
-    } else if (primaryIntent.includes('FINANCIAL')) {
+    } else if (joinedIntents.includes('FINANCIAL') || joinedIntents.includes('COERCION') || joinedIntents.includes('WIRE')) {
       bullets.push({
         id: 'nlp-fin',
         status: 'fail',
-        text: 'AI identified suspicious financial or invoice diversion requests',
+        text: 'AI identified suspicious financial coercion or invoice diversion requests',
+      });
+    } else if (joinedIntents.includes('AUTHORITY')) {
+      bullets.push({
+        id: 'nlp-auth-trap',
+        status: 'fail',
+        text: 'AI detected executive impersonation and authority trap manipulation',
       });
     } else {
       bullets.push({
@@ -320,111 +301,15 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
     }
 
     return bullets.slice(0, 4);
-  }, [report, identityScore, nlpScore, primaryIntent, infraScore]);
+  }, [report, identityScore, nlpScore, infraScore, intentList]);
 
-  // Meaningful Highlighted Findings (4 high-value compact cards)
-  const importantFindings = useMemo(() => {
-    const cards: {
-      id: string;
-      title: string;
-      description: string;
-      type: 'pass' | 'warn' | 'alert';
-    }[] = [];
-
-    // Card 1: Domain Verification
-    if (identityScore < 25) {
-      cards.push({
-        id: 'f-domain',
-        title: 'DOMAIN VERIFIED',
-        description: 'The sender domain appears to belong to a legitimate organization.',
-        type: 'pass',
-      });
-    } else {
-      cards.push({
-        id: 'f-identity-warn',
-        title: 'IDENTITY WARNING',
-        description: 'Display name does not clearly match the sender domain.',
-        type: 'warn',
-      });
-    }
-
-    // Card 2: Urgency Level
-    if (urgencyLabel === 'LOW') {
-      cards.push({
-        id: 'f-urgency-low',
-        title: 'LOW URGENCY',
-        description: 'The detected urgency is consistent with the email’s context.',
-        type: 'pass',
-      });
-    } else {
-      cards.push({
-        id: 'f-urgency-high',
-        title: 'HIGH URGENCY',
-        description: 'Urgent language detected urging immediate action or credential entry.',
-        type: 'alert',
-      });
-    }
-
-    // Card 3: Context Analysis
-    if (primaryIntent === 'BENIGN' && nlpScore < 30) {
-      cards.push({
-        id: 'f-context-match',
-        title: 'CONTEXT MATCH',
-        description: 'Linguistic patterns match standard benign communications.',
-        type: 'pass',
-      });
-    } else {
-      cards.push({
-        id: 'f-intent-flag',
-        title: primaryIntent.includes('CREDENTIAL') ? 'CREDENTIAL RISK' : 'INTENT FLAG',
-        description: 'Language model identified deceptive phrasing or harvesting intent.',
-        type: 'alert',
-      });
-    }
-
-    // Card 4: Infrastructure / Auth Signal
-    if (infraScore < 25) {
-      cards.push({
-        id: 'f-infra-clean',
-        title: 'CLEAN INFRASTRUCTURE',
-        description: 'Originating mail transfer agents have clean reputation records.',
-        type: 'pass',
-      });
-    } else {
-      cards.push({
-        id: 'f-infra-warn',
-        title: 'UNVERIFIED ORIGIN',
-        description: 'Originating IP has elevated abuse risk or proxy indicators.',
-        type: 'warn',
-      });
-    }
-
-    return cards;
-  }, [identityScore, urgencyLabel, primaryIntent, nlpScore, infraScore]);
-
-  // Conditional Payload Findings Extraction (Only render if meaningful payload findings exist)
-  const payloadFindings = useMemo(() => {
-    const allFindings = [
-      ...(report?.riskMatrix?.pillars?.nlp?.findings || []),
-      ...(report?.aiSummary?.findings || []),
-    ];
-
-    return allFindings.filter((f) => {
-      const t = (f.type || '').toLowerCase();
-      const d = (f.description || '').toLowerCase();
-      return (
-        t.includes('attachment') ||
-        t.includes('url') ||
-        t.includes('link') ||
-        t.includes('cloak') ||
-        t.includes('glassworm') ||
-        t.includes('zero_width') ||
-        d.includes('attachment') ||
-        d.includes('link') ||
-        d.includes('url')
-      );
-    });
+  // Partitioned Findings: Primary Actionable Threats (CRITICAL, HIGH, MEDIUM) & Minor Anomalies (LOW, INFO)
+  const partitionedFindings = useMemo(() => {
+    return getPartitionedFindings(report);
   }, [report]);
+
+  const importantFindings = partitionedFindings.primaryFindings;
+
 
   // Pillar score color helper
   const getPillarSeverityColor = (score: number): { text: string; ring: string } => {
@@ -442,17 +327,20 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
       return { label: s, color: 'text-[#10B981]', bg: 'bg-[#10B981]/10' };
     }
     if (s === 'RELAXED') {
-      return { label: 'RELAXED', color: 'text-[#F59E0B]', bg: 'bg-[#F59E0B]/10' };
+      return { label: 'RELAXED', color: 'text-[#10B981]', bg: 'bg-[#10B981]/10' };
     }
     if (s === 'FAIL') {
       return { label: 'FAIL', color: 'text-[#EF4444]', bg: 'bg-[#EF4444]/10' };
     }
+    if (s === 'NEUTRAL') {
+      return { label: 'NEUTRAL', color: 'text-[#F59E0B]', bg: 'bg-[#F59E0B]/10' };
+    }
     return { label: s, color: 'text-[#737688] dark:text-[#A0A7A3]', bg: 'bg-[#EAEAE5] dark:bg-[#151A17]' };
   };
 
-  // Truncate hash helper
-  const integrityHash = report?.aiSummary?.integrityHash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
-  const displayHash = integrityHash.length > 16 ? `${integrityHash.slice(0, 8)}...${integrityHash.slice(-6)}` : integrityHash;
+  // Truncate hash helper (data-driven, never fabricates empty-string SHA-256)
+  const integrityHash = report?.aiSummary?.integrityHash || null;
+  const displayHash = metaSummary.displayHash;
 
   return (
     <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 md:px-16 pt-8 pb-16 transition-colors duration-200">
@@ -590,19 +478,32 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
           {/* Hero Content & Decision Architecture */}
           <div className="flex-grow text-center md:text-left w-full">
             
-            {/* Header row: Confidence metric */}
+            {/* Header row: Risk verdict */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
               <div className="flex items-center gap-2 justify-center md:justify-start">
                 <span className="font-mono text-[11px] font-bold tracking-wider uppercase text-[#737688] dark:text-[#A0A7A3]">
                   OVERALL RISK VERDICT
                 </span>
               </div>
-              <div className="inline-flex items-center gap-1.5 self-center sm:self-auto px-2.5 py-1 bg-[#F2F2EE] dark:bg-[#1B211E] border border-[#E5E5E5] dark:border-[#29342F] rounded text-xs font-mono">
-                <Sparkles className="w-3.5 h-3.5 text-[#0052FF] dark:text-[#3b82f6]" />
-                <span className="text-[#737688] dark:text-[#A0A7A3]">AI Confidence:</span>
-                <strong className="text-[#121212] dark:text-[#F2F2EE]">{aiConfidencePercent}%</strong>
-              </div>
             </div>
+
+            {/* Single Concise Executive Override Callout */}
+            {overrideDetails.isOverridden && (
+              <div className="mb-4 p-3 bg-[#EF4444]/10 border border-[#EF4444]/25 rounded flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-left">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-[#EF4444] shrink-0" />
+                  <span className="font-mono text-xs font-bold text-[#EF4444] uppercase tracking-wide">
+                    Score overridden by circuit breaker
+                  </span>
+                  <span className="text-xs text-[#737688] dark:text-[#A0A7A3] hidden md:inline">
+                    · {overrideDetails.reason || 'Fatal circuit breaker matched actionable threat indicators'}
+                  </span>
+                </div>
+                <span className="font-mono text-xs font-bold text-[#EF4444] bg-[#EF4444]/15 px-2.5 py-0.5 rounded border border-[#EF4444]/30 shrink-0">
+                  Base {overrideDetails.baseScore} → Final {overrideDetails.finalScore}
+                </span>
+              </div>
+            )}
 
             {/* Clear Human-Readable Verdict */}
             <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#121212] dark:text-[#F2F2EE] mb-6 leading-snug">
@@ -655,134 +556,125 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
       {/* ========================================================================= */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
         
-        {/* Left Column (6 Cols): AI FORENSIC ASSESSMENT CARD (NARRATIVE + METADATA) */}
-        <div className="lg:col-span-6 border border-[#E5E5E5] dark:border-[#29342F] bg-[#FFFFFF] dark:bg-[#151A17] p-6 rounded shadow-sm transition-colors flex flex-col justify-between">
+        {/* Left Column (6 Cols): AI FORENSIC ASSESSMENT CARD (SEMANTIC INTELLIGENCE) */}
+        <div className="lg:col-span-6 border border-[#E5E5E5] dark:border-[#29342F] bg-[#FFFFFF] dark:bg-[#151A17] p-6 rounded shadow-sm transition-colors flex flex-col justify-between h-full">
           <div>
             {/* Header with AI indicator */}
-            <div className="flex justify-between items-center mb-3 pb-2 border-b border-[#E5E5E5] dark:border-[#29342F]">
-              <h2 className="font-mono text-[11px] font-bold uppercase tracking-wider text-[#737688] dark:text-[#A0A7A3]">
-                AI FORENSIC ASSESSMENT
-              </h2>
+            <div className="flex justify-between items-center mb-4 pb-2 border-b border-[#E5E5E5] dark:border-[#29342F]">
+              <div className="flex items-center gap-2">
+                <BrainCircuit className="w-4 h-4 text-[#0052FF] dark:text-[#3b82f6]" />
+                <h2 className="font-mono text-[11px] font-bold uppercase tracking-wider text-[#737688] dark:text-[#A0A7A3]">
+                  AI FORENSIC ASSESSMENT
+                </h2>
+              </div>
               <span className="font-mono text-[10px] font-bold tracking-wider text-[#0052FF] dark:text-[#3b82f6] bg-[#0052FF]/10 dark:bg-[#3b82f6]/10 px-2 py-0.5 rounded flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> AI
+                <Sparkles className="w-3 h-3" /> SEMANTIC INTEL
               </span>
             </div>
             
-            {/* Primary Narrative Conclusion (1-3 sentences) */}
-            <p className="text-sm font-medium text-[#121212] dark:text-[#F2F2EE] leading-relaxed mb-4">
-              {aiInterpretationNarrative}
-            </p>
+            {/* Model Interpretation Narrative */}
+            <div className="mb-4">
+              <div className="font-mono text-[10px] font-bold tracking-wider uppercase text-[#737688] dark:text-[#A0A7A3] mb-1.5">
+                MODEL INTERPRETATION
+              </div>
+              <p className="text-sm font-medium text-[#121212] dark:text-[#F2F2EE] leading-relaxed">
+                {aiInterpretationNarrative}
+              </p>
+            </div>
 
-            {/* Expandable Underlying AI Findings (Progressive Disclosure) */}
-            {showDetailedAiFindings && (
-              <div className="mb-4 pt-3 border-t border-dashed border-[#E5E5E5] dark:border-[#29342F] space-y-2.5">
-                <div className="text-[10px] font-mono font-bold tracking-wider uppercase text-[#737688] dark:text-[#A0A7A3]">
-                  Underlying AI Signal Telemetry ({aiDetailedFindings.length})
-                </div>
-                {aiDetailedFindings.length === 0 ? (
-                  <div className="text-xs text-[#737688] dark:text-[#A0A7A3] italic">
-                    No individual threat anomaly flags recorded.
-                  </div>
-                ) : (
-                  aiDetailedFindings.map((f: Finding, idx: number) => (
-                    <div
-                      key={idx}
-                      className="p-2.5 bg-[#F2F2EE] dark:bg-[#1B211E] rounded border border-[#E5E5E5] dark:border-[#29342F] text-xs"
-                    >
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="font-mono font-bold text-[#121212] dark:text-[#F2F2EE]">
-                          {f.type}
-                        </span>
-                        <span
-                          className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                            f.severity === 'HIGH'
-                              ? 'bg-[#EF4444]/10 text-[#EF4444]'
-                              : f.severity === 'MEDIUM'
-                              ? 'bg-[#F59E0B]/10 text-[#F59E0B]'
-                              : 'bg-[#10B981]/10 text-[#10B981]'
-                          }`}
-                        >
-                          {f.severity}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3]">
-                        {f.description}
-                      </p>
-                    </div>
-                  ))
+            {/* Behavioral Motives (Intent Vectors) */}
+            <div className="mb-4">
+              <div className="font-mono text-[10px] font-bold tracking-wider text-[#737688] dark:text-[#A0A7A3] uppercase mb-2 flex items-center justify-between">
+                <span>BEHAVIORAL MOTIVES</span>
+                {normalizedIntents.length > 0 && (
+                  <span className="text-[10px] text-[#0052FF] dark:text-[#3b82f6]">
+                    {normalizedIntents.length} {normalizedIntents.length === 1 ? 'Vector' : 'Vectors'} Identified
+                  </span>
                 )}
               </div>
-            )}
+              {normalizedIntents.length > 0 ? (
+                <div className="flex flex-wrap gap-2 items-center">
+                  {normalizedIntents.map((intentObj, idx) => (
+                    <span
+                      key={`${intentObj.raw}-${idx}`}
+                      className={`inline-flex items-center px-2.5 py-1 rounded font-mono text-xs font-semibold border tracking-tight ${intentObj.badgeBg} ${intentObj.badgeText} ${intentObj.badgeBorder}`}
+                    >
+                      {intentObj.label}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs font-mono text-[#737688] dark:text-[#A0A7A3] italic">
+                  No behavioral threat vectors identified.
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Card Footer: Metadata Row & Toggle */}
-          <div>
-            <div className="pt-3 border-t border-[#E5E5E5] dark:border-[#29342F]">
-              <div className="grid grid-cols-3 gap-3 text-left">
-                <div>
-                  <div className="font-mono text-[10px] font-bold tracking-wider text-[#737688] dark:text-[#A0A7A3] uppercase mb-1">
-                    INTENT
-                  </div>
-                  <div
-                    className={`text-sm sm:text-base font-bold tracking-tight ${
-                      primaryIntent === 'BENIGN'
-                        ? 'text-[#10B981]'
-                        : primaryIntent.includes('CREDENTIAL') || primaryIntent.includes('MALICIOUS')
-                        ? 'text-[#EF4444] dark:text-[#f87171]'
-                        : 'text-[#F59E0B] dark:text-[#fbbf24]'
-                    }`}
-                  >
-                    {primaryIntent}
-                  </div>
+          {/* AI Diagnostics & Telemetry Panel (Grounded in payload data) */}
+          <div className="pt-4 border-t border-[#E5E5E5] dark:border-[#29342F] mt-auto">
+            <div className="font-mono text-[10px] font-bold tracking-wider uppercase text-[#737688] dark:text-[#A0A7A3] mb-2.5">
+              AI DIAGNOSTICS & TELEMETRY
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {/* Metric 1: Confidence (Primary location) */}
+              <div className="p-2.5 bg-[#F2F2EE] dark:bg-[#1B211E] rounded border border-[#E5E5E5] dark:border-[#29342F]">
+                <div className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#737688] dark:text-[#A0A7A3] mb-1">
+                  CONFIDENCE
                 </div>
-
-                <div>
-                  <div className="font-mono text-[10px] font-bold tracking-wider text-[#737688] dark:text-[#A0A7A3] uppercase mb-1">
-                    CONFIDENCE
-                  </div>
-                  <div className="text-sm sm:text-base font-bold text-[#121212] dark:text-[#F2F2EE]">
-                    {aiConfidencePercent}%
-                  </div>
-                </div>
-
-                <div>
-                  <div className="font-mono text-[10px] font-bold tracking-wider text-[#737688] dark:text-[#A0A7A3] uppercase mb-1">
-                    URGENCY
-                  </div>
-                  <div
-                    className={`text-sm sm:text-base font-bold ${
-                      urgencyLabel === 'LOW'
-                        ? 'text-[#10B981]'
-                        : urgencyLabel === 'HIGH'
-                        ? 'text-[#EF4444]'
-                        : 'text-[#F59E0B]'
-                    }`}
-                  >
-                    {urgencyLabel}
-                  </div>
+                <div className="text-sm font-bold text-[#121212] dark:text-[#F2F2EE]">
+                  {aiDiagnostics.confidencePercent !== null ? `${aiDiagnostics.confidencePercent}%` : 'Unavailable'}
                 </div>
               </div>
 
-              {/* View AI Findings Inline Toggle */}
-              <div className="mt-3 pt-2 flex justify-between items-center border-t border-dashed border-[#E5E5E5] dark:border-[#29342F] text-[11px] font-mono">
-                <button
-                  type="button"
-                  onClick={() => setShowDetailedAiFindings(!showDetailedAiFindings)}
-                  className="text-[#0052FF] dark:text-[#3b82f6] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+              {/* Metric 2: Urgency */}
+              <div className="p-2.5 bg-[#F2F2EE] dark:bg-[#1B211E] rounded border border-[#E5E5E5] dark:border-[#29342F]">
+                <div className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#737688] dark:text-[#A0A7A3] mb-1">
+                  URGENCY
+                </div>
+                <div
+                  className={`text-sm font-bold ${
+                    aiDiagnostics.urgencyLabel === 'HIGH'
+                      ? 'text-[#EF4444]'
+                      : aiDiagnostics.urgencyLabel === 'MODERATE'
+                      ? 'text-[#F59E0B]'
+                      : 'text-[#10B981]'
+                  }`}
                 >
-                  <span>{showDetailedAiFindings ? 'Hide detailed analysis' : 'View detailed analysis →'}</span>
-                  {showDetailedAiFindings ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                </button>
-                <span className="text-[#737688] dark:text-[#A0A7A3]">
-                  {report?.aiSummary?.model || 'gemini-1.5-flash'}
-                </span>
+                  {aiDiagnostics.urgencyLabel}
+                </div>
+              </div>
+
+              {/* Metric 3: Engine */}
+              <div className="p-2.5 bg-[#F2F2EE] dark:bg-[#1B211E] rounded border border-[#E5E5E5] dark:border-[#29342F]">
+                <div className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#737688] dark:text-[#A0A7A3] mb-1">
+                  ENGINE
+                </div>
+                <div className="text-xs font-bold text-[#121212] dark:text-[#F2F2EE] truncate" title={aiDiagnostics.modelLabel}>
+                  {aiDiagnostics.modelLabel}
+                </div>
+              </div>
+
+              {/* Metric 4: Obfuscation */}
+              <div className="p-2.5 bg-[#F2F2EE] dark:bg-[#1B211E] rounded border border-[#E5E5E5] dark:border-[#29342F]">
+                <div className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#737688] dark:text-[#A0A7A3] mb-1">
+                  OBFUSCATION
+                </div>
+                <div
+                  className={`text-xs font-bold truncate ${
+                    aiDiagnostics.hasObfuscation ? 'text-[#EF4444]' : 'text-[#10B981]'
+                  }`}
+                  title={aiDiagnostics.obfuscationDetails || (aiDiagnostics.hasObfuscation ? 'Detected' : 'None')}
+                >
+                  {aiDiagnostics.hasObfuscation ? 'DETECTED' : 'CLEAN'}
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         {/* Right Column (6 Cols): 4-PILLAR RISK BREAKDOWN */}
-        <div className="lg:col-span-6 border border-[#E5E5E5] dark:border-[#29342F] bg-[#FFFFFF] dark:bg-[#151A17] p-6 rounded shadow-sm transition-colors flex flex-col justify-between">
+        <div className="lg:col-span-6 border border-[#E5E5E5] dark:border-[#29342F] bg-[#FFFFFF] dark:bg-[#151A17] p-6 rounded shadow-sm transition-colors flex flex-col justify-between h-full">
           <div>
             <div className="flex justify-between items-center mb-4 border-b border-[#E5E5E5] dark:border-[#29342F] pb-2">
               <h2 className="font-mono text-[11px] font-bold uppercase tracking-wider text-[#737688] dark:text-[#A0A7A3]">
@@ -795,7 +687,7 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {/* Pillar 1: Authentication */}
-              {(() => {
+              {(() : React.ReactNode => {
                 const sev = getPillarSeverityColor(authScore);
                 return (
                   <div className="bg-[#F2F2EE] dark:bg-[#1B211E] p-3 rounded border border-[#E5E5E5] dark:border-[#29342F] flex flex-col justify-between">
@@ -803,9 +695,14 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                       <span className="font-mono text-xs font-bold text-[#121212] dark:text-[#F2F2EE] flex items-center gap-1.5">
                         <Shield className="w-3.5 h-3.5 text-[#0052FF] dark:text-[#3b82f6]" /> AUTHENTICATION
                       </span>
-                      <span className={`font-mono text-xs font-extrabold ${sev.text}`}>
-                        {authScore} / 100
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-mono text-[#737688] dark:text-[#A0A7A3]">
+                          ({Math.round(overrideDetails.pillarWeights.auth * 100)}%)
+                        </span>
+                        <span className={`font-mono text-xs font-extrabold ${sev.text}`}>
+                          {authScore} / 100
+                        </span>
+                      </div>
                     </div>
                     <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3]">
                       SPF, DKIM, DMARC and ARC checks.
@@ -815,7 +712,7 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
               })()}
 
               {/* Pillar 2: Identity */}
-              {(() => {
+              {(() : React.ReactNode => {
                 const sev = getPillarSeverityColor(identityScore);
                 return (
                   <div className="bg-[#F2F2EE] dark:bg-[#1B211E] p-3 rounded border border-[#E5E5E5] dark:border-[#29342F] flex flex-col justify-between">
@@ -823,9 +720,14 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                       <span className="font-mono text-xs font-bold text-[#121212] dark:text-[#F2F2EE] flex items-center gap-1.5">
                         <Fingerprint className="w-3.5 h-3.5 text-[#0052FF] dark:text-[#3b82f6]" /> IDENTITY
                       </span>
-                      <span className={`font-mono text-xs font-extrabold ${sev.text}`}>
-                        {identityScore} / 100
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-mono text-[#737688] dark:text-[#A0A7A3]">
+                          ({Math.round(overrideDetails.pillarWeights.identity * 100)}%)
+                        </span>
+                        <span className={`font-mono text-xs font-extrabold ${sev.text}`}>
+                          {identityScore} / 100
+                        </span>
+                      </div>
                     </div>
                     <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3]">
                       Sender identity and domain consistency.
@@ -835,7 +737,7 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
               })()}
 
               {/* Pillar 3: Infrastructure */}
-              {(() => {
+              {(() : React.ReactNode => {
                 const sev = getPillarSeverityColor(infraScore);
                 return (
                   <div className="bg-[#F2F2EE] dark:bg-[#1B211E] p-3 rounded border border-[#E5E5E5] dark:border-[#29342F] flex flex-col justify-between">
@@ -843,9 +745,14 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                       <span className="font-mono text-xs font-bold text-[#121212] dark:text-[#F2F2EE] flex items-center gap-1.5">
                         <Globe className="w-3.5 h-3.5 text-[#0052FF] dark:text-[#3b82f6]" /> INFRASTRUCTURE
                       </span>
-                      <span className={`font-mono text-xs font-extrabold ${sev.text}`}>
-                        {infraScore} / 100
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-mono text-[#737688] dark:text-[#A0A7A3]">
+                          ({Math.round(overrideDetails.pillarWeights.infra * 100)}%)
+                        </span>
+                        <span className={`font-mono text-xs font-extrabold ${sev.text}`}>
+                          {infraScore} / 100
+                        </span>
+                      </div>
                     </div>
                     <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3]">
                       IP reputation and routing signals.
@@ -855,7 +762,7 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
               })()}
 
               {/* Pillar 4: AI / Intent */}
-              {(() => {
+              {(() : React.ReactNode => {
                 const sev = getPillarSeverityColor(nlpScore);
                 return (
                   <div className="bg-[#F2F2EE] dark:bg-[#1B211E] p-3 rounded border border-[#E5E5E5] dark:border-[#29342F] flex flex-col justify-between">
@@ -863,9 +770,14 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                       <span className="font-mono text-xs font-bold text-[#121212] dark:text-[#F2F2EE] flex items-center gap-1.5">
                         <BrainCircuit className="w-3.5 h-3.5 text-[#0052FF] dark:text-[#3b82f6]" /> AI / INTENT
                       </span>
-                      <span className={`font-mono text-xs font-extrabold ${sev.text}`}>
-                        {nlpScore} / 100
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-mono text-[#737688] dark:text-[#A0A7A3]">
+                          ({Math.round(overrideDetails.pillarWeights.nlp * 100)}%)
+                        </span>
+                        <span className={`font-mono text-xs font-extrabold ${sev.text}`}>
+                          {nlpScore} / 100
+                        </span>
+                      </div>
                     </div>
                     <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3]">
                       Language, intent and behavioral indicators.
@@ -874,105 +786,194 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                 );
               })()}
             </div>
+
+            {/* Calculation Reconciliation Bar */}
+            <div className="mt-3 p-3 bg-[#F2F2EE] dark:bg-[#1B211E] rounded border border-[#E5E5E5] dark:border-[#29342F] text-xs font-mono">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[#737688] dark:text-[#A0A7A3]">
+                <span className="font-bold text-[#121212] dark:text-[#F2F2EE] uppercase">
+                  WEIGHTED BASE SCORE:
+                </span>
+                <span className="text-xs">
+                  ({authScore}×{Math.round(overrideDetails.pillarWeights.auth * 100)}%) + ({identityScore}×{Math.round(overrideDetails.pillarWeights.identity * 100)}%) + ({infraScore}×{Math.round(overrideDetails.pillarWeights.infra * 100)}%) + ({nlpScore}×{Math.round(overrideDetails.pillarWeights.nlp * 100)}%) = <strong className="text-[#121212] dark:text-[#F2F2EE]">{overrideDetails.baseScore}</strong> / 100
+                </span>
+              </div>
+
+              {overrideDetails.isOverridden ? (
+                <div className="mt-2 pt-2 border-t border-dashed border-[#E5E5E5] dark:border-[#29342F] flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                  <div className="flex items-center gap-1.5 text-[#EF4444] font-bold">
+                    <Zap className="w-3.5 h-3.5 fill-[#EF4444] shrink-0" />
+                    <span>CIRCUIT BREAKER OVERRIDE:</span>
+                  </div>
+                  <div className="font-bold text-[#EF4444]">
+                    Base {overrideDetails.baseScore} → Final {overrideDetails.finalScore} ({overrideDetails.scoreDifference >= 0 ? `+${overrideDetails.scoreDifference}` : overrideDetails.scoreDifference})
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2 pt-2 border-t border-dashed border-[#E5E5E5] dark:border-[#29342F] flex items-center gap-1.5 text-[11px] text-[#10B981]">
+                  <Check className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
+                  <span>Final risk score matches standard weighted calculation</span>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="pt-3 border-t border-[#E5E5E5] dark:border-[#29342F] mt-4 flex justify-between items-center text-[11px] font-mono text-[#737688] dark:text-[#A0A7A3]">
-            <span>ENGINE: ASYNCHRONOUS PIPELINE</span>
-            <span>STATUS: 4 PILLARS AGGREGATED</span>
+          <div className="pt-3 border-t border-[#E5E5E5] dark:border-[#29342F] mt-auto flex justify-between items-center text-[11px] font-mono text-[#737688] dark:text-[#A0A7A3]">
+            <span>
+              {metaSummary.executionTimeFormatted ? `PIPELINE EXECUTION: ${metaSummary.executionTimeFormatted}` : 'PIPELINE: ASYNCHRONOUS'}
+            </span>
+            <span>
+              PILLARS EVALUATED: {metaSummary.evaluatedPillarsCount} / 4
+            </span>
           </div>
         </div>
       </section>
 
       {/* ========================================================================= */}
-      {/* 4. CONDITIONAL PAYLOAD & ATTACHMENT SECTION                               */}
-      {/* ========================================================================= */}
-      {payloadFindings.length > 0 && (
-        <section className="mb-8">
-          <div className="border border-[#E5E5E5] dark:border-[#29342F] bg-[#FFFFFF] dark:bg-[#151A17] p-6 rounded shadow-sm transition-colors">
-            <div className="flex justify-between items-center mb-4 border-b border-[#E5E5E5] dark:border-[#29342F] pb-2">
-              <h2 className="font-mono text-[11px] font-bold uppercase tracking-wider text-[#737688] dark:text-[#A0A7A3] flex items-center gap-2">
-                <Paperclip className="w-4 h-4 text-[#0052FF] dark:text-[#3b82f6]" /> PAYLOAD & ATTACHMENT ANALYSIS
-              </h2>
-              <span className="text-[11px] font-mono text-[#EF4444] font-bold">
-                {payloadFindings.length} Signal{payloadFindings.length > 1 ? 's' : ''} Detected
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {payloadFindings.map((pf, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 bg-[#F2F2EE] dark:bg-[#1B211E] rounded border border-[#E5E5E5] dark:border-[#29342F] flex items-start gap-2.5"
-                >
-                  <Link2 className="w-4 h-4 text-[#0052FF] dark:text-[#3b82f6] shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-mono text-xs font-bold text-[#121212] dark:text-[#F2F2EE]">
-                      {pf.type}
-                    </div>
-                    <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3] mt-0.5">
-                      {pf.description}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 5. IMPORTANT FINDINGS (SUMMARIZED & PRIORITIZED)                           */}
+      {/* 4. IMPORTANT FINDINGS (CANONICAL FORENSIC EVIDENCE)                       */}
       {/* ========================================================================= */}
       <section className="mb-8">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="font-mono text-[11px] font-bold uppercase tracking-wider text-[#737688] dark:text-[#A0A7A3]">
-            IMPORTANT FINDINGS
-          </h2>
+          <div className="flex items-center gap-2.5">
+            <h2 className="font-mono text-[11px] font-bold uppercase tracking-wider text-[#737688] dark:text-[#A0A7A3]">
+              IMPORTANT FINDINGS
+            </h2>
+            {partitionedFindings.forensicCount > 0 && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#EF4444]/10 text-[#EF4444] font-bold">
+                {importantFindings.length} Actionable {importantFindings.length === 1 ? 'Signal' : 'Signals'}
+              </span>
+            )}
+          </div>
           <span className="text-[11px] font-mono text-[#737688] dark:text-[#A0A7A3]">
-            High-Impact Security Findings
+            {partitionedFindings.forensicCount === 0
+              ? 'Zero Threat Indicators'
+              : `${partitionedFindings.forensicCount} Forensic ${partitionedFindings.forensicCount === 1 ? 'Finding' : 'Findings'}`}
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {importantFindings.map((card) => {
-            return (
-              <div
-                key={card.id}
-                className="border border-[#E5E5E5] dark:border-[#29342F] bg-[#FFFFFF] dark:bg-[#151A17] p-5 rounded flex flex-col justify-between shadow-sm transition-colors"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span
-                      className={`text-[10px] font-mono font-bold tracking-wider px-2 py-0.5 rounded ${
-                        card.type === 'pass'
-                          ? 'bg-[#10B981]/10 text-[#10B981]'
-                          : card.type === 'warn'
-                          ? 'bg-[#F59E0B]/10 text-[#F59E0B]'
-                          : 'bg-[#EF4444]/10 text-[#EF4444]'
-                      }`}
-                    >
-                      {card.title}
-                    </span>
-                    {card.type === 'pass' ? (
-                      <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-                    ) : card.type === 'warn' ? (
-                      <AlertTriangle className="w-4 h-4 text-[#F59E0B]" />
-                    ) : (
-                      <ShieldAlert className="w-4 h-4 text-[#EF4444]" />
-                    )}
+        {importantFindings.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {importantFindings.map((card) => {
+              const isCritical = card.severity === 'CRITICAL';
+              const isHigh = card.severity === 'HIGH';
+              const isMedium = card.severity === 'MEDIUM';
+
+              const badgeColor = isCritical
+                ? 'bg-[#EF4444] text-white border-[#EF4444]'
+                : isHigh
+                ? 'bg-[#EF4444]/10 text-[#EF4444] dark:text-[#f87171] border-[#EF4444]/30'
+                : isMedium
+                ? 'bg-[#F59E0B]/10 text-[#F59E0B] dark:text-[#fbbf24] border-[#F59E0B]/30'
+                : 'bg-[#0052FF]/10 text-[#0052FF] dark:text-[#3b82f6] border-[#0052FF]/30';
+
+              const sevPillColor = isCritical
+                ? 'bg-[#EF4444] text-white border-[#EF4444]'
+                : isHigh
+                ? 'bg-[#EF4444]/15 text-[#EF4444] border-[#EF4444]/30'
+                : isMedium
+                ? 'bg-[#F59E0B]/15 text-[#F59E0B] border-[#F59E0B]/30'
+                : 'bg-[#0052FF]/15 text-[#0052FF] dark:text-[#3b82f6] border-[#0052FF]/30';
+
+              return (
+                <div
+                  key={card.id}
+                  className={`border ${
+                    isCritical
+                      ? 'border-[#EF4444]/50 bg-[#EF4444]/5 dark:bg-[#EF4444]/10'
+                      : 'border-[#E5E5E5] dark:border-[#29342F] bg-[#FFFFFF] dark:bg-[#151A17]'
+                  } p-5 rounded flex flex-col justify-between shadow-sm transition-colors`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span
+                        className={`text-[10px] font-mono font-bold tracking-wider px-2 py-0.5 rounded border ${badgeColor}`}
+                      >
+                        {card.title}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border tracking-wider uppercase ${sevPillColor}`}
+                        >
+                          {card.severity}
+                        </span>
+                        {isCritical || isHigh ? (
+                          <ShieldAlert className="w-4 h-4 text-[#EF4444] shrink-0" />
+                        ) : isMedium ? (
+                          <AlertTriangle className="w-4 h-4 text-[#F59E0B] shrink-0" />
+                        ) : (
+                          <Info className="w-4 h-4 text-[#0052FF] dark:text-[#3b82f6] shrink-0" />
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-[#121212] dark:text-[#F2F2EE] font-medium leading-relaxed mt-2.5">
+                      {card.description}
+                    </p>
                   </div>
-                  <p className="text-xs text-[#121212] dark:text-[#F2F2EE] font-medium leading-relaxed mt-2">
-                    {card.description}
-                  </p>
                 </div>
+              );
+            })}
+          </div>
+        ) : partitionedFindings.minorAnomalies.length === 0 ? (
+          <div className="border border-[#10B981]/30 bg-[#10B981]/5 dark:bg-[#10B981]/10 p-6 rounded text-center">
+            <CheckCircle2 className="w-6 h-6 text-[#10B981] mx-auto mb-2" />
+            <div className="font-mono text-xs font-bold text-[#10B981] uppercase tracking-wider">
+              No Security Findings or Threat Anomalies
+            </div>
+            <p className="text-xs text-[#737688] dark:text-[#A0A7A3] mt-1 max-w-md mx-auto leading-relaxed">
+              All forensic pillars evaluated without actionable threats or anomalous signals.
+            </p>
+          </div>
+        ) : null}
+
+        {/* Minor Anomalies & Low-Severity Secondary Collapsible Tray */}
+        {partitionedFindings.minorAnomalies.length > 0 && (
+          <div className="mt-4 border border-[#E5E5E5] dark:border-[#29342F] bg-[#FFFFFF] dark:bg-[#151A17] rounded shadow-sm overflow-hidden transition-colors">
+            <button
+              type="button"
+              onClick={() => setShowMinorAnomalies(!showMinorAnomalies)}
+              className="w-full px-5 py-3.5 flex items-center justify-between hover:bg-[#F2F2EE]/60 dark:hover:bg-[#1B211E]/60 transition-colors text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="font-mono text-xs font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-wider">
+                  Minor Anomalies & Low-Severity Signals ({partitionedFindings.minorAnomalies.length})
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0052FF]/10 text-[#0052FF] dark:text-[#3b82f6] font-semibold border border-[#0052FF]/20">
+                  LOW / INFO TELEMETRY
+                </span>
               </div>
-            );
-          })}
-        </div>
+              <div className="flex items-center gap-1.5 text-xs font-mono text-[#0052FF] dark:text-[#3b82f6] font-bold">
+                <span>{showMinorAnomalies ? 'Hide Minor Signals' : 'Expand Minor Signals'}</span>
+                {showMinorAnomalies ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </div>
+            </button>
+
+            {showMinorAnomalies && (
+              <div className="p-4 border-t border-[#E5E5E5] dark:border-[#29342F] bg-[#F2F2EE]/40 dark:bg-[#1B211E]/40 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {partitionedFindings.minorAnomalies.map((minorCard) => (
+                  <div
+                    key={minorCard.id}
+                    className="p-3.5 bg-[#FFFFFF] dark:bg-[#151A17] border border-[#E5E5E5] dark:border-[#29342F] rounded shadow-xs flex flex-col justify-between"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-mono text-[10px] font-bold tracking-wider px-2 py-0.5 rounded bg-[#0052FF]/10 text-[#0052FF] dark:text-[#3b82f6] border border-[#0052FF]/20">
+                        {minorCard.title}
+                      </span>
+                      <span className="font-mono text-[10px] text-[#737688] dark:text-[#A0A7A3] font-bold">
+                        {minorCard.severity}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#434656] dark:text-[#A0A7A3] leading-relaxed mt-1">
+                      {minorCard.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* ========================================================================= */}
-      {/* 6. TECHNICAL EVIDENCE (COLLAPSIBLE / SECONDARY PROGRESSIVE DISCLOSURE)    */}
+      {/* 5. TECHNICAL EVIDENCE (COLLAPSIBLE / SECONDARY PROGRESSIVE DISCLOSURE)    */}
       {/* ========================================================================= */}
       <section
         id="technical-evidence-section"
@@ -1012,10 +1013,20 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
         {!isTechnicalExpanded && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-[#737688] dark:text-[#A0A7A3] pt-2">
             <div className="flex items-center gap-4 flex-wrap">
-              <span>SPF: <strong className="text-[#10B981]">{report?.authResults?.spf?.toUpperCase() || 'PASS'}</strong></span>
-              <span>DKIM: <strong className="text-[#10B981]">{report?.authResults?.dkim?.toUpperCase() || 'PASS'}</strong></span>
-              <span>DMARC: <strong className="text-[#F59E0B]">{report?.authResults?.dmarcAlignment?.toUpperCase() || 'RELAXED'}</strong></span>
-              <span>ARC: <strong className="text-[#10B981]">{report?.authResults?.arcPass ? 'PASS' : 'NONE'}</strong></span>
+              {(() : React.ReactNode => {
+                const spfBadge = getAuthBadge(report?.authResults?.spf);
+                const dkimBadge = getAuthBadge(report?.authResults?.dkim);
+                const dmarcBadge = getAuthBadge(report?.authResults?.dmarcAlignment);
+                const arcPass = report?.authResults?.arcPass;
+                return (
+                  <>
+                    <span>SPF: <strong className={spfBadge.color}>{spfBadge.label}</strong></span>
+                    <span>DKIM: <strong className={dkimBadge.color}>{dkimBadge.label}</strong></span>
+                    <span>DMARC: <strong className={dmarcBadge.color}>{dmarcBadge.label}</strong></span>
+                    <span>ARC: <strong className={arcPass ? 'text-[#10B981]' : 'text-[#737688] dark:text-[#A0A7A3]'}>{arcPass ? 'PASS' : 'NONE'}</strong></span>
+                  </>
+                );
+              })()}
               <span>ROUTING: <strong>{report?.forensicPath?.length || 0} Network Hops Analyzed</strong></span>
             </div>
             <button
@@ -1041,14 +1052,16 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                 
                 <div className="flex flex-col gap-3 font-mono text-xs">
                   {/* SPF */}
-                  {(() => {
+                  {(() : React.ReactNode => {
                     const spfBadge = getAuthBadge(report?.authResults?.spf);
                     const desc =
                       report?.authResults?.spf === 'pass'
                         ? 'Sender IP authorized by domain policy'
                         : report?.authResults?.spf === 'fail'
                         ? 'Sender IP not authorized in SPF record'
-                        : 'No strict SPF policy record found';
+                        : report?.authResults?.spf === 'neutral'
+                        ? 'SPF policy evaluated to neutral (no policy restriction)'
+                        : 'No SPF policy record published';
                     return (
                       <div className="flex justify-between items-center border-b border-[#E5E5E5] dark:border-[#29342F] pb-2.5">
                         <span className="font-bold text-[#121212] dark:text-[#F2F2EE]">SPF</span>
@@ -1063,7 +1076,7 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                   })()}
 
                   {/* DKIM */}
-                  {(() => {
+                  {(() : React.ReactNode => {
                     const dkimBadge = getAuthBadge(report?.authResults?.dkim);
                     const desc =
                       report?.authResults?.dkim === 'pass'
@@ -1085,7 +1098,7 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                   })()}
 
                   {/* DMARC */}
-                  {(() => {
+                  {(() : React.ReactNode => {
                     const dmarcBadge = getAuthBadge(report?.authResults?.dmarcAlignment);
                     const desc =
                       report?.authResults?.dmarcAlignment === 'strict'
@@ -1107,7 +1120,7 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                   })()}
 
                   {/* ARC */}
-                  {(() => {
+                  {(() : React.ReactNode => {
                     const arcPass = report?.authResults?.arcPass;
                     return (
                       <div className="flex justify-between items-center pb-1">
@@ -1165,7 +1178,7 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                       TIMESTAMP
                     </div>
                     <div className="text-[#121212] dark:text-[#F2F2EE] truncate font-medium">
-                      {report?.timestamp || new Date().toISOString()}
+                      {report?.timestamp || 'Unavailable'}
                     </div>
                   </div>
 
@@ -1174,7 +1187,7 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                       EXECUTION TIME
                     </div>
                     <div className="text-[#0052FF] dark:text-[#3b82f6] font-bold">
-                      {executionTimeFormatted}
+                      {metaSummary.executionTimeFormatted ?? 'Unavailable'}
                     </div>
                   </div>
 
@@ -1183,9 +1196,13 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                       INTEGRITY HASH (HMAC-SHA256)
                     </div>
                     <div
-                      className="text-[#121212] dark:text-[#F2F2EE] truncate font-medium cursor-pointer hover:text-[#0052FF] dark:hover:text-[#3b82f6] transition-colors"
-                      title={integrityHash}
-                      onClick={() => handleCopy(integrityHash, 'hash')}
+                      className={`text-[#121212] dark:text-[#F2F2EE] truncate font-medium transition-colors ${
+                        integrityHash ? 'cursor-pointer hover:text-[#0052FF] dark:hover:text-[#3b82f6]' : ''
+                      }`}
+                      title={integrityHash || 'Unavailable'}
+                      onClick={() => {
+                        if (integrityHash) handleCopy(integrityHash, 'hash');
+                      }}
                     >
                       {displayHash}
                       {copiedField === 'hash' && <span className="ml-1 text-[#10B981] font-bold">✓</span>}
@@ -1201,46 +1218,116 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
                 <h4 className="font-mono text-xs font-bold uppercase text-[#121212] dark:text-[#F2F2EE] flex items-center gap-2">
                   <Route className="w-4 h-4 text-[#0052FF] dark:text-[#3b82f6]" /> Reverse-Hop Dissection Trail ({report?.forensicPath?.length || 0} Network Hops Analyzed)
                 </h4>
-                <button
-                  type="button"
-                  onClick={() => setShowRawJson(!showRawJson)}
-                  className="text-xs font-mono text-[#0052FF] dark:text-[#3b82f6] hover:underline"
-                >
-                  {showRawJson ? 'Hide Raw JSON' : 'Toggle Raw JSON'}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowHopMap(!showHopMap)}
+                    className="text-xs font-mono text-[#0052FF] dark:text-[#3b82f6] hover:underline cursor-pointer flex items-center gap-1"
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>{showHopMap ? 'Hide Trace Map' : 'Show Trace Map'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowRawJson(!showRawJson)}
+                    className="text-xs font-mono text-[#0052FF] dark:text-[#3b82f6] hover:underline cursor-pointer"
+                  >
+                    {showRawJson ? 'Hide Raw JSON' : 'Toggle Raw JSON'}
+                  </button>
+                </div>
               </div>
+
+              {/* Geographic Reverse-Hop Trace Map */}
+              {showHopMap && (
+                <div className="mb-4">
+                  <ReverseHopMapVisualizer
+                    hops={report?.forensicPath || []}
+                    selectedHopIndex={selectedHopIndex}
+                    onSelectHop={setSelectedHopIndex}
+                  />
+                </div>
+              )}
 
               {report?.forensicPath && report.forensicPath.length > 0 ? (
                 <div className="space-y-3 font-mono text-xs">
-                  {report.forensicPath.map((hop: ForensicHop, index: number) => (
-                    <div
-                      key={index}
-                      className="p-3 bg-[#F2F2EE] dark:bg-[#1B211E] rounded border border-[#E5E5E5] dark:border-[#29342F] flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="w-6 h-6 rounded-full bg-[#0052FF]/10 text-[#0052FF] dark:text-[#3b82f6] flex items-center justify-center font-bold text-[11px]">
-                          {index + 1}
-                        </span>
-                        <div>
-                          <div className="font-bold text-[#121212] dark:text-[#F2F2EE]">
-                            {hop.ip} {hop.hostnameClaimed && <span className="font-normal text-[#737688] dark:text-[#A0A7A3]">({hop.hostnameClaimed})</span>}
-                          </div>
-                          <div className="text-[11px] text-[#737688] dark:text-[#A0A7A3]">
-                            {hop.city ? `${hop.city}, ` : ''}{hop.country || 'Unknown Location'} · ASN: {hop.asn || 'N/A'}
+                  {report.forensicPath.map((hop: ForensicHop, index: number) => {
+                    const classification = classifyForensicHop(hop);
+                    const isSelected = selectedHopIndex === index;
+
+                    return (
+                      <div
+                        key={index}
+                        onClick={() => setSelectedHopIndex(isSelected ? null : index)}
+                        className={`p-3 bg-[#F2F2EE] dark:bg-[#1B211E] rounded border ${
+                          isSelected
+                            ? 'border-[#0052FF] dark:border-[#3b82f6] ring-2 ring-[#0052FF]/30 dark:ring-[#3b82f6]/30 shadow-sm'
+                            : 'border-[#E5E5E5] dark:border-[#29342F]'
+                        } flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all cursor-pointer`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="w-6 h-6 rounded-full bg-[#0052FF]/10 text-[#0052FF] dark:text-[#3b82f6] flex items-center justify-center font-bold text-[11px]">
+                            {index + 1}
+                          </span>
+                          <div>
+                            <div className="font-bold text-[#121212] dark:text-[#F2F2EE] flex items-center gap-1.5 flex-wrap">
+                              <span>{hop.ip}</span>
+                              {hop.hostnameClaimed && (
+                                <span className="font-normal text-[#737688] dark:text-[#A0A7A3]">
+                                  ({hop.hostnameClaimed})
+                                </span>
+                              )}
+                              {classification.isSuspiciousHostname && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#EF4444]/15 text-[#EF4444] border border-[#EF4444]/30 uppercase"
+                                  title={classification.suspiciousReason || 'Suspicious pseudo-domain or non-FQDN'}
+                                >
+                                  SUSPICIOUS HOSTNAME
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-[#737688] dark:text-[#A0A7A3]">
+                              {hop.city ? `${hop.city}, ` : ''}{hop.country || 'Unknown Location'} · ASN: {hop.asn || 'N/A'}
+                            </div>
+                            <div className="text-[10px] text-[#737688] dark:text-[#A0A7A3] mt-1 flex items-center gap-1.5 font-mono flex-wrap">
+                              <span className="text-[#121212] dark:text-[#F2F2EE] font-semibold">Evidence:</span>
+                              <span
+                                className={
+                                  classification.tier === 'LIKELY FORGED'
+                                    ? 'text-[#EF4444] font-medium'
+                                    : classification.tier === 'RECOGNIZED PROVIDER' || classification.tier === 'TRUSTED INFRA'
+                                    ? 'text-[#0052FF] dark:text-[#3b82f6] font-medium'
+                                    : 'text-[#737688] dark:text-[#A0A7A3]'
+                                }
+                              >
+                                {classification.evidence}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${hop.trusted ? 'bg-[#10B981]/10 text-[#10B981]' : 'bg-[#F59E0B]/10 text-[#F59E0B]'}`}>
-                          {hop.trusted ? 'TRUSTED INFRA' : 'UNTRUSTED HOP'}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${hop.ptrValid ? 'bg-[#10B981]/10 text-[#10B981]' : 'bg-[#EF4444]/10 text-[#EF4444]'}`}>
-                          PTR: {hop.ptrValid ? 'VALID' : 'INVALID'}
-                        </span>
+                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0 sm:self-center">
+                          {isSelected && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#0052FF]/10 text-[#0052FF] dark:text-[#3b82f6] border border-[#0052FF]/30 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#0052FF] dark:bg-[#3b82f6] animate-ping" />
+                              MAP PIN ACTIVE
+                            </span>
+                          )}
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold border ${classification.tierBadgeBg} ${classification.tierBadgeText} ${classification.tierBadgeBorder}`}
+                          >
+                            {classification.tier}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              hop.ptrValid ? 'bg-[#10B981]/10 text-[#10B981]' : 'bg-[#EF4444]/10 text-[#EF4444]'
+                            }`}
+                          >
+                            PTR: {hop.ptrValid ? 'VALID' : 'INVALID'}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="text-xs font-mono text-[#737688] dark:text-[#A0A7A3] italic py-2">

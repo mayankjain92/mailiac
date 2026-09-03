@@ -40,7 +40,6 @@ export default function StitchLandingHeader({
     }
   };
 
-  const isForensicPage = pathname === '/forensic-analysis';
   const isMailboxPage = pathname === '/mailbox';
 
   return (
@@ -62,18 +61,13 @@ export default function StitchLandingHeader({
             <button
               type="button"
               onClick={handleAnalyzeClick}
-              className={`transition-colors duration-200 uppercase text-xs tracking-wider cursor-pointer ${
-                isForensicPage
-                  ? 'text-[#0052ff] dark:text-[#3b82f6] font-bold border-b-2 border-[#0052ff] dark:border-[#3b82f6] pb-1'
-                  : 'text-[#434656] dark:text-[#A0A7A3] hover:text-[#0052ff] dark:hover:text-[#3b82f6]'
-              }`}
+              className="transition-colors duration-200 uppercase text-xs tracking-wider cursor-pointer text-[#434656] dark:text-[#A0A7A3] hover:text-[#0052ff] dark:hover:text-[#3b82f6]"
             >
               Forensic Analysis
             </button>
 
-            <button
-              type="button"
-              onClick={handleAnalyzeClick}
+            <Link
+              href="/mailbox"
               className={`transition-colors duration-200 uppercase text-xs tracking-wider flex items-center gap-1.5 cursor-pointer ${
                 isMailboxPage
                   ? 'text-[#0052ff] dark:text-[#3b82f6] font-bold border-b-2 border-[#0052ff] dark:border-[#3b82f6] pb-1'
@@ -84,7 +78,18 @@ export default function StitchLandingHeader({
               {isGmailConnected && (
                 <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse"></span>
               )}
-            </button>
+            </Link>
+
+            <Link
+              href="/history"
+              className={`transition-colors duration-200 uppercase text-xs tracking-wider cursor-pointer ${
+                pathname === '/history'
+                  ? 'text-[#0052ff] dark:text-[#3b82f6] font-bold border-b-2 border-[#0052ff] dark:border-[#3b82f6] pb-1'
+                  : 'text-[#434656] dark:text-[#A0A7A3] hover:text-[#0052ff] dark:hover:text-[#3b82f6]'
+              }`}
+            >
+              Audit History
+            </Link>
           </div>
 
           {/* Action CTA Buttons */}
@@ -121,7 +126,11 @@ export default function StitchLandingHeader({
           if (onJobCreated) {
             onJobCreated(jobId, fileName);
           } else {
-            router.push(`/forensic-analysis?jobId=${jobId}&fileName=${encodeURIComponent(fileName)}`);
+            router.push(
+              `/forensic-analysis?jobId=${encodeURIComponent(jobId)}&fileName=${encodeURIComponent(
+                fileName || 'Uploaded EML Sample'
+              )}`
+            );
           }
         }}
       />

@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 
 import type { GmailMessageAnalysisEnrichment } from '@mailiac/shared-types';
+import { decodeHtmlEntities } from '@/lib/utils';
+import VerdictBadge from '@/components/VerdictBadge';
 
 export interface GmailMessageSummary extends Partial<GmailMessageAnalysisEnrichment> {
   id: string;
@@ -390,20 +392,14 @@ export default function GmailInboxModal({
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-bold text-[#1a1c1c] dark:text-[#F2F2EE] truncate flex items-center gap-1.5 font-mono">
                                 <User className="w-3 h-3 text-[#737688] dark:text-[#A0A7A3] shrink-0" />
-                                {msg.sender}
+                                {decodeHtmlEntities(msg.sender)}
                               </span>
-                              {msg.analyzed && msg.verdict && (
-                                <span
-                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${
-                                    msg.verdict === 'QUARANTINE'
-                                      ? 'bg-[#ffdad6] text-[#ba1a1a] border-[#ba1a1a]/30 dark:bg-[#410e0b] dark:text-[#ffb4ab]'
-                                      : msg.verdict === 'FLAG'
-                                        ? 'bg-[#fff3e0] text-[#e65100] border-[#ffb74d] dark:bg-[#331c00] dark:text-[#ffb74d]'
-                                        : 'bg-[#e8f5e9] text-[#2e7d32] border-[#a5d6a7] dark:bg-[#1b3320] dark:text-[#81c784]'
-                                  }`}
-                                >
-                                  {msg.verdict} {typeof msg.finalScore === 'number' ? `(${msg.finalScore})` : ''}
-                                </span>
+                              {msg.analyzed && (
+                                <VerdictBadge
+                                  verdict={msg.verdict}
+                                  score={msg.finalScore}
+                                  size="sm"
+                                />
                               )}
                               <span className="text-[10px] font-mono text-[#737688] dark:text-[#A0A7A3] flex items-center gap-1 shrink-0 ml-auto sm:ml-0">
                                 <Clock className="w-3 h-3" />
@@ -412,11 +408,11 @@ export default function GmailInboxModal({
                             </div>
 
                             <p className="text-xs font-semibold text-[#1a1c1c] dark:text-[#F2F2EE] truncate">
-                              {msg.subject || '(No Subject)'}
+                              {decodeHtmlEntities(msg.subject) || '(No Subject)'}
                             </p>
 
                             <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3] line-clamp-1 font-mono">
-                              {msg.snippet}
+                              {decodeHtmlEntities(msg.snippet)}
                             </p>
                           </div>
 

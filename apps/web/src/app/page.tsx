@@ -21,8 +21,12 @@ function LandingPageContent(): React.JSX.Element {
     }
   }, [searchParams, router]);
 
-  const handleJobCreated = (jobId: string, fileName: string): void => {
-    router.push(`/forensic-analysis?jobId=${jobId}&fileName=${encodeURIComponent(fileName)}`);
+  const handleJobCreated = (jobId: string, fileName?: string): void => {
+    router.push(
+      `/forensic-analysis?jobId=${encodeURIComponent(jobId)}&fileName=${encodeURIComponent(
+        fileName || 'Uploaded EML Sample'
+      )}`
+    );
   };
 
   return (
