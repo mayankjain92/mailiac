@@ -5,10 +5,9 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import StitchLandingHeader from '@/components/StitchLandingHeader';
 import ForensicAnalysisConsole, { type ForensicJob } from '@/components/ForensicAnalysisConsole';
 import RiskPillarGrid from '@/components/RiskPillarGrid';
-import UploadZone from '@/components/UploadZone';
+import ForensicIngestionModal from '@/components/ForensicIngestionModal';
 import type { AnalysisReport } from '@mailiac/shared-types';
-import { Terminal, FileCode, Loader2, CheckCircle2, XCircle, ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
+import { Terminal, FileCode, Loader2, CheckCircle2, XCircle, Mail, FileText, ArrowRight, FileSearch } from 'lucide-react';
 
 function ForensicAnalysisContent(): React.JSX.Element {
   const searchParams = useSearchParams();
@@ -19,6 +18,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
 
   const [jobs, setJobs] = useState<ForensicJob[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(initialJobId);
+  const [isIngestionModalOpen, setIsIngestionModalOpen] = useState<boolean>(!initialJobId);
 
   // Initialize job from query parameter if provided
   useEffect(() => {
@@ -122,6 +122,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
   }, [jobs, fetchReport]);
 
   const activeJob = jobs.find((j) => j.id === activeJobId);
+  const otherJobs = jobs.filter((j) => j.id !== activeJobId);
 
   const handleReset = (): void => {
     setActiveJobId(null);
@@ -150,43 +151,98 @@ function ForensicAnalysisContent(): React.JSX.Element {
             </section>
 
             {/* 4-Pillar Risk Engine Grid */}
-            <RiskPillarGrid report={activeJob.report} />
+            <RiskPillarGrid report={activeJob.report} caseId={activeJob.id} />
           </div>
         ) : (
-          /* Empty / Ingestion State when no job is selected */
+          /* Modern Ingestion Mode State when no job is selected */
           <section className="py-16 px-6 md:px-16 max-w-[1440px] mx-auto min-h-[75vh] flex flex-col justify-center">
-            <div className="mb-10 text-center max-w-2xl mx-auto">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-1.5 text-xs font-mono text-[#0052ff] dark:text-[#3b82f6] hover:underline mb-4"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> Back to Landing Page
-              </Link>
+            <div className="mb-8 text-center max-w-2xl mx-auto">
               <div className="text-xs font-mono font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-widest mb-2">
-                FORENSIC INVESTIGATION CONSOLE
+                FORENSIC INVESTIGATION PIPELINE
               </div>
-              <h1 className="text-4xl font-extrabold text-[#1a1c1c] dark:text-[#F2F2EE] tracking-tight">
-                Submit Raw Email Sample
+              <h1 className="text-3xl md:text-4xl font-extrabold text-[#1a1c1c] dark:text-[#F2F2EE] tracking-tight mb-3">
+                Select Forensic Ingestion Mode
               </h1>
-              <p className="text-sm text-[#434656] dark:text-[#A0A7A3] mt-3 leading-relaxed">
-                Drop an <code className="font-mono text-[#0052ff] dark:text-[#3b82f6]">.eml</code> file to launch the 9-stage asynchronous forensic inspection pipeline.
+              <p className="text-sm text-[#434656] dark:text-[#A0A7A3] leading-relaxed">
+                Choose how you want to submit an email for asynchronous multi-stage dissection and 4-pillar risk analysis.
               </p>
             </div>
 
-            <div className="max-w-xl mx-auto w-full">
-              <UploadZone onJobCreated={handleJobCreated} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto w-full mb-8">
+              {/* Card 1: Gmail Mailbox Ingestion */}
+              <div
+                onClick={() => router.push('/mailbox')}
+                className="group p-6 rounded border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#121614] hover:border-[#0052ff] dark:hover:border-[#3b82f6] transition-all cursor-pointer shadow-sm flex flex-col justify-between"
+              >
+                <div>
+                  <div className="w-10 h-10 rounded bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6] mb-4">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <span className="font-mono text-[10px] font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-wider block mb-1">
+                    DIRECT CLOUD INGESTION
+                  </span>
+                  <h3 className="text-lg font-bold text-[#1a1c1c] dark:text-[#F2F2EE] mb-2">
+                    Gmail Connected Mailbox
+                  </h3>
+                  <p className="text-xs text-[#434656] dark:text-[#A0A7A3] leading-relaxed">
+                    Triage live emails directly from your synchronized inbox with pre-parsed headers and instant 1-click forensic analysis.
+                  </p>
+                </div>
+                <div className="mt-6 flex items-center gap-1.5 text-xs font-mono font-bold text-[#0052ff] dark:text-[#3b82f6] group-hover:translate-x-1 transition-transform">
+                  <span>Open Gmail Mailbox</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </div>
+              </div>
+
+              {/* Card 2: EML File Upload */}
+              <div
+                onClick={() => setIsIngestionModalOpen(true)}
+                className="group p-6 rounded border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#121614] hover:border-[#0052ff] dark:hover:border-[#3b82f6] transition-all cursor-pointer shadow-sm flex flex-col justify-between"
+              >
+                <div>
+                  <div className="w-10 h-10 rounded bg-purple-500/10 dark:bg-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400 mb-4">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <span className="font-mono text-[10px] font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-wider block mb-1">
+                    LOCAL RFC822 INGESTION
+                  </span>
+                  <h3 className="text-lg font-bold text-[#1a1c1c] dark:text-[#F2F2EE] mb-2">
+                    Upload .EML File
+                  </h3>
+                  <p className="text-xs text-[#434656] dark:text-[#A0A7A3] leading-relaxed">
+                    Upload a raw forensic email export from Outlook, Apple Mail, or Thunderbird to launch the 9-stage asynchronous pipeline.
+                  </p>
+                </div>
+                <div className="mt-6 flex items-center gap-1.5 text-xs font-mono font-bold text-purple-600 dark:text-purple-400 group-hover:translate-x-1 transition-transform">
+                  <span>Launch Ingestion Dialog</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </div>
+              </div>
+            </div>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => setIsIngestionModalOpen(true)}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white rounded text-xs font-mono font-bold transition-colors shadow-sm uppercase tracking-wider"
+              >
+                <FileSearch className="w-4 h-4" />
+                <span>Open Ingestion Mode Dialog</span>
+              </button>
             </div>
           </section>
         )}
 
-        {/* Previous Submissions / Pipeline History */}
-        {jobs.length > 0 && (
+        {/* Previous Submissions / Pipeline History (Hides duplicate when viewing single job) */}
+        {((activeJob && otherJobs.length > 0) || (!activeJob && jobs.length > 0)) && (
           <section className="py-12 px-6 md:px-16 max-w-[1440px] mx-auto border-t border-[#D5D5CE] dark:border-[#29342F]">
             <div className="flex justify-between items-center mb-6">
               <div className="flex items-center gap-2">
                 <Terminal className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" />
                 <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-[#1a1c1c] dark:text-[#F2F2EE]">
-                  Session Investigations ({jobs.length})
+                  {activeJob
+                    ? `Other Investigations in This Session (${otherJobs.length})`
+                    : `Session Investigations (${jobs.length})`}
                 </h3>
               </div>
               <button
@@ -198,7 +254,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {jobs.map((job) => {
+              {(activeJob ? otherJobs : jobs).map((job) => {
                 const isActive = job.id === activeJobId;
                 const isPending = job.status === 'queued' || job.status === 'active' || job.status === 'processing';
 
@@ -254,6 +310,13 @@ function ForensicAnalysisContent(): React.JSX.Element {
             </div>
           </section>
         )}
+
+        {/* Forensic Ingestion Modal */}
+        <ForensicIngestionModal
+          isOpen={isIngestionModalOpen}
+          onClose={() => setIsIngestionModalOpen(false)}
+          onJobCreated={handleJobCreated}
+        />
       </main>
 
       {/* Footer */}

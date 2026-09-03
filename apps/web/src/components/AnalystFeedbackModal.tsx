@@ -12,10 +12,8 @@ import {
   Send,
   Sliders,
   MessageSquare,
-  UserCheck,
   User,
   Shield,
-  HelpCircle,
 } from 'lucide-react';
 
 export interface AnalystFeedbackData {
@@ -62,7 +60,7 @@ export default function AnalystFeedbackModal({
   onClose,
   caseId,
   onFeedbackSaved,
-}: AnalystFeedbackModalProps) {
+}: AnalystFeedbackModalProps): React.ReactElement | null {
   // Persona Selection State
   const [feedbackMode, setFeedbackMode] = useState<'user' | 'expert'>('user');
   const [isRoleChosen, setIsRoleChosen] = useState<boolean>(false);
@@ -135,18 +133,18 @@ export default function AnalystFeedbackModal({
     }
   }, [isOpen, caseId]);
 
-  const selectRole = (mode: 'user' | 'expert') => {
+  const selectRole = (mode: 'user' | 'expert'): void => {
     setFeedbackMode(mode);
     setIsRoleChosen(true);
   };
 
-  const toggleTrigger = (trigger: string) => {
+  const toggleTrigger = (trigger: string): void => {
     setUserSelectedTriggers((prev) =>
       prev.includes(trigger) ? prev.filter((t) => t !== trigger) : [...prev, trigger]
     );
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
@@ -358,7 +356,7 @@ export default function AnalystFeedbackModal({
                   {/* 1. Result Accuracy Question */}
                   <div>
                     <label className="block font-bold uppercase tracking-wider text-[#434656] dark:text-[#A0A7A3] mb-2">
-                      1. Was Mailiac's result accurate for this email?
+                      1. Was Mailiac&apos;s result accurate for this email?
                     </label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {[

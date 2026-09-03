@@ -4,6 +4,8 @@ import {
   fetchRawMessage,
   ensureFreshToken,
   executeWithRetry,
+  decodeHtmlEntities,
+  decodeRfc2047,
   GmailClientError,
 } from '../src/services/gmailClient.js';
 import { google } from 'googleapis';
@@ -155,6 +157,105 @@ describe('GmailClientService (apps/api/src/services/gmailClient.ts)', () => {
       const result = await listMessages(mockAuth);
       expect(result.messages[0]?.sender).toBe('(Unknown Sender)');
       expect(result.messages[0]?.subject).toBe('(No Subject)');
+    });
+
+    it('decodes HTML entities, RFC 2047 encoded subjects, and extracts Message-ID', async () => {
+      const mockMsg = {
+        data: {
+          id: 'msg-encoded-1',
+          snippet: 'Here&#39;s an alert for &quot;Project X&quot; &amp; &lt;security&gt;',
+          payload: {
+            headers: [
+              { name: 'From', value: '=?UTF-8?B?U2VjdXJpdHkgVGVhbQ==?= <sec&#64;bank.com>' },
+              { name: 'Subject', value: '=?UTF-8?Q?P=C3=A9tition_&quot;Urgent&quot;?=' },
+              { name: 'Message-ID', value: '<unique-msg-id-123@bank.com>' },
+              { name: 'Date', value: '2026-08-29T11:00:00.000Z' },
+            ],
+          },
+        },
+      };
+
+      vi.spyOn(google, 'gmail').mockReturnValue({
+        users: {
+          messages: {
+            list: vi.fn().mockResolvedValue({ data: { messages: [{ id: 'msg-encoded-1' }] } }),
+            get: vi.fn().mockResolvedValue(mockMsg),
+          },
+        },
+      } as unknown as ReturnType<typeof google.gmail>);
+
+      const result = await listMessages(mockAuth);
+      expect(result.messages).toHaveLength(1);
+      const msg = result.messages[0]!;
+      expect(msg.snippet).toBe('Here\'s an alert for "Project X" & <security>');
+      expect(msg.subject).toBe('Pétition "Urgent"');
+      expect(msg.sender).toBe('Security Team <sec@bank.com>');
+      expect(msg.messageIdHeader).toBe('<unique-msg-id-123@bank.com>');
+    });
+
+    it('deduplicates messages with identical message IDs', async () => {
+      const mockMsg = {
+        data: {
+          id: 'duplicate-msg-id',
+          snippet: 'LinkedIn Job Alert snippet',
+          payload: {
+            headers: [
+              { name: 'From', value: 'LinkedIn Alerts' },
+              { name: 'Subject', value: 'LinkedIn Job Alert' },
+            ],
+          },
+        },
+      };
+
+      vi.spyOn(google, 'gmail').mockReturnValue({
+        users: {
+          messages: {
+            list: vi.fn().mockResolvedValue({
+              data: { messages: [{ id: 'duplicate-msg-id' }, { id: 'duplicate-msg-id' }] },
+            }),
+            get: vi.fn().mockResolvedValue(mockMsg),
+          },
+        },
+      } as unknown as ReturnType<typeof google.gmail>);
+
+      const result = await listMessages(mockAuth);
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0]?.id).toBe('duplicate-msg-id');
+    });
+  });
+
+  describe('decodeHtmlEntities', () => {
+    it('decodes named entities', () => {
+      expect(decodeHtmlEntities('&quot;Hello&quot; &amp; &apos;World&apos; &lt;&gt; &nbsp;')).toBe(
+        '"Hello" & \'World\' <>  '
+      );
+    });
+
+    it('decodes decimal numeric entities', () => {
+      expect(decodeHtmlEntities('&#39;test&#39; &#34;quotes&#34;')).toBe('\'test\' "quotes"');
+    });
+
+    it('decodes hex numeric entities', () => {
+      expect(decodeHtmlEntities('&#x27;single&#x27; &#x22;double&#x22;')).toBe('\'single\' "double"');
+    });
+
+    it('handles empty or non-string input safely', () => {
+      expect(decodeHtmlEntities('')).toBe('');
+    });
+  });
+
+  describe('decodeRfc2047', () => {
+    it('decodes base64 encoded words (?B?)', () => {
+      // "Urgent Alert" in base64: VXJnZW50IEFsZXJ0
+      expect(decodeRfc2047('=?UTF-8?B?VXJnZW50IEFsZXJ0?=')).toBe('Urgent Alert');
+    });
+
+    it('decodes quoted-printable encoded words (?Q?)', () => {
+      expect(decodeRfc2047('=?UTF-8?Q?P=C3=A9tition_Urgent?=')).toBe('Pétition Urgent');
+    });
+
+    it('leaves unencoded strings intact', () => {
+      expect(decodeRfc2047('Plain ASCII Subject')).toBe('Plain ASCII Subject');
     });
   });
 

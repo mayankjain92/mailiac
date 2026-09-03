@@ -238,9 +238,10 @@ gmailRouter.get('/messages', async (req: Request, res: Response, next: NextFunct
       messages: enrichedMessages,
       nextPageToken: result.nextPageToken,
     });
-  } catch (err: any) {
-    const errMsg = err?.message || String(err);
-    if (errMsg.includes('insufficient authentication scopes') || err?.status === 403) {
+  } catch (err: unknown) {
+    const errorObj = err as { message?: string; status?: number } | undefined;
+    const errMsg = errorObj?.message || String(err);
+    if (errMsg.includes('insufficient authentication scopes') || errorObj?.status === 403) {
       res.status(403).json({
         error: 'Insufficient Gmail permissions granted. Please click Disconnect and reconnect your Gmail account, making sure to accept the read-only email permission on Google consent screen.',
       });

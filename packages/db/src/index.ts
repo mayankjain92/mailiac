@@ -301,7 +301,7 @@ export type AnalystFeedbackDocument = AnalystFeedback & Document;
 
 const analystFeedbackSchema = new Schema<AnalystFeedbackDocument>(
   {
-    jobId: { type: String, required: true, index: true },
+    jobId: { type: String, required: true },
     feedbackMode: { type: String, enum: ['user', 'expert'], default: 'expert' },
     analystVerdict: {
       type: String,
