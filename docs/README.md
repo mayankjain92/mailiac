@@ -10,11 +10,9 @@ Welcome to the **Mailiac** documentation center. Mailiac is an asynchronous, ent
 |---|---|---|
 | **Architectural Design** | **[Architecture & Threat Engine Report](./Mailiac_Architecture_Report.md)** | Full System Architecture, Monorepo Boundaries & Data Flow |
 | **Pipeline & Math** | **[Pipeline & Risk Engine Deep Dive](./PIPELINE_AND_RISK_ENGINE.md)** | 9-Stage Forensic Pipeline, Math Formulas & Evidence Rules ($C_1 - C_4$) |
-| **Product Specification** | **[Master PRD & Team Execution Plan](./PRD.md)** | Unified PRD, Message Data Model (MDM), Track Cards & Schedule |
-| **API Reference** | **[API Reference Specification](./API_REFERENCE.md)** | REST Endpoints, EML Upload, Gmail OAuth, PDF Export & SSE Streams |
-| **Integrations** | **[Gmail Ingestion PRD & Checklist](./gmail-integration/checklist.md)** | On-Demand Gmail Dual-Ingestion Specification & Parity Tests |
+| **Product Specification** | **[Master PRD & Team Execution Plan](./Backend_PRD_Team_Execution_Plan.md)** | Unified PRD, Message Data Model (MDM), Track Cards & Schedule |
+| **API Reference** | **[API Reference Specification](./API_REFERENCE.md)** | REST Endpoints, EML Upload, Re-analysis, Feedback, PDF Export & SSE Streams |
 | **Developer Guide** | **[Developer Onboarding Guide](./DEVELOPER_ONBOARDING.md)** | Setup, Docker Compose, Env Variables & Antigravity AI Workflows |
-| **Sprint Progress** | **[10-Day Prototype Checklist](./10_Day_Checklist.md)** | Module Completion Status & Track Breakdown |
 | **Future Vision & Roadmap** | **[Future Goals & Innovation Architecture](./FUTURE_ROADMAP.md)** | Active Learning, Fast-Path Hashes, Graph Threat Hunting & SOAR |
 | **Hackathon & Pitch** | **[SIH 2026 Project Overview](./SIH2026_Mailiac_Overview.md)** | Hackathon Presentation Highlights & Pitch Talking Points |
 | **Hackathon Checklist** | **[SIH Hackathon Feature Checklist](./SIH_HACKATHON_CHECKLIST.md)** | MVP Demo Strategy, Badges & Presentation Flow |
@@ -26,21 +24,21 @@ Welcome to the **Mailiac** documentation center. Mailiac is an asynchronous, ent
 ```
 mailiac/
 ├── apps/
-│   ├── api/                 → Express REST Gateway (Upload, Gmail OAuth, Reports, PDF, SSE)
+│   ├── api/                 → Express REST Gateway (Upload, Gmail OAuth, Reports, Re-Analysis, PDF, SSE)
 │   ├── worker/              → BullMQ Pipeline Consumer & Multi-Stage Orchestrator
 │   └── web/                 → Next.js 14 SOC Analyst Evidence Console
 ├── packages/
 │   ├── shared-types/        → Frozen TypeScript Interface Contract
-│   ├── db/                  → Mongoose Schemas (AnalysisReport, GmailAccount, EmailAnalysisRecord)
+│   ├── db/                  → Mongoose Schemas (AnalysisReport, RawEmail, AnalystFeedback, GmailAccount)
 │   ├── parsing/
 │   │   ├── mime/            → RFC 822 / MIME Parser & SHA-256 Attachment Hasher
 │   │   ├── decloak/         → HTML Glassworm & Zero-Width Unicode De-cloaking
 │   │   ├── geoip/           → Geolocation & ASN Hop Enrichment
-│   │   └── ai-intent/       → Hybrid Gemini 3.6-flash & Local Heuristics
+│   │   └── ai-intent/       → Multi-Model & Multi-Key Failover Router + Local Heuristics
 │   ├── scoring/
 │   │   ├── reverse-hop/     → Network Received Header Evidence Boundary Tracer
 │   │   ├── auth/            → SPF, DKIM, DMARC, ARC Cryptographic Validator
-│   │   ├── identity/        → Levenshtein, Jaro-Winkler & Homoglyph Spoof Detector
+│   │   ├── identity/        → Evidence-Gated Levenshtein, Jaro-Winkler & Homoglyph Spoof Detector
 │   │   ├── ip-reputation/   → AbuseIPDB, Proxy/VPN & Timezone Anomaly Engine
 │   │   └── risk-engine/     → Deterministic 4-Pillar Risk Aggregator (C1-C4 Rules)
 │   ├── reporting/

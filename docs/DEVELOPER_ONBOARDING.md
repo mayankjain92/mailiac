@@ -56,13 +56,19 @@ NEXT_PUBLIC_API_URL=http://localhost:4000
 
 # Threat Intelligence & AI APIs
 GEMINI_API_KEY=your_gemini_api_key_here
+# Optional Multi-Model Failover & Multi-Key Pools
+GEMINI_MODEL=gemini-3.1-flash-lite
+GEMINI_FALLBACK_MODELS=gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.6-flash
+GEMINI_MAX_ATTEMPTS=4
+# GEMINI_API_KEYS=key1,key2,key3
+
 ABUSEIPDB_API_KEY=your_abuseipdb_key_here
 GEOIP_API_KEY=your_geoip_key_here
 
 # Google Workspace / Gmail OAuth 2.0 (Dual Ingestion)
 GOOGLE_CLIENT_ID=your_google_client_id_here
 GOOGLE_CLIENT_SECRET=your_google_client_secret_here
-GOOGLE_REDIRECT_URI=http://localhost:4000/api/gmail/auth/callback
+GOOGLE_REDIRECT_URI=http://localhost:4000/api/integrations/gmail/callback
 
 # Security & Webhooks
 WEBHOOK_SIGNING_SECRET=your_hmac_signing_secret_here
@@ -94,8 +100,14 @@ Run these scripts from the repository root:
 
 To run commands for a single app or package:
 ```bash
-# Example: Run tests only for the risk engine package
-pnpm --filter @mailiac/scoring-risk-engine test
+# Example: Run AI Intent Scoring tests including multi-model failover suite
+pnpm --filter @mailiac/parsing-ai-intent test
+
+# Example: Run worker pipeline and in-place reanalysis tests
+pnpm --filter @mailiac/worker test
+
+# Example: Run identity scoring tests with evidence-gated typosquatting
+pnpm --filter @mailiac/scoring-identity test
 
 # Example: Run typecheck only for apps/api
 pnpm --filter @mailiac/api typecheck

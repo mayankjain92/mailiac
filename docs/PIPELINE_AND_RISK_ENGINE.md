@@ -75,15 +75,23 @@ graph TD
 - Detects Tor exit nodes, public VPNs, and residential proxies.
 - Evaluates timezone anomalies (discrepancy between sender `Date` header and origin IP timezone).
 
-### Stage 7: Sender Identity & Homoglyph Defense (`packages/scoring/identity`)
+### Stage 7: Sender Identity & Evidence-Gated Spoof Defense (`packages/scoring/identity`)
 - Computes string edit distances (**Levenshtein**, **Damerau-Levenshtein**, **Jaro-Winkler**) between the sender domain and protected enterprise domains.
-- Detects Unicode homoglyph substitution attacks (e.g. `pаypal.com` with Cyrillic 'а').
+- Detects Unicode homoglyph substitution attacks (e.g. `pаypal.com` with Cyrillic 'а') and punycode (`xn--`) labels.
+- **Evidence-Gated Similarity Detection:** Pure syntactic similarity does not flag legitimate subdomains or partner domains. Suspicious distance flags are evidence-gated by requiring corroborating deceptive indicators (unaligned display names, free-mail sender spoofing, or missing reverse DNS).
 - Inspects display name spoofing (e.g., `"CEO Name" <attacker@free-mail.com>`).
 
-### Stage 8: Hybrid NLP Intent Scoring (`packages/parsing/ai-intent`)
-- Primary: **Google Gemini 3.6-flash** with structured JSON output enforcing type invariants.
-- Evaluates semantic manipulation, psychological urgency, credential harvesting requests, and financial coercion.
-- **Fail-Safe Fallback:** Zero-downtime deterministic local heuristic engine kicks in if Gemini API is unreachable, ensuring pipeline liveness.
+### Stage 8: Multi-Model AI Intent Scoring & Failover Router (`packages/parsing/ai-intent`)
+- **Multi-Model Candidate Prioritization:** Dispatches requests through prioritized Gemini models (`gemini-3.1-flash-lite`, `gemini-3.5-flash`, `gemini-3.6-flash`) combined with multi-key rotation pools.
+- Evaluates semantic manipulation, psychological urgency, credential harvesting requests, authority traps, and financial coercion.
+- **Autonomous Health Tracker (`InMemoryHealthTracker`):**
+  - **HTTP 429 (`RATE_LIMIT`):** Automatically puts the rate-limited API key on dynamic cooldown (reading `Retry-After` header or 60s default) and seamlessly tries the next key on the same model.
+  - **HTTP 503/504 (`MODEL_UNAVAILABLE`):** Places the overloaded model on 120s cooldown and instantly skips remaining pairs with this model, switching immediately to the fallback model.
+  - **HTTP 401/403 (`INVALID_KEY`):** Permanently evicts the revoked key from the memory pool.
+  - **HTTP 404 (`MODEL_NOT_FOUND`):** Permanently blacklists deprecated or unavailable model names.
+  - **Timeouts & Network Jitter:** Applies a 150–300ms backoff and retries the next candidate route up to `GEMINI_MAX_ATTEMPTS`.
+- **Fail-Safe Heuristic Fallback:** If all candidate models/keys are exhausted or offline, the engine fuses deterministic regex and keyword heuristics, guaranteeing zero unhandled worker exceptions and 100% pipeline liveness.
+- **Safe Provenance Audit:** Emits `AI_ROUTER_FAILOVER` or `AI_ROUTER_EXHAUSTED` findings documenting failover steps without exposing raw API keys or body PII.
 
 ---
 
@@ -142,3 +150,44 @@ To prevent sophisticated bypasses, the risk engine enforces deterministic overri
 - **SAFE (0 – 29):** All authentication passes; clean sender reputation and low semantic risk.
 - **FLAG (30 – 69):** Moderate risk (e.g. unverified sender with neutral body, or legitimate sender with unusual urgency).
 - **QUARANTINE (70 – 100):** High-confidence threat (BEC, active credential harvesting, lookalike domain spoofing).
+
+---
+
+## 🔄 In-Place Case Re-Analysis
+
+Mailiac allows SOC analysts to trigger on-demand re-analysis of previously investigated emails via `POST /api/reports/:id/reanalyze`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Analyst as SOC Analyst / Web Console
+    participant API as Express API Gateway
+    participant DB as MongoDB (RawEmail / Report)
+    participant Queue as BullMQ (email-forensics)
+    participant Worker as Forensic Pipeline Worker
+
+    Analyst->>API: POST /api/reports/:id/reanalyze
+    API->>DB: Verify Report Exists
+    API->>Queue: Check In-Flight Concurrency (Reject 409 if active)
+    API->>DB: Fetch Raw EML Buffer (RawEmailModel)
+    API->>Queue: Add Job with identical messageId (isReanalysis: true)
+    API-->>Analyst: 202 Accepted (jobId: messageId)
+    Queue->>Worker: Dispatch Job
+    Worker->>Worker: Re-execute 9-Stage Forensic Pipeline
+    Worker->>DB: Overwrite AnalysisReport & Record in-place
+    Worker-->>Analyst: SSE Event: completed (updated finalScore & verdict)
+```
+
+1. **Zero-Duplicate Hygiene:** Re-analysis operates under the original canonical `messageId`, updating records in-place rather than polluting forensic history with duplicate case IDs.
+2. **Buffer Survivability:** EML bytes are durably preserved in `RawEmailModel`. If an email was ingested via Gmail OAuth and deleted from local cache, the pipeline dynamically re-fetches raw bytes via Google APIs.
+
+---
+
+## 👥 Human-in-the-Loop Feedback & Active Learning
+
+Analyst reviews can be recorded directly against cases via `POST /api/reports/:id/feedback`:
+
+- **Verdict Ground Truth:** Supports explicit classifications (`CONFIRMED_TRUE_POSITIVE`, `CONFIRMED_TRUE_NEGATIVE`, `FALSE_POSITIVE`, `FALSE_NEGATIVE`, `MISCLASSIFIED_SEVERITY`, etc.).
+- **Pillar Accuracy Grading:** Captures boolean accuracy per pillar (`auth`, `identity`, `ip`, `nlp`) to identify drift or blindspots.
+- **Continuous Calibration:** Feeds the future risk weighting calibration and supervised fine-tuning loops.
+
