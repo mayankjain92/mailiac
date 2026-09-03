@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import type { AnalysisReport, ForensicHop } from '@mailiac/shared-types';
 import {
   Shield,
@@ -23,6 +24,9 @@ import {
   Sparkles,
   Zap,
   Info,
+  RefreshCw,
+  X,
+  Loader2,
 } from 'lucide-react';
 import AnalystFeedbackModal from './AnalystFeedbackModal';
 import ReverseHopMapVisualizer from './ReverseHopMapVisualizer';
@@ -39,6 +43,7 @@ import {
 interface EvidenceExplorerProps {
   report: AnalysisReport;
   caseId: string;
+  onReportUpdated?: (updated: AnalysisReport) => void;
 }
 
 interface RiskVisuals {
@@ -147,7 +152,12 @@ function synthesizeAiInterpretation(
   return `High-confidence malicious threat detected. The AI identified aggressive deceptive intent, deceptive sender impersonation, and fraudulent payload triggers requiring immediate quarantine.`;
 }
 
-export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerProps): React.JSX.Element {
+export default function EvidenceExplorer({ report: initialReport, caseId, onReportUpdated }: EvidenceExplorerProps): React.JSX.Element {
+  const [report, setReport] = useState<AnalysisReport>(initialReport);
+  useEffect(() => {
+    setReport(initialReport);
+  }, [initialReport]);
+
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const [isTechnicalExpanded, setIsTechnicalExpanded] = useState<boolean>(false);
@@ -157,6 +167,47 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
   const [showMinorAnomalies, setShowMinorAnomalies] = useState<boolean>(false);
   const [selectedHopIndex, setSelectedHopIndex] = useState<number | null>(null);
   const [showHopMap, setShowHopMap] = useState<boolean>(true);
+
+  const router = useRouter();
+
+  // Re-analysis states
+  const [isConfirmReanalyzeOpen, setIsConfirmReanalyzeOpen] = useState<boolean>(false);
+  const [isReanalyzing, setIsReanalyzing] = useState<boolean>(false);
+  const [reanalyzeStatus, setReanalyzeStatus] = useState<string | null>(null);
+  const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
+  const [reanalyzeSuccessToast, setReanalyzeSuccessToast] = useState<string | null>(null);
+
+  const handleReanalyze = async (): Promise<void> => {
+    setIsReanalyzing(true);
+    setReanalyzeError(null);
+    setReanalyzeSuccessToast(null);
+    setReanalyzeStatus('Scheduling...');
+
+    try {
+      const res = await fetch(`/api/reports/${encodeURIComponent(caseId)}/reanalyze`, {
+        method: 'POST',
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Failed to schedule re-analysis' }));
+        throw new Error(errData.error || `HTTP ${res.status}: Re-analysis rejected`);
+      }
+
+      const data = await res.json();
+      const targetJobId = data.jobId || caseId;
+      const fileName = report?.senderDomain ? `${report.senderDomain}.eml` : `case_${targetJobId.slice(0, 8)}.eml`;
+
+      setReanalyzeStatus('Redirecting to pipeline...');
+
+      // Redirect immediately to the sequential pipeline execution console
+      router.push(`/forensic-analysis?jobId=${encodeURIComponent(targetJobId)}&fileName=${encodeURIComponent(fileName)}`);
+    } catch (err: unknown) {
+      setIsReanalyzing(false);
+      setReanalyzeStatus(null);
+      const msg = err instanceof Error ? err.message : 'Failed to execute re-analysis';
+      setReanalyzeError(msg);
+    }
+  };
 
   const finalScore = Math.max(0, Math.min(100, report?.riskMatrix?.finalScore ?? 0));
   const normalizedIntents = useMemo(() => normalizeIntents(report?.aiSummary?.intent), [report?.aiSummary?.intent]);
@@ -381,6 +432,17 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
           <div className="flex items-center gap-3 flex-wrap">
             <button
               type="button"
+              onClick={() => setIsConfirmReanalyzeOpen(true)}
+              disabled={isReanalyzing}
+              className="border border-[#0052ff] dark:border-[#3b82f6] text-[#0052ff] dark:text-[#3b82f6] hover:bg-[#0052ff]/10 dark:hover:bg-[#3b82f6]/20 px-4 py-2.5 rounded text-xs font-mono font-bold inline-flex items-center gap-1.5 transition-colors bg-[#FFFFFF] dark:bg-[#151A17] shadow-sm disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
+              title="Re-run forensic pipeline on this email using current engine code and scoring algorithms"
+            >
+              <RefreshCw className={`w-4 h-4 ${isReanalyzing ? 'animate-spin' : ''}`} />
+              <span>{isReanalyzing ? (reanalyzeStatus || 'RE-ANALYZING...') : 'RE-ANALYZE CASE'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setIsFeedbackModalOpen(true)}
               className="border border-[#0052ff] dark:border-[#3b82f6] text-[#0052ff] dark:text-[#3b82f6] hover:bg-[#0052ff]/10 dark:hover:bg-[#3b82f6]/20 px-4 py-2.5 rounded text-xs font-mono font-bold inline-flex items-center gap-1.5 transition-colors bg-[#FFFFFF] dark:bg-[#151A17] shadow-sm"
               title="Submit SOC Analyst Feedback & Ground-Truth Calibration"
@@ -407,6 +469,39 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
           </div>
         </div>
       </header>
+
+      {/* Re-analysis Feedback Notifications */}
+      {reanalyzeSuccessToast && (
+        <div className="mb-6 p-4 bg-emerald-50 dark:bg-green-500/10 border border-emerald-300 dark:border-green-500/30 rounded flex items-center justify-between text-xs font-mono text-emerald-800 dark:text-green-300 animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-green-400 shrink-0" />
+            <span>{reanalyzeSuccessToast}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReanalyzeSuccessToast(null)}
+            className="text-emerald-700 hover:text-emerald-900 dark:text-green-400 p-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {reanalyzeError && (
+        <div className="mb-6 p-4 bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 rounded flex items-center justify-between text-xs font-mono text-red-800 dark:text-red-300 animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
+            <span>{reanalyzeError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReanalyzeError(null)}
+            className="text-red-700 hover:text-red-900 dark:text-red-400 p-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 2. PRIMARY HERO: OVERALL VERDICT (WHAT IS THE RESULT? HOW RISKY?)         */}
@@ -1376,6 +1471,47 @@ export default function EvidenceExplorer({ report, caseId }: EvidenceExplorerPro
         onClose={() => setIsFeedbackModalOpen(false)}
         caseId={caseId}
       />
+
+      {/* Confirmation Modal for Case Re-Analysis */}
+      {isConfirmReanalyzeOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#FFFFFF] dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-lg shadow-2xl max-w-md w-full p-6 font-mono text-[#1a1c1c] dark:text-[#F2F2EE]">
+            <div className="flex items-center gap-2 text-[#0052ff] dark:text-[#3b82f6] text-xs font-bold uppercase tracking-wider mb-2">
+              <RefreshCw className="w-4 h-4 animate-spin-slow" />
+              <span>Forensic Engine Re-analysis</span>
+            </div>
+
+            <h3 className="text-base font-bold text-[#1a1c1c] dark:text-[#F2F2EE] mb-2">
+              Re-analyze Forensic Case?
+            </h3>
+
+            <p className="text-xs text-[#737688] dark:text-[#A0A7A3] mb-6 leading-relaxed">
+              This will re-run the complete forensic pipeline for Case <code className="text-[#0052ff] dark:text-[#3b82f6] font-bold">{caseId}</code> using current engine code and scoring algorithms. You will be redirected to the sequential pipeline execution console to monitor all 9 forensic stages in real time.
+            </p>
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsConfirmReanalyzeOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-[#737688] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] border border-[#D5D5CE] dark:border-[#29342F] rounded hover:bg-[#F2F2EE] dark:hover:bg-[#1b211e] transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConfirmReanalyzeOpen(false);
+                  handleReanalyze();
+                }}
+                className="px-4 py-2 text-xs font-bold bg-[#0052ff] dark:bg-[#3b82f6] text-white rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Confirm & Re-analyze</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

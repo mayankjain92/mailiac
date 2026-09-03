@@ -7,9 +7,13 @@ vi.mock('@mailiac/db', () => ({
   connectDb: vi.fn().mockResolvedValue(undefined),
   AnalysisReportModel: {
     create: vi.fn().mockImplementation((doc) => Promise.resolve(doc)),
+    findOneAndUpdate: vi.fn().mockImplementation((filter, update) => Promise.resolve({ ...filter, ...update.$set })),
   },
   EmailAnalysisRecordModel: {
     findOneAndUpdate: vi.fn().mockImplementation((filter, update) => Promise.resolve({ ...filter, ...update.$set })),
+  },
+  RawEmailModel: {
+    findOneAndUpdate: vi.fn().mockResolvedValue({}),
   },
 }));
 
@@ -17,7 +21,7 @@ vi.mock('@mailiac/reporting-pdf', () => ({
   generateForensicPdf: vi.fn().mockResolvedValue(Buffer.from('mock-pdf')),
 }));
 
-import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel } from '@mailiac/db';
+import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel, RawEmailModel } from '@mailiac/db';
 
 describe('Gmail Ingestion & Pipeline Forensic Parity (apps/worker/test/gmail-ingestion.test.ts)', () => {
   const fixturesDir = path.resolve(__dirname, '../../../packages/parsing/mime/test/fixtures');
@@ -88,7 +92,7 @@ describe('Gmail Ingestion & Pipeline Forensic Parity (apps/worker/test/gmail-ing
       );
 
       // 5. MongoDB Persistence verification
-      expect(AnalysisReportModel.create).toHaveBeenCalledTimes(2);
+      expect(AnalysisReportModel.findOneAndUpdate).toHaveBeenCalledTimes(2);
       expect(connectDb).toHaveBeenCalled();
     });
   });

@@ -9,7 +9,7 @@ import { scoreIdentity } from '@mailiac/scoring-identity';
 import { scoreIpReputation } from '@mailiac/scoring-ip-reputation';
 import { aggregateRisk } from '@mailiac/scoring-risk-engine';
 import { generateForensicPdf } from '@mailiac/reporting-pdf';
-import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel } from '@mailiac/db';
+import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel, RawEmailModel } from '@mailiac/db';
 import type { AnalysisReport } from '@mailiac/shared-types';
 
 export interface PipelineOptions {
@@ -100,7 +100,25 @@ export async function runForensicPipeline(
     };
 
     if (!options?.skipDbPersist) {
-      await AnalysisReportModel.create(report);
+      await AnalysisReportModel.findOneAndUpdate(
+        { messageId },
+        { $set: report },
+        { upsert: true, new: true }
+      );
+
+      // Preserve raw EML bytes in MongoDB for idempotent re-analysis
+      await RawEmailModel.findOneAndUpdate(
+        { messageId },
+        {
+          $set: {
+            messageId,
+            buffer: rawEmlBuffer,
+            source: options?.source ?? (options?.gmailMessageId ? 'gmail' : 'eml'),
+            gmailMessageId: options?.gmailMessageId,
+          },
+        },
+        { upsert: true }
+      );
 
       const verdict: 'QUARANTINE' | 'FLAG' | 'SAFE' =
         riskMatrix.finalScore >= 70 ? 'QUARANTINE' :

@@ -1,98 +1,29 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
-import { GoogleGenAI } from '@google/genai';
 import type { NLPResult, Finding } from '@mailiac/shared-types';
+import type { ScoreIntentOptions } from './types.js';
+import { getRouterConfig } from './config.js';
+import { defaultHealthTracker } from './health-tracker.js';
+import { routeGeminiRequest } from './router.js';
+import { normalizeScore, VALID_INTENTS } from './adapter.js';
 
-function loadEnvFallback(): void {
-  if (process.env['VITEST'] || process.env['NODE_ENV'] === 'test') return;
-  if (process.env['GEMINI_API_KEY']) return;
-  try {
-    let currentDir = process.cwd();
-    while (currentDir && currentDir !== path.parse(currentDir).root) {
-      const candidate = path.join(currentDir, '.env');
-      if (fs.existsSync(candidate)) {
-        const content = fs.readFileSync(candidate, 'utf-8');
-        for (const line of content.split('\n')) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith('#')) continue;
-          const eqIdx = trimmed.indexOf('=');
-          if (eqIdx > 0) {
-            const key = trimmed.slice(0, eqIdx).trim();
-            const val = trimmed.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, '');
-            if (key && !process.env[key]) {
-              process.env[key] = val;
-            }
-          }
-        }
-        break;
-      }
-      currentDir = path.dirname(currentDir);
-    }
-  } catch {
-    // Ignore fallback loading errors
-  }
-}
-
-const DEFAULT_TIMEOUT_MS = 15000;
-const DEFAULT_MODEL = process.env['GEMINI_MODEL'] ?? 'gemini-3.1-flash-lite';
+export * from './types.js';
+export * from './config.js';
+export * from './health-tracker.js';
+export * from './adapter.js';
+export * from './router.js';
 
 const ZERO_WIDTH_REGEX = /[\u200B-\u200D\uFEFF\u00AD\u200E\u200F\u202A-\u202E\u2060-\u2064\u180E]/g;
-
-export interface ExtractedUrlInfo {
-  href: string;
-  text?: string;
-  domain?: string;
-}
-
-export interface ScoreIntentOptions {
-  text: string;
-  subject?: string;
-  sender?: string;
-  senderDomain?: string;
-  urls?: ExtractedUrlInfo[];
-  timeoutMs?: number;
-}
-
-interface RawGeminiNLPResponse {
-  intentLabels?: string[];
-  urgency_score?: number;
-  financial_score?: number;
-  authority_score?: number;
-  harvesting_score?: number;
-  financialRequestScore?: number;
-  credentialHarvestingScore?: number;
-  nlpScore?: number;
-  confidence?: number;
-  findings?: Finding[];
-}
-
-const VALID_INTENTS = new Set([
-  'FINANCIAL_COERCION',
-  'CREDENTIAL_HARVESTING',
-  'URGENCY',
-  'AUTHORITY_TRAP',
-  'EXTORTION',
-  'MALWARE_LURE',
-  'BENIGN',
-  'MARKETING',
-  'UNKNOWN',
-  'UNCLASSIFIED'
-]);
-
-function normalizeScore(value: unknown): number {
-  const num = Number(value);
-  if (Number.isNaN(num) || !Number.isFinite(num)) {
-    return 0;
-  }
-  return Math.min(100, Math.max(0, Math.round(num)));
-}
 
 /**
  * Deterministic local heuristic analysis for English email bodies.
  * Used exclusively as a fallback when Gemini AI is unavailable or fails.
  */
-function heuristicFallback(options: ScoreIntentOptions, zeroWidthCount: number, glassworm: boolean): NLPResult {
+export function heuristicFallback(
+  options: ScoreIntentOptions,
+  zeroWidthCount: number,
+  glassworm: boolean,
+  defaultModelName: string = 'gemini-2.5-flash'
+): NLPResult {
   const text = options.text || '';
   const subject = options.subject || '';
   const senderDomain = (options.senderDomain || '').toLowerCase();
@@ -181,7 +112,19 @@ function heuristicFallback(options: ScoreIntentOptions, zeroWidthCount: number, 
     'security team',
   ];
 
-  const hasUrgency = urgencyKeywords.some((kw) => lower.includes(kw));
+  // Strip full URLs so link query parameters (e.g. ?otpToken=... or &midToken=...) do not false-trigger body keywords
+  const proseOnly = lower.replace(/https?:\/\/[^\s]+/gi, ' ');
+
+  const matchesKeyword = (content: string, kw: string): boolean => {
+    // For short keywords (<= 4 chars, e.g. 'otp'), require strict word boundaries to prevent false substring collisions
+    if (kw.length <= 4) {
+      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`\\b${escaped}\\b`, 'i').test(content);
+    }
+    return content.includes(kw);
+  };
+
+  const hasUrgency = urgencyKeywords.some((kw) => matchesKeyword(proseOnly, kw));
   if (hasUrgency) {
     intents.push('URGENCY');
     urgencyScore = 80;
@@ -192,7 +135,7 @@ function heuristicFallback(options: ScoreIntentOptions, zeroWidthCount: number, 
     });
   }
 
-  const hasFinancial = finKeywords.some((kw) => lower.includes(kw));
+  const hasFinancial = finKeywords.some((kw) => matchesKeyword(proseOnly, kw));
   if (hasFinancial) {
     intents.push('FINANCIAL_COERCION');
     finScore = 85;
@@ -203,7 +146,7 @@ function heuristicFallback(options: ScoreIntentOptions, zeroWidthCount: number, 
     });
   }
 
-  const hasCred = credKeywords.some((kw) => lower.includes(kw));
+  const hasCred = credKeywords.some((kw) => matchesKeyword(proseOnly, kw));
   if (hasCred) {
     intents.push('CREDENTIAL_HARVESTING');
     credScore = 85;
@@ -214,7 +157,7 @@ function heuristicFallback(options: ScoreIntentOptions, zeroWidthCount: number, 
     });
   }
 
-  const matchedCta = ctaKeywords.filter((kw) => lower.includes(kw));
+  const matchedCta = ctaKeywords.filter((kw) => matchesKeyword(proseOnly, kw));
   if (matchedCta.length > 0 && !hasCred) {
     findings.push({
       type: 'SUSPICIOUS_CALL_TO_ACTION',
@@ -223,7 +166,7 @@ function heuristicFallback(options: ScoreIntentOptions, zeroWidthCount: number, 
     });
   }
 
-  const hasAuthority = authorityKeywords.some((kw) => lower.includes(kw));
+  const hasAuthority = authorityKeywords.some((kw) => matchesKeyword(proseOnly, kw));
   if (hasAuthority) {
     intents.push('AUTHORITY_TRAP');
     authorityScore = 75;
@@ -286,7 +229,7 @@ function heuristicFallback(options: ScoreIntentOptions, zeroWidthCount: number, 
   return {
     provider: 'heuristic',
     providerStatus: 'fallback',
-    model: DEFAULT_MODEL,
+    model: defaultModelName,
     fallbackReason: 'Gemini API not invoked (heuristic baseline)',
     intentLabels: intents,
     financialRequestScore: finScore,
@@ -298,7 +241,7 @@ function heuristicFallback(options: ScoreIntentOptions, zeroWidthCount: number, 
     findings: taggedFindings,
     aiDiagnostics: {
       provider: 'heuristic',
-      model: DEFAULT_MODEL,
+      model: defaultModelName,
       requestAttempted: false,
       requestSucceeded: false,
       responseParsed: false,
@@ -309,31 +252,9 @@ function heuristicFallback(options: ScoreIntentOptions, zeroWidthCount: number, 
 }
 
 /**
- * Extracts and parses JSON from Gemini's response text.
- */
-function parseGeminiJson(rawText: string): RawGeminiNLPResponse | null {
-  try {
-    let clean = rawText.trim();
-    const jsonMatch = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-    if (jsonMatch && jsonMatch[1]) {
-      clean = jsonMatch[1];
-    } else {
-      const start = clean.indexOf('{');
-      const end = clean.lastIndexOf('}');
-      if (start !== -1 && end !== -1 && end > start) {
-        clean = clean.slice(start, end + 1);
-      }
-    }
-    return JSON.parse(clean.trim()) as RawGeminiNLPResponse;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Evaluates the intent and risk score of email body text and metadata using Google Gemini AI and/or Heuristic Engine.
- * Implements a hybrid fusion pipeline:
- * Local Heuristics -> Gemini Semantic Analysis -> Fusion Layer -> Fused Result
+ * Multi-Model and Multi-Credential Router with graceful failover:
+ * Primary Model -> Alternate Credential -> Fallback Models -> Deterministic Local Heuristics
  */
 export async function scoreIntent(
   textOrOptions: string | ScoreIntentOptions,
@@ -344,7 +265,12 @@ export async function scoreIntent(
       ? (textOrOptions as ScoreIntentOptions)
       : { text: typeof textOrOptions === 'string' ? textOrOptions : '', timeoutMs: timeoutMsOverride };
 
-  const timeoutMs = options.timeoutMs ?? timeoutMsOverride ?? DEFAULT_TIMEOUT_MS;
+  const config = getRouterConfig();
+  if (options.timeoutMs ?? timeoutMsOverride) {
+    config.timeoutPerAttemptMs = options.timeoutMs ?? timeoutMsOverride!;
+  }
+
+  const primaryModel = config.models[0]?.name || 'gemini-2.5-flash';
   const text = typeof options.text === 'string' ? options.text : '';
   const subject = options.subject || '';
   const urls = options.urls || [];
@@ -362,15 +288,15 @@ export async function scoreIntent(
     `[ai-intent] Safe Diagnostic: intentInputLength=${combinedInput.length}, intentInputHash=${intentInputHash}, subjectLength=${subject.length}, urlCount=${urls.length}`
   );
 
-  // 1. ALWAYS run deterministic local heuristics
-  const heuristicResult = heuristicFallback(options, zeroWidthCharCount, glasswormFlag);
+  // 1. ALWAYS calculate baseline deterministic local heuristics
+  const heuristicResult = heuristicFallback(options, zeroWidthCharCount, glasswormFlag, primaryModel);
 
   if (!combinedInput) {
     return {
       provider: 'heuristic',
       providerStatus: 'fallback',
       fallbackReason: 'Empty payload provided',
-      model: DEFAULT_MODEL,
+      model: primaryModel,
       intentLabels: ['UNKNOWN'],
       financialRequestScore: 0,
       credentialHarvestingScore: 0,
@@ -383,7 +309,7 @@ export async function scoreIntent(
       ],
       aiDiagnostics: {
         provider: 'heuristic',
-        model: DEFAULT_MODEL,
+        model: primaryModel,
         requestAttempted: false,
         requestSucceeded: false,
         responseParsed: false,
@@ -393,9 +319,8 @@ export async function scoreIntent(
     };
   }
 
-  loadEnvFallback();
-  const apiKey = process.env['GEMINI_API_KEY'];
-  if (!apiKey) {
+  // 2. Check if any credentials are configured in environment
+  if (config.credentials.length === 0) {
     console.warn('[ai-intent] GEMINI_API_KEY missing from process.env, falling back to heuristic classification');
     return {
       ...heuristicResult,
@@ -404,7 +329,7 @@ export async function scoreIntent(
       fallbackReason: 'GEMINI_API_KEY missing from process.env',
       aiDiagnostics: {
         provider: 'heuristic',
-        model: DEFAULT_MODEL,
+        model: primaryModel,
         requestAttempted: false,
         requestSucceeded: false,
         responseParsed: false,
@@ -414,16 +339,8 @@ export async function scoreIntent(
     };
   }
 
-  const startMs = Date.now();
-  const requestAttempted = true;
-  let requestSucceeded = false;
-  let responseParsed = false;
-  let fallbackReason = '';
-
-  try {
-    const ai = new GoogleGenAI({ apiKey });
-
-    const prompt = `You are a Lead Cybersecurity Forensic Linguist and threat intelligence analyst. Perform a deep semantic audit on this email (multilingual, including Portuguese/English) to detect Business Email Compromise (BEC), phishing, financial coercion, urgency, reward scams, or credential harvesting.
+  // 3. Build Prompt for Gemini
+  const prompt = `You are a Lead Cybersecurity Forensic Linguist and threat intelligence analyst. Perform a deep semantic audit on this email (multilingual, including Portuguese/English) to detect Business Email Compromise (BEC), phishing, financial coercion, urgency, reward scams, or credential harvesting.
 
 Subject: ${subject}
 Sender Claim: ${options.sender || 'Unknown'}
@@ -454,60 +371,24 @@ Respond with a single JSON object strictly matching:
 ${text.slice(0, 8000)}
 </EMAIL_BODY>`;
 
-    const apiPromise = ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-      },
-    });
+  const healthTracker = options.healthTracker ?? defaultHealthTracker;
 
-    let timeoutId: ReturnType<typeof setTimeout>;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error('Gemini API call timed out')), timeoutMs);
-    });
+  // 4. Execute Multi-Model, Multi-Key Failover Router
+  const routerResult = await routeGeminiRequest(prompt, config, healthTracker);
 
-    const response = await Promise.race([apiPromise, timeoutPromise]).finally(() => {
-      clearTimeout(timeoutId);
-    });
+  if (routerResult.success) {
+    const parsed = routerResult.rawResponse;
 
-    requestSucceeded = true;
-    const responseText = response.text || '';
-    const parsed = parseGeminiJson(responseText);
+    const rawLabels =
+      Array.isArray(parsed.intentLabels) && parsed.intentLabels.length > 0
+        ? parsed.intentLabels.map(String)
+        : ['UNKNOWN'];
 
-    if (!parsed) {
-      fallbackReason = 'Failed to parse Gemini API JSON response';
-      console.warn(`[ai-intent] ${fallbackReason}, falling back to heuristic fusion`);
-      const latencyMs = Date.now() - startMs;
-      return {
-        ...heuristicResult,
-        provider: 'heuristic',
-        providerStatus: 'fallback',
-        fallbackReason,
-        aiDiagnostics: {
-          provider: 'heuristic',
-          model: DEFAULT_MODEL,
-          requestAttempted,
-          requestSucceeded,
-          responseParsed: false,
-          latencyMs,
-          fallbackUsed: true,
-        },
-      };
-    }
-
-    responseParsed = true;
-    const latencyMs = Date.now() - startMs;
-
-    const rawLabels = Array.isArray(parsed.intentLabels) && parsed.intentLabels.length > 0
-      ? parsed.intentLabels.map(String)
-      : ['UNKNOWN'];
-
-    let geminiLabels = Array.from(new Set(rawLabels.map(label => 
-      VALID_INTENTS.has(label) ? label : 'UNKNOWN'
-    )));
+    let geminiLabels = Array.from(
+      new Set(rawLabels.map((label) => (VALID_INTENTS.has(label) ? label : 'UNKNOWN')))
+    );
     if (geminiLabels.length > 1) {
-      geminiLabels = geminiLabels.filter(label => label !== 'UNKNOWN');
+      geminiLabels = geminiLabels.filter((label) => label !== 'UNKNOWN');
     }
 
     const urgencyScore = normalizeScore(parsed.urgency_score);
@@ -515,32 +396,57 @@ ${text.slice(0, 8000)}
     const authorityScore = normalizeScore(parsed.authority_score);
     const harvestingScore = normalizeScore(parsed.harvesting_score ?? parsed.credentialHarvestingScore);
 
-    let calculatedGeminiNlpScore = typeof parsed.nlpScore !== 'undefined'
-      ? normalizeScore(parsed.nlpScore)
-      : Math.max(urgencyScore, financialScore, authorityScore, harvestingScore);
+    let calculatedGeminiNlpScore =
+      typeof parsed.nlpScore !== 'undefined'
+        ? normalizeScore(parsed.nlpScore)
+        : Math.max(urgencyScore, financialScore, authorityScore, harvestingScore);
 
-    calculatedGeminiNlpScore = Math.max(calculatedGeminiNlpScore, urgencyScore, financialScore, authorityScore, harvestingScore);
+    calculatedGeminiNlpScore = Math.max(
+      calculatedGeminiNlpScore,
+      urgencyScore,
+      financialScore,
+      authorityScore,
+      harvestingScore
+    );
 
-    const geminiConfidence = typeof parsed.confidence === 'number'
-      ? Math.min(1.0, Math.max(0.0, parsed.confidence))
-      : 0.85;
+    const geminiConfidence =
+      typeof parsed.confidence === 'number' ? Math.min(1.0, Math.max(0.0, parsed.confidence)) : 0.85;
 
-    const geminiRawFindings: Finding[] = Array.isArray(parsed.findings) 
-      ? parsed.findings 
-      : [{ type: 'AI_INTENT_EVALUATION', severity: calculatedGeminiNlpScore > 50 ? 'HIGH' : 'LOW', description: `AI intent classified as ${geminiLabels.join(', ')}` }];
+    const geminiRawFindings: Finding[] = Array.isArray(parsed.findings)
+      ? parsed.findings
+      : [
+          {
+            type: 'AI_INTENT_EVALUATION',
+            severity: calculatedGeminiNlpScore > 50 ? 'HIGH' : 'LOW',
+            description: `AI intent classified as ${geminiLabels.join(', ')}`,
+          },
+        ];
 
     const geminiFindings: Finding[] = geminiRawFindings.map((f) => ({
       ...f,
       source: 'gemini',
     }));
 
-    // AI-FIRST ARCHITECTURE: Use Gemini API results directly when available
+    // If failover occurred across routes, append non-sensitive provenance finding
+    if (routerResult.trail.length > 1) {
+      const priorAttempts = routerResult.trail.slice(0, -1);
+      const trailSummary = priorAttempts
+        .map((a) => `${a.model} (${a.credentialId}): ${a.error || 'FAILED'}`)
+        .join(', ');
+      geminiFindings.push({
+        type: 'AI_ROUTER_FAILOVER',
+        severity: 'INFO',
+        description: `Analysis completed after ${priorAttempts.length} failover attempt(s). Prior route failures: [${trailSummary}]. Success route: ${routerResult.model} (${routerResult.credentialId}).`,
+        source: 'gemini',
+      });
+    }
+
     const finalNlpScore = glasswormFlag ? normalizeScore(calculatedGeminiNlpScore + 20) : calculatedGeminiNlpScore;
 
     return {
       provider: 'gemini',
       providerStatus: 'success',
-      model: DEFAULT_MODEL,
+      model: routerResult.model,
       intentLabels: geminiLabels,
       financialRequestScore: financialScore,
       credentialHarvestingScore: harvestingScore,
@@ -551,33 +457,46 @@ ${text.slice(0, 8000)}
       findings: geminiFindings,
       aiDiagnostics: {
         provider: 'gemini',
-        model: DEFAULT_MODEL,
-        requestAttempted,
-        requestSucceeded,
-        responseParsed,
-        latencyMs,
+        model: routerResult.model,
+        requestAttempted: true,
+        requestSucceeded: true,
+        responseParsed: true,
+        latencyMs: routerResult.latencyMs,
         fallbackUsed: false,
       },
     };
-  } catch (err) {
-    const latencyMs = Date.now() - startMs;
-    fallbackReason = err instanceof Error ? err.message : String(err);
-    console.error('[ai-intent] Gemini API call failed:', fallbackReason);
-
-    return {
-      ...heuristicResult,
-      provider: 'heuristic',
-      providerStatus: 'fallback',
-      fallbackReason,
-      aiDiagnostics: {
-        provider: 'heuristic',
-        model: DEFAULT_MODEL,
-        requestAttempted,
-        requestSucceeded: false,
-        responseParsed: false,
-        latencyMs,
-        fallbackUsed: true,
-      },
-    };
   }
+
+  // 5. Router exhausted all candidates -> Deterministic Heuristic Fallback
+  console.warn(
+    `[ai-intent] Gemini failover exhausted (${routerResult.trail.length} attempt(s)), falling back to heuristic fusion: ${routerResult.fallbackReason}`
+  );
+
+  const fallbackFindings: Finding[] = [...heuristicResult.findings];
+  if (routerResult.trail.length > 0) {
+    fallbackFindings.push({
+      type: 'AI_ROUTER_EXHAUSTED',
+      severity: 'INFO',
+      description: routerResult.fallbackReason,
+      source: 'heuristic',
+    });
+  }
+
+  return {
+    ...heuristicResult,
+    provider: 'heuristic',
+    providerStatus: 'fallback',
+    model: primaryModel,
+    fallbackReason: routerResult.fallbackReason,
+    findings: fallbackFindings,
+    aiDiagnostics: {
+      provider: 'heuristic',
+      model: primaryModel,
+      requestAttempted: routerResult.trail.length > 0,
+      requestSucceeded: false,
+      responseParsed: false,
+      latencyMs: routerResult.latencyMs,
+      fallbackUsed: true,
+    },
+  };
 }
