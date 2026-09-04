@@ -52,10 +52,11 @@ export function parseCredentialsFromEnv(): CredentialEntry[] {
     }
   }
 
-  // 3. Fallback to legacy GEMINI_API_KEY if no keys found yet or add if not already present
+  // 3. Check legacy or comma-separated GEMINI_API_KEY
   const singleKey = process.env['GEMINI_API_KEY'];
   if (singleKey && singleKey.trim()) {
-    rawKeys.push(singleKey.trim());
+    const split = singleKey.split(/[,\n]/).map((k) => k.trim()).filter(Boolean);
+    rawKeys.push(...split);
   }
 
   // Deduplicate keys while preserving order

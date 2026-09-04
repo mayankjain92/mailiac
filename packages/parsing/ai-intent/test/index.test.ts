@@ -252,6 +252,75 @@ describe('AI Intent Scoring (@mailiac/parsing-ai-intent)', () => {
       expect(result.nlpScore).toBe(10);
       expect(result.intentLabels).toEqual(['BENIGN']);
     });
+
+    it('computes nlpScore deterministically from sub-scores when nlpScore is omitted by Gemini', async () => {
+      const mockGenerate = vi.fn().mockResolvedValueOnce({
+        text: JSON.stringify({
+          intentLabels: ['FINANCIAL_COERCION'],
+          urgency_score: 30,
+          financial_score: 85,
+          authority_score: 40,
+          harvesting_score: 10,
+        }),
+      });
+
+      vi.mocked(GoogleGenAI).mockImplementationOnce(() => ({
+        models: {
+          generateContent: mockGenerate,
+        },
+      } as unknown as GoogleGenAI));
+
+      const result = await scoreIntent('Invoice wire transfer request');
+      expect(result.nlpScore).toBe(85);
+      expect(result.financialRequestScore).toBe(85);
+      expect(result.intentLabels).toEqual(['FINANCIAL_COERCION']);
+    });
+
+    it('prevents phantom LLM score hallucinations by anchoring nlpScore to maximum sub-score', async () => {
+      const mockGenerate = vi.fn().mockResolvedValueOnce({
+        text: JSON.stringify({
+          intentLabels: ['BENIGN'],
+          urgency_score: 10,
+          financial_score: 20,
+          authority_score: 10,
+          harvesting_score: 15,
+          nlpScore: 90, // Hallucinated composite score
+        }),
+      });
+
+      vi.mocked(GoogleGenAI).mockImplementationOnce(() => ({
+        models: {
+          generateContent: mockGenerate,
+        },
+      } as unknown as GoogleGenAI));
+
+      const result = await scoreIntent('Routine newsletter');
+      // Anchored to maxSubScore (20) rather than hallucinated 90
+      expect(result.nlpScore).toBe(20);
+    });
+
+    it('preserves BRAND_IMPERSONATION intent label from Gemini', async () => {
+      const mockGenerate = vi.fn().mockResolvedValueOnce({
+        text: JSON.stringify({
+          intentLabels: ['BRAND_IMPERSONATION', 'CREDENTIAL_HARVESTING'],
+          urgency_score: 20,
+          financial_score: 0,
+          authority_score: 90,
+          harvesting_score: 85,
+        }),
+      });
+
+      vi.mocked(GoogleGenAI).mockImplementationOnce(() => ({
+        models: {
+          generateContent: mockGenerate,
+        },
+      } as unknown as GoogleGenAI));
+
+      const result = await scoreIntent('Fake Microsoft login');
+      expect(result.intentLabels).toContain('BRAND_IMPERSONATION');
+      expect(result.intentLabels).toContain('CREDENTIAL_HARVESTING');
+      expect(result.nlpScore).toBe(90);
+    });
   });
 
   describe('P3 Regression Test Suite — English & Format Coverage', () => {
