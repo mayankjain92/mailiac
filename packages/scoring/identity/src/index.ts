@@ -7,6 +7,13 @@ import {
   HIGH_RISK_TLDS,
   FREE_WEBMAIL_DOMAINS,
 } from './defaults.js';
+import {
+  type DomainIntelligence,
+  type QueryRdapOptions,
+  getDomainIntelligence,
+} from './domain-intelligence.js';
+
+export * from './domain-intelligence.js';
 
 export {
   DEFAULT_PROTECTED_DOMAINS,
@@ -703,13 +710,15 @@ export function detectTldSwapping(
  * @param protectedDomains List of protected organization domains (merged with defaults)
  * @param displayName Optional From display name (e.g. "PayPal Support")
  * @param brandAliases Optional mapping of domains to their known aliases
+ * @param domainIntelligence Optional DomainIntelligence object from RDAP lookup
  * @returns IdentityResult
  */
 export function scoreIdentity(
   senderDomain: string,
   protectedDomains?: string[],
   displayName?: string,
-  brandAliases?: Record<string, string[]>
+  brandAliases?: Record<string, string[]>,
+  domainIntelligence?: DomainIntelligence
 ): IdentityResult {
   // Merge user provided domains with default baseline protected domains
   const combinedProtected = normalizeDomainList([
@@ -735,6 +744,14 @@ export function scoreIdentity(
   for (const rawProtected of combinedProtected) {
     const protectedNorm = cleanDomain(rawProtected);
     if (normalizedSender === protectedNorm) {
+      const matchFindings: Finding[] = [];
+      if (domainIntelligence?.findings) {
+        for (const f of domainIntelligence.findings) {
+          if (f.severity === 'INFO' || f.severity === 'LOW') {
+            matchFindings.push(f);
+          }
+        }
+      }
       return {
         levenshteinDistance: 0,
         damerauLevenshteinDistance: 0,
@@ -742,7 +759,7 @@ export function scoreIdentity(
         homoglyphMatch: false,
         matchedProtectedDomain: rawProtected,
         identityScore: 0,
-        findings: [],
+        findings: matchFindings,
       };
     }
   }
@@ -957,7 +974,50 @@ export function scoreIdentity(
     }
   }
 
-  // 7. Calculate Final Calibrated Identity Score
+  // 7. Domain Age & Registration Intelligence Evidence
+  if (domainIntelligence && domainIntelligence.rdap.available && domainIntelligence.age) {
+    const ageClass = domainIntelligence.age.classification;
+    if (ageClass === 'VERY_NEW') {
+      candidateScores.push(35);
+      // Corroborate lookalike/impersonation attacks: newly registered burner lookalikes are high confidence threats
+      if (
+        findings.some((f) =>
+          ['TYPOSQUATTING', 'HOMOGLYPH_DETECTED', 'BRAND_IMPERSONATION', 'COMBOSQUATTING', 'TLD_SWAPPING'].includes(
+            f.type
+          )
+        )
+      ) {
+        candidateScores.push(95);
+      }
+    } else if (ageClass === 'NEWLY_REGISTERED') {
+      candidateScores.push(20);
+      if (
+        findings.some((f) =>
+          ['TYPOSQUATTING', 'HOMOGLYPH_DETECTED', 'BRAND_IMPERSONATION', 'COMBOSQUATTING', 'TLD_SWAPPING'].includes(
+            f.type
+          )
+        )
+      ) {
+        candidateScores.push(85);
+      }
+    } else if (ageClass === 'RECENT') {
+      candidateScores.push(5);
+    }
+
+    for (const df of domainIntelligence.findings) {
+      if (!findings.some((f) => f.type === df.type)) {
+        findings.push(df);
+      }
+    }
+  } else if (domainIntelligence?.findings) {
+    for (const df of domainIntelligence.findings) {
+      if (!findings.some((f) => f.type === df.type)) {
+        findings.push(df);
+      }
+    }
+  }
+
+  // 8. Calculate Final Calibrated Identity Score
   let baseScore = candidateScores.length > 0 ? Math.max(...candidateScores) : 0;
 
   // Apply corroboration bonus if multiple distinct signals trigger together (e.g. typosquatting + brand impersonation)
@@ -974,4 +1034,18 @@ export function scoreIdentity(
     identityScore: baseScore,
     findings,
   };
+}
+
+/**
+ * Asynchronously retrieves cached or live domain intelligence, then evaluates identity risk.
+ */
+export async function scoreIdentityAsync(
+  senderDomain: string,
+  protectedDomains?: string[],
+  displayName?: string,
+  brandAliases?: Record<string, string[]>,
+  options?: QueryRdapOptions
+): Promise<IdentityResult> {
+  const intelligence = await getDomainIntelligence(senderDomain, options);
+  return scoreIdentity(senderDomain, protectedDomains, displayName, brandAliases, intelligence);
 }

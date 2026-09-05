@@ -1,4 +1,4 @@
-import type { Finding, NLPResult } from '@mailiac/shared-types';
+import type { Finding } from '@mailiac/shared-types';
 
 export interface ExtractedUrlInfo {
   href: string;
@@ -14,6 +14,7 @@ export interface ScoreIntentOptions {
   urls?: ExtractedUrlInfo[];
   timeoutMs?: number;
   healthTracker?: AIHealthTracker;
+  arcPass?: boolean;
 }
 
 export interface CredentialEntry {

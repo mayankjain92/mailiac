@@ -191,6 +191,58 @@ describe('aggregateRisk - @mailiac/scoring-risk-engine', () => {
       expect(matrix.override?.type).toBe('HIGH_RISK_QUARANTINE');
     });
 
+    it('Sample C: Benign Forwarded Email via Gmail (ARC seal or FORWARDED_MESSAGE_RELAY finding) -> CLEAN / NO QUARANTINE', () => {
+      const matrix = aggregateRisk(
+        'gmail.com',
+        { authScore: 0, arcPass: true } as AuthResult,
+        { identityScore: 0, findings: [] } as IdentityResult,
+        { ipScore: 0, findings: [] } as IPReputationResult,
+        {
+          nlpScore: 20,
+          intentLabels: ['BENIGN'],
+          findings: [
+            {
+              type: 'FORWARDED_MESSAGE_RELAY',
+              severity: 'INFO',
+              description: 'Email identified as a forwarded message / relay',
+            },
+          ],
+        } as NLPResult
+      );
+      // Should NOT trigger Tier 1 fatal circuit breaker
+      expect(matrix.override?.triggered).toBe(false);
+      expect(matrix.quarantineOverride).toBe(false);
+      expect(matrix.finalScore).toBeLessThanOrEqual(20);
+    });
+
+    it('Sample D: Forwarded Email with Active Credential Harvesting -> REMAINS QUARANTINED', () => {
+      const matrix = aggregateRisk(
+        'gmail.com',
+        { authScore: 0, arcPass: false } as AuthResult,
+        { identityScore: 0, findings: [] } as IdentityResult,
+        { ipScore: 0, findings: [] } as IPReputationResult,
+        {
+          nlpScore: 90,
+          intentLabels: ['CREDENTIAL_HARVESTING'],
+          findings: [
+            {
+              type: 'FORWARDED_MESSAGE_RELAY',
+              severity: 'INFO',
+              description: 'Email identified as a forwarded message / relay',
+            },
+            {
+              type: 'HEURISTIC_CREDENTIAL',
+              severity: 'HIGH',
+              description: 'Explicit credential harvesting detected',
+            },
+          ],
+        } as NLPResult
+      );
+      // Acute malice overrides relay context -> remains quarantined
+      expect(matrix.override?.triggered).toBe(true);
+      expect(matrix.finalScore).toBe(100);
+    });
+
     it('24. Invalid numerical values handle safely', () => {
       const matrix = aggregateRisk(
         defaultDomain,

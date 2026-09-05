@@ -5,19 +5,141 @@ import { enrichHopsWithGeo } from '@mailiac/parsing-geoip';
 import { scoreIntent } from '@mailiac/parsing-ai-intent';
 import { traceReverseHops } from '@mailiac/scoring-reverse-hop';
 import { verifyAuth } from '@mailiac/scoring-auth';
-import { scoreIdentity } from '@mailiac/scoring-identity';
+import {
+  scoreIdentity,
+  getDomainIntelligence,
+  extractRegistrableDomain,
+  generateDomainFindings,
+  type DomainIntelligence,
+} from '@mailiac/scoring-identity';
 import { scoreIpReputation } from '@mailiac/scoring-ip-reputation';
 import { aggregateRisk } from '@mailiac/scoring-risk-engine';
 import { generateForensicPdf } from '@mailiac/reporting-pdf';
-import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel, RawEmailModel } from '@mailiac/db';
+import {
+  connectDb,
+  AnalysisReportModel,
+  EmailAnalysisRecordModel,
+  RawEmailModel,
+  DomainIntelligenceModel,
+} from '@mailiac/db';
 import type { AnalysisReport } from '@mailiac/shared-types';
 
 export interface PipelineOptions {
   mongoUri?: string;
   protectedDomains?: string[];
   skipDbPersist?: boolean;
+  skipRdap?: boolean;
   source?: 'eml' | 'gmail';
   gmailMessageId?: string;
+}
+
+/**
+ * Resolves domain registration intelligence using a two-tier cache:
+ * in-memory TTL cache + MongoDB DomainIntelligence collection.
+ */
+async function resolveDomainIntelligenceWithDb(
+  domain: string,
+  options?: PipelineOptions
+): Promise<DomainIntelligence> {
+  const skipDbPersist = options?.skipDbPersist;
+  const skipRdap = options?.skipRdap || process.env['RDAP_ENABLED'] === 'false';
+  const registrable = extractRegistrableDomain(domain);
+  if (!registrable) {
+    return getDomainIntelligence(domain, { enabled: !skipRdap });
+  }
+
+  // Check MongoDB cache if persistence is enabled
+  if (!skipDbPersist && typeof DomainIntelligenceModel?.findOne === 'function') {
+    try {
+      const existing = await DomainIntelligenceModel.findOne({ domain: registrable }).lean();
+      if (existing && existing.rdap?.available && existing.rdap.fetchedAt) {
+        const fetchedMs = new Date(existing.rdap.fetchedAt).getTime();
+        // If cached within the last 24 hours
+        if (Date.now() - fetchedMs < 24 * 60 * 60 * 1000) {
+          const createdAtStr = existing.registration?.createdAt
+            ? new Date(existing.registration.createdAt).toISOString()
+            : undefined;
+          const expiresAtStr = existing.registration?.expiresAt
+            ? new Date(existing.registration.expiresAt).toISOString()
+            : undefined;
+          const lastChangedAtStr = existing.registration?.lastChangedAt
+            ? new Date(existing.registration.lastChangedAt).toISOString()
+            : undefined;
+          const fetchedAtStr = new Date(existing.rdap.fetchedAt).toISOString();
+
+          const reconstructed: DomainIntelligence = {
+            domain: existing.domain,
+            registrableDomain: existing.registrableDomain || existing.domain,
+            registration: existing.registration
+              ? {
+                  createdAt: createdAtStr,
+                  expiresAt: expiresAtStr,
+                  lastChangedAt: lastChangedAtStr,
+                }
+              : undefined,
+            registrar: existing.registrar,
+            rdap: {
+              available: existing.rdap.available,
+              source: existing.rdap.source,
+              fetchedAt: fetchedAtStr,
+              httpStatus: existing.rdap.httpStatus,
+              error: existing.rdap.error,
+            },
+            age: existing.age as DomainIntelligence['age'],
+            findings: [],
+          };
+          reconstructed.findings = generateDomainFindings(reconstructed);
+          return reconstructed;
+        }
+      }
+    } catch {
+      // Fallback to in-memory / RDAP lookup
+    }
+  }
+
+  // Live lookup with in-memory caching and request deduplication
+  const intelligence = await getDomainIntelligence(domain, { enabled: !skipRdap });
+
+  // Persist to MongoDB if fresh and DB persistence enabled
+  if (!skipDbPersist && typeof DomainIntelligenceModel?.findOneAndUpdate === 'function' && intelligence.rdap.available && intelligence.registrableDomain) {
+    try {
+      await DomainIntelligenceModel.findOneAndUpdate(
+        { domain: intelligence.registrableDomain },
+        {
+          $set: {
+            domain: intelligence.registrableDomain,
+            registrableDomain: intelligence.registrableDomain,
+            registration: {
+              createdAt: intelligence.registration?.createdAt
+                ? new Date(intelligence.registration.createdAt)
+                : undefined,
+              expiresAt: intelligence.registration?.expiresAt
+                ? new Date(intelligence.registration.expiresAt)
+                : undefined,
+              lastChangedAt: intelligence.registration?.lastChangedAt
+                ? new Date(intelligence.registration.lastChangedAt)
+                : undefined,
+            },
+            registrar: intelligence.registrar,
+            rdap: {
+              available: intelligence.rdap.available,
+              source: intelligence.rdap.source,
+              fetchedAt: new Date(intelligence.rdap.fetchedAt),
+              httpStatus: intelligence.rdap.httpStatus,
+              error: intelligence.rdap.error,
+            },
+            age: intelligence.age,
+            expireAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          },
+        },
+        { upsert: true }
+      );
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  return intelligence;
 }
 
 /**
@@ -55,18 +177,27 @@ export async function runForensicPipeline(
 
     // Phase 2: Parallel Execution of AI Intent & Enrichment Stages
     const originatingIp = reverseHopResult.originatingSenderIp ?? '';
-    const [nlpResult, forensicPath, ipReputationResult, identityResult] = await Promise.all([
+    const [nlpResult, forensicPath, ipReputationResult, domainIntelligence] = await Promise.all([
       scoreIntent({
         text: mdm.bodyText || decloakResult.extractedText,
         subject: mdm.subject,
         sender: mdm.from.name ? `${mdm.from.name} <${mdm.from.address}>` : mdm.from.address,
         senderDomain,
         urls: decloakResult.extractedUrls,
+        arcPass: authResults.arcPass,
       }),
       enrichHopsWithGeo(reverseHopResult.path),
       scoreIpReputation(originatingIp, mdm.date),
-      Promise.resolve(scoreIdentity(senderDomain, protectedDomains, mdm.from.name)),
+      resolveDomainIntelligenceWithDb(senderDomain, options),
     ]);
+
+    const identityResult = scoreIdentity(
+      senderDomain,
+      protectedDomains,
+      mdm.from.name,
+      undefined,
+      domainIntelligence
+    );
 
     // Attach decloak results to NLP intent model
     nlpResult.glasswormFlag = decloakResult.glasswormFlag;

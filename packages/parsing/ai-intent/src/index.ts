@@ -5,12 +5,14 @@ import { getRouterConfig } from './config.js';
 import { defaultHealthTracker } from './health-tracker.js';
 import { routeGeminiRequest } from './router.js';
 import { normalizeScore, VALID_INTENTS } from './adapter.js';
+import { detectForwardedMessage } from './forward-detection.js';
 
 export * from './types.js';
 export * from './config.js';
 export * from './health-tracker.js';
 export * from './adapter.js';
 export * from './router.js';
+export * from './forward-detection.js';
 
 const ZERO_WIDTH_REGEX = /[\u200B-\u200D\uFEFF\u00AD\u200E\u200F\u202A-\u202E\u2060-\u2064\u180E]/g;
 
@@ -135,16 +137,7 @@ export function heuristicFallback(
     });
   }
 
-  const hasFinancial = finKeywords.some((kw) => matchesKeyword(proseOnly, kw));
-  if (hasFinancial) {
-    intents.push('FINANCIAL_COERCION');
-    finScore = 85;
-    findings.push({
-      type: 'HEURISTIC_FINANCIAL',
-      severity: 'HIGH',
-      description: 'Reward or financial lure detected in email text',
-    });
-  }
+  const forwardMeta = detectForwardedMessage(text, subject, { arcPass: options.arcPass });
 
   const hasCred = credKeywords.some((kw) => matchesKeyword(proseOnly, kw));
   if (hasCred) {
@@ -155,6 +148,26 @@ export function heuristicFallback(
       severity: 'HIGH',
       description: 'Explicit credential harvesting or account verification keywords detected',
     });
+  }
+
+  const hasFinancial = finKeywords.some((kw) => matchesKeyword(proseOnly, kw));
+  if (hasFinancial) {
+    if (forwardMeta.isForwarded && !hasUrgency && !hasCred) {
+      finScore = 20;
+      findings.push({
+        type: 'HEURISTIC_FINANCIAL',
+        severity: 'LOW',
+        description: 'Financial or billing terms detected in forwarded message body (informational relay)',
+      });
+    } else {
+      intents.push('FINANCIAL_COERCION');
+      finScore = 85;
+      findings.push({
+        type: 'HEURISTIC_FINANCIAL',
+        severity: 'HIGH',
+        description: 'Reward or financial lure detected in email text',
+      });
+    }
   }
 
   const matchedCta = ctaKeywords.filter((kw) => matchesKeyword(proseOnly, kw));
@@ -168,13 +181,18 @@ export function heuristicFallback(
 
   const hasAuthority = authorityKeywords.some((kw) => matchesKeyword(proseOnly, kw));
   if (hasAuthority) {
-    intents.push('AUTHORITY_TRAP');
-    authorityScore = 75;
-    findings.push({
-      type: 'HEURISTIC_AUTHORITY',
-      severity: 'HIGH',
-      description: 'Authority or executive impersonation keywords detected',
-    });
+    if (forwardMeta.isForwarded && !hasCred && !hasUrgency) {
+      // In a forwarded email without credential prompts or urgency pressure, authority terms represent benign organizational notices
+      authorityScore = 15;
+    } else {
+      intents.push('AUTHORITY_TRAP');
+      authorityScore = 75;
+      findings.push({
+        type: 'HEURISTIC_AUTHORITY',
+        severity: 'HIGH',
+        description: 'Authority or executive impersonation keywords detected',
+      });
+    }
   }
 
   // URL Domain Mismatch / Suspicious External Link Detection (deduplicated per destination domain)
@@ -196,7 +214,14 @@ export function heuristicFallback(
   for (const [, urlInfo] of domainUrlMap) {
     const domain = urlInfo.domain;
     if (domain) {
-      const isSenderDomainMatch = senderDomain && (domain.endsWith(senderDomain) || senderDomain.endsWith(domain));
+      const isOrigDomainMatch = Boolean(
+        forwardMeta.originalSenderDomain &&
+        (domain.endsWith(forwardMeta.originalSenderDomain) || forwardMeta.originalSenderDomain.endsWith(domain))
+      );
+      const isSenderDomainMatch =
+        (senderDomain && (domain.endsWith(senderDomain) || senderDomain.endsWith(domain))) ||
+        isOrigDomainMatch;
+
       if (!isSenderDomainMatch) {
         if (!intents.includes('SUSPICIOUS_LINK') && !intents.includes('CREDENTIAL_HARVESTING')) {
           intents.push('SUSPICIOUS_LINK');
@@ -213,7 +238,19 @@ export function heuristicFallback(
     }
   }
 
-  if (intents.length === 0) {
+  if (forwardMeta.isForwarded) {
+    findings.push({
+      type: 'FORWARDED_MESSAGE_RELAY',
+      severity: 'INFO',
+      description: `Email identified as a forwarded message / relay${
+        forwardMeta.originalSender ? ` (Original sender: ${forwardMeta.originalSender})` : ''
+      }. Inner content evaluated in relay context.`,
+    });
+    if (intents.length === 0 || (intents.length === 1 && intents[0] === 'UNKNOWN')) {
+      intents.length = 0;
+      intents.push('BENIGN');
+    }
+  } else if (intents.length === 0) {
     intents.push('UNKNOWN');
     findings.push({ type: 'HEURISTIC_UNKNOWN', severity: 'INFO', description: 'No heuristic intent detected' });
   }
@@ -340,13 +377,28 @@ export async function scoreIntent(
   }
 
   // 3. Build Prompt for Gemini
+  const forwardMeta = detectForwardedMessage(text, subject, { arcPass: options.arcPass });
+
+  const forwardPromptDirective = forwardMeta.isForwarded
+    ? `\nFORWARDED MESSAGE & RELAY CONTEXT:
+This email is identified as a forwarded message or informational relay.
+Outer Sender (Forwarder): ${options.sender || 'Unknown'} (${options.senderDomain || 'Unknown'})
+Embedded Original Sender: ${forwardMeta.originalSender || 'Unknown'}${forwardMeta.originalSenderDomain ? ` (Domain: ${forwardMeta.originalSenderDomain})` : ''}
+
+FORWARDED RELAY EVALUATION DIRECTIVE:
+1. When an outer sender forwards an email from an organization (e.g. Microsoft, Google, banks, university, IT Helpdesk), the outer sender is NOT impersonating that organization. The outer sender is merely sharing/relaying legitimate or existing information.
+2. DO NOT flag BRAND_IMPERSONATION or AUTHORITY_TRAP simply because the outer sender domain (${options.senderDomain || 'Unknown'}) differs from the brand/domain referenced in the forwarded message.
+3. Only flag BRAND_IMPERSONATION or AUTHORITY_TRAP if the forwarder explicitly claims to be that organization in their own outer preamble, or if the original message itself is a fraudulent phishing lure.
+4. For routine, benign forwarded messages (receipts, newsletters, project notifications, legitimate notices), classify intentLabels with "BENIGN" and keep authority_score <= 20 and financial_score <= 20.\n`
+    : '';
+
   const prompt = `You are a Lead Cybersecurity Forensic Linguist and threat intelligence analyst. Perform a deep semantic audit on this email (multilingual, including Portuguese/English) to detect Business Email Compromise (BEC), phishing, financial coercion, urgency, reward scams, or credential harvesting.
 
 Subject: ${subject}
 Sender Claim: ${options.sender || 'Unknown'}
 Sender Domain: ${options.senderDomain || 'Unknown'}
 Extracted URLs: ${JSON.stringify(urls.slice(0, 20))}
-
+${forwardPromptDirective}
 Analyze against:
 1. URGENCY & SCARCITY (urgency_score): Artificial deadlines, expiring accounts or points ("expiram hoje", "within 24 hours", "immediate action required").
 2. FINANCIAL COERCION & REWARD LURE (financial_score): Wire transfers, fake invoices, gift cards, points or miles ("unclaimed rewards", "resgatar pontos", "payroll update").
@@ -397,7 +449,26 @@ ${text.slice(0, 8000)}
     const authorityScore = normalizeScore(parsed.authority_score);
     const harvestingScore = normalizeScore(parsed.harvesting_score ?? parsed.credentialHarvestingScore);
 
-    const maxSubScore = Math.max(urgencyScore, financialScore, authorityScore, harvestingScore);
+    // Deterministic post-processing for forwarded email relays:
+    // Suppress false-positive BRAND_IMPERSONATION / AUTHORITY_TRAP on benign relays unless severe malice is present
+    const hasSevereMalice =
+      geminiLabels.includes('CREDENTIAL_HARVESTING') ||
+      geminiLabels.includes('MALWARE_LURE') ||
+      geminiLabels.includes('EXTORTION') ||
+      harvestingScore >= 70;
+
+    let adjustedAuthorityScore = authorityScore;
+    if (forwardMeta.isForwarded && !hasSevereMalice) {
+      geminiLabels = geminiLabels.filter(
+        (label) => label !== 'BRAND_IMPERSONATION' && label !== 'AUTHORITY_TRAP'
+      );
+      if (geminiLabels.length === 0) {
+        geminiLabels = ['BENIGN'];
+      }
+      adjustedAuthorityScore = Math.min(authorityScore, 20);
+    }
+
+    const maxSubScore = Math.max(urgencyScore, financialScore, adjustedAuthorityScore, harvestingScore);
 
     // Deterministic forensic vector aggregation:
     // Uses the maximum threat vector to prevent score dilution, falling back to parsed.nlpScore only if sub-scores are all zero or absent
@@ -420,6 +491,17 @@ ${text.slice(0, 8000)}
       ...f,
       source: 'gemini',
     }));
+
+    if (forwardMeta.isForwarded) {
+      geminiFindings.push({
+        type: 'FORWARDED_MESSAGE_RELAY',
+        severity: 'INFO',
+        description: `Email identified as a forwarded message / relay${
+          forwardMeta.originalSender ? ` (Original sender: ${forwardMeta.originalSender})` : ''
+        }. Inner content evaluated in relay context.`,
+        source: 'gemini',
+      });
+    }
 
     // If failover occurred across routes, append non-sensitive provenance finding
     if (routerResult.trail.length > 1) {
