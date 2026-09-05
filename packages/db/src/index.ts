@@ -339,6 +339,7 @@ export async function syncEmailAnalysisIndexes(): Promise<void> {
   await EmailAnalysisRecordModel.syncIndexes();
   await AnalysisReportModel.syncIndexes();
   await RawEmailModel.syncIndexes();
+  await DomainIntelligenceModel.syncIndexes();
 }
 
 // ---------------------------------------------------------------------------
@@ -414,6 +415,85 @@ analystFeedbackSchema.index({ jobId: 1 }, { unique: true });
 export const AnalystFeedbackModel =
   (mongoose.models?.['AnalystFeedback'] as mongoose.Model<AnalystFeedbackDocument>) ||
   model<AnalystFeedbackDocument>('AnalystFeedback', analystFeedbackSchema);
+
+// ---------------------------------------------------------------------------
+// DomainIntelligence Mongoose schema + model
+// ---------------------------------------------------------------------------
+
+export interface DomainIntelligenceRecord {
+  domain: string;
+  registrableDomain: string;
+  registration?: {
+    createdAt?: Date;
+    expiresAt?: Date;
+    lastChangedAt?: Date;
+  };
+  registrar?: {
+    name?: string;
+    handle?: string;
+    ianaId?: string;
+    isPrivacyProtected?: boolean;
+  };
+  rdap: {
+    available: boolean;
+    source?: string;
+    fetchedAt: Date;
+    httpStatus?: number;
+    error?: string;
+  };
+  age?: {
+    ageDays: number;
+    classification: 'VERY_NEW' | 'NEWLY_REGISTERED' | 'RECENT' | 'ESTABLISHED' | 'UNKNOWN';
+  };
+  expireAt?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type DomainIntelligenceDocument = DomainIntelligenceRecord & Document;
+
+const domainIntelligenceSchema = new Schema<DomainIntelligenceDocument>(
+  {
+    domain: { type: String, required: true, unique: true, index: true },
+    registrableDomain: { type: String, required: true, index: true },
+    registration: {
+      createdAt: { type: Date },
+      expiresAt: { type: Date },
+      lastChangedAt: { type: Date },
+    },
+    registrar: {
+      name: { type: String },
+      handle: { type: String },
+      ianaId: { type: String },
+      isPrivacyProtected: { type: Boolean },
+    },
+    rdap: {
+      available: { type: Boolean, required: true },
+      source: { type: String },
+      fetchedAt: { type: Date, required: true },
+      httpStatus: { type: Number },
+      error: { type: String },
+    },
+    age: {
+      ageDays: { type: Number },
+      classification: {
+        type: String,
+        enum: ['VERY_NEW', 'NEWLY_REGISTERED', 'RECENT', 'ESTABLISHED', 'UNKNOWN'],
+      },
+    },
+    expireAt: {
+      type: Date,
+      index: { expires: '24h' },
+    },
+  },
+  { timestamps: true }
+);
+
+domainIntelligenceSchema.index({ domain: 1 }, { unique: true });
+
+export const DomainIntelligenceModel =
+  (mongoose.models?.['DomainIntelligence'] as mongoose.Model<DomainIntelligenceDocument>) ||
+  model<DomainIntelligenceDocument>('DomainIntelligence', domainIntelligenceSchema);
 
 
 

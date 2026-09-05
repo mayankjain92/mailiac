@@ -1,5 +1,13 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from 'express';
-import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel, AnalystFeedbackModel, RawEmailModel, GmailAccountModel } from '@mailiac/db';
+import {
+  connectDb,
+  AnalysisReportModel,
+  EmailAnalysisRecordModel,
+  AnalystFeedbackModel,
+  RawEmailModel,
+  GmailAccountModel,
+  DomainIntelligenceModel,
+} from '@mailiac/db';
 import { generateForensicPdf } from '@mailiac/reporting-pdf';
 import { emailQueue } from '../queue.js';
 import type { AnalysisReport } from '@mailiac/shared-types';
@@ -382,6 +390,49 @@ reportsRouter.post('/reports/:id/reanalyze', async (req: Request, res: Response,
       messageId: canonicalMessageId,
       status: 'queued',
       message: 'Forensic re-analysis scheduled. Results will update in-place upon completion.',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/domain/:domain
+ * Returns domain registration & RDAP intelligence from database cache.
+ */
+reportsRouter.get('/domain/:domain', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const rawDomain = req.params['domain'];
+    if (!rawDomain) {
+      res.status(400).json({ error: 'Domain parameter is required' });
+      return;
+    }
+
+    const normalized = rawDomain.trim().toLowerCase().replace(/\.+$/, '');
+    const mongoUri = process.env['MONGODB_URI'] ?? 'mongodb://localhost:27017/mailiac';
+    await connectDb(mongoUri);
+
+    const intel = await DomainIntelligenceModel.findOne({
+      $or: [{ domain: normalized }, { registrableDomain: normalized }],
+    }).lean();
+
+    if (!intel) {
+      res.status(404).json({
+        domain: normalized,
+        found: false,
+        message: 'Domain intelligence not found in forensic cache',
+      });
+      return;
+    }
+
+    res.json({
+      domain: intel.domain,
+      registrableDomain: intel.registrableDomain,
+      registration: intel.registration,
+      registrar: intel.registrar,
+      rdap: intel.rdap,
+      age: intel.age,
+      updatedAt: intel.updatedAt,
     });
   } catch (err) {
     next(err);

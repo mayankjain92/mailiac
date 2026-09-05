@@ -65,7 +65,8 @@ function evaluateTier1Quarantine(
   senderDomain: string,
   identityScore: number,
   nlpScore: number,
-  intentLabels: string[]
+  intentLabels: string[],
+  isForwardedRelay: boolean = false
 ): boolean {
   const isFreeWebmail = FREE_WEBMAIL_DOMAINS.includes(senderDomain.toLowerCase());
   const severeLabels = [
@@ -79,14 +80,29 @@ function evaluateTier1Quarantine(
   
   const hasSevereIntent = intentLabels.some(label => severeLabels.includes(label));
 
+  // Acute unmitigated threats that override any relay context
+  const hasAcuteMalice =
+    intentLabels.includes('CREDENTIAL_HARVESTING') ||
+    intentLabels.includes('MALWARE_PAYLOAD') ||
+    intentLabels.includes('EXTORTION') ||
+    identityScore >= 80;
+
   // Free Webmail Impersonation
   if (isFreeWebmail && hasSevereIntent) {
-    return true;
+    if (isForwardedRelay && !hasAcuteMalice) {
+      // Benign relay: suppress false-positive fatal quarantine
+    } else {
+      return true;
+    }
   }
 
   // Critical Attack Vectors
   if (nlpScore >= 80 && hasSevereIntent) {
-    return true;
+    if (isForwardedRelay && !hasAcuteMalice && nlpScore < 90) {
+      // Benign relay: suppress false-positive fatal quarantine
+    } else {
+      return true;
+    }
   }
 
   // Coercive Identity Threat
@@ -126,14 +142,25 @@ export function aggregateRisk(
   let nlpScore = sanitizeScore(nlp?.nlpScore);
   const intentLabels = nlp?.intentLabels || [];
 
+  const isForwardedRelay = Boolean(
+    auth?.arcPass ||
+    nlp?.findings?.some((f) => f.type === 'FORWARDED_MESSAGE_RELAY')
+  );
+
   // Tier 1: Fatal Circuit Breakers (Zero Tolerance -> Quarantine)
-  const isQuarantined = evaluateTier1Quarantine(senderDomain, identityScore, nlpScore, intentLabels);
+  const isQuarantined = evaluateTier1Quarantine(
+    senderDomain,
+    identityScore,
+    nlpScore,
+    intentLabels,
+    isForwardedRelay
+  );
 
   if (!isQuarantined) {
     // Tier 2: Asymmetric Cryptographic Trust Dampener
     const isFreeWebmail = FREE_WEBMAIL_DOMAINS.includes(senderDomain.toLowerCase());
-    if (authScore === 0 && ipScore === 0 && !isFreeWebmail) {
-      if (intentLabels.includes('MARKETING')) {
+    if (authScore === 0 && ipScore === 0 && (!isFreeWebmail || isForwardedRelay)) {
+      if (intentLabels.includes('MARKETING') || (isForwardedRelay && intentLabels.includes('BENIGN'))) {
         nlpScore = Math.min(nlpScore, 15);
         identityScore = Math.min(identityScore, 15);
       } else if (identityScore < 70) {

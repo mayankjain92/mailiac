@@ -15,6 +15,10 @@ vi.mock('@mailiac/db', () => ({
   RawEmailModel: {
     findOneAndUpdate: vi.fn().mockResolvedValue({}),
   },
+  DomainIntelligenceModel: {
+    findOne: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue(null) }),
+    findOneAndUpdate: vi.fn().mockResolvedValue({}),
+  },
 }));
 
 vi.mock('@mailiac/reporting-pdf', () => ({
@@ -30,6 +34,11 @@ describe('Gmail Ingestion & Pipeline Forensic Parity (apps/worker/test/gmail-ing
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ events: [] }),
+    } as unknown as Response);
   });
 
   describe('RFC 822 base64url Decoding Parity', () => {
