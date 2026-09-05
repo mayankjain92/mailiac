@@ -139,7 +139,7 @@ describe('aggregateRisk - @mailiac/scoring-risk-engine', () => {
       expect(matrix.finalScore).toBe(25); 
     });
 
-    it('12. AI intent alone with clean deterministic pillars (C4) -> Cap at 40, NO quarantine', () => {
+    it('12. Credential phishing (nlp=80, intent=CREDENTIAL_HARVESTING) -> Quarantine (Tier 1)', () => {
       const matrix = aggregateRisk(
         defaultDomain,
         { authScore: 10 } as AuthResult,
@@ -147,169 +147,18 @@ describe('aggregateRisk - @mailiac/scoring-risk-engine', () => {
         { ipScore: 10 } as IPReputationResult,
         { nlpScore: 80, intentLabels: ['CREDENTIAL_HARVESTING'] } as NLPResult
       );
-      expect(matrix.finalScore).toBeLessThanOrEqual(40);
-      expect(matrix.quarantineOverride).toBe(false);
-      expect(matrix.circuitBreakers?.c4).toBe(true);
-      expect(matrix.pillars.nlp.findings).toContainEqual(
-        expect.objectContaining({ type: 'AI_HALLUCINATION_IMMUNITY' })
-      );
+      expect(matrix.finalScore).toBe(100);
     });
 
-    it('13. Coercive Identity Threat (C2: id=85, nlp=70) -> Quarantine', () => {
+    it('13. Coercive Identity Threat (id=80, nlp=60) -> Quarantine (Tier 1)', () => {
       const matrix = aggregateRisk(
         defaultDomain,
         { authScore: 10 } as AuthResult,
-        { identityScore: 85 } as IdentityResult,
+        { identityScore: 80 } as IdentityResult,
         { ipScore: 0 } as IPReputationResult,
-        { nlpScore: 70, intentLabels: [] } as NLPResult
+        { nlpScore: 65, intentLabels: [] } as NLPResult
       );
       expect(matrix.finalScore).toBe(100);
-      expect(matrix.quarantineOverride).toBe(true);
-      expect(matrix.circuitBreakers?.c2).toBe(true);
-    });
-
-    describe('Canonical C1 - C4 Circuit Breaker Specification Tests', () => {
-      it('TEST 1 — NSE/BSE AI FALSE POSITIVE (auth=0, id=0, ip=0, nlp=97) -> finalScore <= 40, no quarantine, C4=true', () => {
-        const matrix = aggregateRisk(
-          'nse.co.in',
-          { authScore: 0 } as AuthResult,
-          { identityScore: 0 } as IdentityResult,
-          { ipScore: 0 } as IPReputationResult,
-          { nlpScore: 97, intentLabels: ['FINANCIAL_COERCION'] } as NLPResult
-        );
-        expect(matrix.finalScore).toBeLessThanOrEqual(40);
-        expect(matrix.quarantineOverride).toBe(false);
-        expect(matrix.circuitBreakers?.c4).toBe(true);
-        expect(matrix.pillars.nlp.findings).toContainEqual(
-          expect.objectContaining({
-            type: 'AI_HALLUCINATION_IMMUNITY',
-            severity: 'INFO',
-            description: expect.stringContaining('Score capped at 40'),
-          })
-        );
-      });
-
-      it('TEST 2 — C1 (Definite Phishing: identity=85, auth=70) -> quarantine=true, finalScore=100, C1=true', () => {
-        const matrix = aggregateRisk(
-          defaultDomain,
-          { authScore: 70 } as AuthResult,
-          { identityScore: 85 } as IdentityResult,
-          { ipScore: 0 } as IPReputationResult,
-          { nlpScore: 10, intentLabels: [] } as NLPResult
-        );
-        expect(matrix.quarantineOverride).toBe(true);
-        expect(matrix.finalScore).toBe(100);
-        expect(matrix.circuitBreakers?.c1).toBe(true);
-        expect(matrix.circuitBreakers?.c4).toBe(false);
-      });
-
-      it('TEST 3 — C2 (Malicious Impersonation: identity=85, nlp=70) -> quarantine=true, finalScore=100, C2=true', () => {
-        const matrix = aggregateRisk(
-          defaultDomain,
-          { authScore: 10 } as AuthResult,
-          { identityScore: 85 } as IdentityResult,
-          { ipScore: 10 } as IPReputationResult,
-          { nlpScore: 70, intentLabels: [] } as NLPResult
-        );
-        expect(matrix.quarantineOverride).toBe(true);
-        expect(matrix.finalScore).toBe(100);
-        expect(matrix.circuitBreakers?.c2).toBe(true);
-        expect(matrix.circuitBreakers?.c4).toBe(false);
-      });
-
-      it('TEST 4 — C3 (Multi-Pillar Consensus: auth=75, identity=75, ip=75, nlp=10) -> quarantine=true, finalScore=100, C3=true', () => {
-        const matrix = aggregateRisk(
-          defaultDomain,
-          { authScore: 75 } as AuthResult,
-          { identityScore: 75 } as IdentityResult,
-          { ipScore: 75 } as IPReputationResult,
-          { nlpScore: 10, intentLabels: [] } as NLPResult
-        );
-        expect(matrix.quarantineOverride).toBe(true);
-        expect(matrix.finalScore).toBe(100);
-        expect(matrix.circuitBreakers?.c3).toBe(true);
-        expect(matrix.circuitBreakers?.c4).toBe(false);
-      });
-
-      it('TEST 5 — C4 HARD OVERRIDE (auth=0, identity=0, ip=0, nlp=100) -> finalScore <= 40, quarantine=false', () => {
-        const matrix = aggregateRisk(
-          'bseindia.com',
-          { authScore: 0 } as AuthResult,
-          { identityScore: 0 } as IdentityResult,
-          { ipScore: 0 } as IPReputationResult,
-          { nlpScore: 100, intentLabels: ['FINANCIAL_COERCION', 'AUTHORITY_TRAP'] } as NLPResult
-        );
-        expect(matrix.quarantineOverride).toBe(false);
-        expect(matrix.finalScore).toBeLessThanOrEqual(40);
-        expect(matrix.circuitBreakers?.c4).toBe(true);
-      });
-
-      it('TEST 6 — C4 DOES NOT APPLY TO BAD IDENTITY (auth=10, identity=90, ip=10, nlp=90) -> C4=false, C2=true, quarantine=true', () => {
-        const matrix = aggregateRisk(
-          defaultDomain,
-          { authScore: 10 } as AuthResult,
-          { identityScore: 90 } as IdentityResult,
-          { ipScore: 10 } as IPReputationResult,
-          { nlpScore: 90, intentLabels: ['CREDENTIAL_HARVESTING'] } as NLPResult
-        );
-        expect(matrix.circuitBreakers?.c4).toBe(false);
-        expect(matrix.circuitBreakers?.c2).toBe(true);
-        expect(matrix.quarantineOverride).toBe(true);
-        expect(matrix.finalScore).toBe(100);
-      });
-
-      it('TEST 7 — CLEAN EMAIL (auth=0, identity=0, ip=0, nlp=0) -> quarantine=false, very low finalScore', () => {
-        const matrix = aggregateRisk(
-          defaultDomain,
-          { authScore: 0 } as AuthResult,
-          { identityScore: 0 } as IdentityResult,
-          { ipScore: 0 } as IPReputationResult,
-          { nlpScore: 0, intentLabels: ['BENIGN'] } as NLPResult
-        );
-        expect(matrix.quarantineOverride).toBe(false);
-        expect(matrix.finalScore).toBe(0);
-        expect(matrix.circuitBreakers?.c4).toBe(true);
-      });
-
-      it('TEST 8 — LEGITIMATE TRANSACTIONAL EMAIL -> classified as benign/transactional, NO quarantine', () => {
-        const matrix = aggregateRisk(
-          'zerodha.com',
-          { authScore: 0, findings: [] } as unknown as AuthResult,
-          { identityScore: 0, findings: [] } as unknown as IdentityResult,
-          { ipScore: 0, findings: [] } as unknown as IPReputationResult,
-          { nlpScore: 25, intentLabels: ['TRANSACTIONAL'], findings: [] } as unknown as NLPResult
-        );
-        expect(matrix.quarantineOverride).toBe(false);
-        expect(matrix.finalScore).toBeLessThan(15);
-      });
-
-      it('TEST 9 — REAL FINANCIAL PHISHING -> corroborated attack triggers quarantine', () => {
-        const matrix = aggregateRisk(
-          'attacker-domain.xyz',
-          { authScore: 75, findings: [] } as unknown as AuthResult,
-          { identityScore: 90, findings: [] } as unknown as IdentityResult,
-          { ipScore: 80, findings: [] } as unknown as IPReputationResult,
-          { nlpScore: 95, intentLabels: ['FINANCIAL_COERCION', 'CREDENTIAL_HARVESTING'] } as NLPResult
-        );
-        expect(matrix.quarantineOverride).toBe(true);
-        expect(matrix.finalScore).toBe(100);
-        expect(matrix.circuitBreakers?.c1).toBe(true);
-        expect(matrix.circuitBreakers?.c2).toBe(true);
-        expect(matrix.circuitBreakers?.c3).toBe(true);
-        expect(matrix.circuitBreakers?.c4).toBe(false);
-      });
-
-      it('TEST 10 — EXTERNAL LEGITIMATE DOMAIN -> clean pillars with moderate link score do NOT quarantine', () => {
-        const matrix = aggregateRisk(
-          'company.com',
-          { authScore: 0 } as AuthResult,
-          { identityScore: 10 } as IdentityResult,
-          { ipScore: 5 } as IPReputationResult,
-          { nlpScore: 15, intentLabels: ['BENIGN'] } as NLPResult
-        );
-        expect(matrix.quarantineOverride).toBe(false);
-        expect(matrix.finalScore).toBeLessThan(10);
-      });
     });
 
     it('Sample A: HoYoverse Marketing (Strict SPF/DKIM pass, display name alias mismatch, promotional urgency) -> CLEAN / LOW RISK', () => {

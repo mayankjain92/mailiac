@@ -12,6 +12,7 @@ export const VALID_INTENTS = new Set([
   'MALWARE_PAYLOAD',
   'BENIGN',
   'MARKETING',
+  'TRANSACTIONAL',
   'UNKNOWN',
   'UNCLASSIFIED',
 ]);
