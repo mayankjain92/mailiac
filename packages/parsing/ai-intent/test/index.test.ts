@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { scoreIntent } from '../src/index.js';
+import { scoreIntent, defaultHealthTracker } from '../src/index.js';
 import { GoogleGenAI } from '@google/genai';
 
 vi.mock('@google/genai', () => {
@@ -20,6 +20,7 @@ describe('AI Intent Scoring (@mailiac/parsing-ai-intent)', () => {
     vi.clearAllMocks();
     process.env = { ...originalEnv };
     process.env['GEMINI_API_KEY'] = 'test-gemini-key';
+    defaultHealthTracker.reset();
   });
 
   afterEach(() => {
@@ -251,6 +252,75 @@ describe('AI Intent Scoring (@mailiac/parsing-ai-intent)', () => {
       expect(result.nlpScore).toBe(10);
       expect(result.intentLabels).toEqual(['BENIGN']);
     });
+
+    it('computes nlpScore deterministically from sub-scores when nlpScore is omitted by Gemini', async () => {
+      const mockGenerate = vi.fn().mockResolvedValueOnce({
+        text: JSON.stringify({
+          intentLabels: ['FINANCIAL_COERCION'],
+          urgency_score: 30,
+          financial_score: 85,
+          authority_score: 40,
+          harvesting_score: 10,
+        }),
+      });
+
+      vi.mocked(GoogleGenAI).mockImplementationOnce(() => ({
+        models: {
+          generateContent: mockGenerate,
+        },
+      } as unknown as GoogleGenAI));
+
+      const result = await scoreIntent('Invoice wire transfer request');
+      expect(result.nlpScore).toBe(85);
+      expect(result.financialRequestScore).toBe(85);
+      expect(result.intentLabels).toEqual(['FINANCIAL_COERCION']);
+    });
+
+    it('prevents phantom LLM score hallucinations by anchoring nlpScore to maximum sub-score', async () => {
+      const mockGenerate = vi.fn().mockResolvedValueOnce({
+        text: JSON.stringify({
+          intentLabels: ['BENIGN'],
+          urgency_score: 10,
+          financial_score: 20,
+          authority_score: 10,
+          harvesting_score: 15,
+          nlpScore: 90, // Hallucinated composite score
+        }),
+      });
+
+      vi.mocked(GoogleGenAI).mockImplementationOnce(() => ({
+        models: {
+          generateContent: mockGenerate,
+        },
+      } as unknown as GoogleGenAI));
+
+      const result = await scoreIntent('Routine newsletter');
+      // Anchored to maxSubScore (20) rather than hallucinated 90
+      expect(result.nlpScore).toBe(20);
+    });
+
+    it('preserves BRAND_IMPERSONATION intent label from Gemini', async () => {
+      const mockGenerate = vi.fn().mockResolvedValueOnce({
+        text: JSON.stringify({
+          intentLabels: ['BRAND_IMPERSONATION', 'CREDENTIAL_HARVESTING'],
+          urgency_score: 20,
+          financial_score: 0,
+          authority_score: 90,
+          harvesting_score: 85,
+        }),
+      });
+
+      vi.mocked(GoogleGenAI).mockImplementationOnce(() => ({
+        models: {
+          generateContent: mockGenerate,
+        },
+      } as unknown as GoogleGenAI));
+
+      const result = await scoreIntent('Fake Microsoft login');
+      expect(result.intentLabels).toContain('BRAND_IMPERSONATION');
+      expect(result.intentLabels).toContain('CREDENTIAL_HARVESTING');
+      expect(result.nlpScore).toBe(90);
+    });
   });
 
   describe('P3 Regression Test Suite — English & Format Coverage', () => {
@@ -370,6 +440,179 @@ describe('AI Intent Scoring (@mailiac/parsing-ai-intent)', () => {
           type: 'EMPTY_PAYLOAD',
         })
       );
+    });
+
+    it('9. False-positive suppression: URL parameters like otpToken do not trigger CREDENTIAL_HARVESTING', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const text = 'You have 1 new invitation. View invitations: https://www.linkedin.com/comm/mynetwork/?eid=jcpal9&otpToken=3DNDgxN2Nh';
+      const result = await scoreIntent({
+        text,
+        subject: 'You have 1 new invitation',
+        senderDomain: 'linkedin.com',
+        urls: [{ href: 'https://www.linkedin.com/comm/mynetwork/?eid=jcpal9&otpToken=3DNDgxN2Nh', domain: 'linkedin.com' }],
+      });
+
+      expect(result.intentLabels).not.toContain('CREDENTIAL_HARVESTING');
+      expect(result.findings.some((f) => f.type === 'HEURISTIC_CREDENTIAL')).toBe(false);
+      expect(result.nlpScore).toBeLessThan(50);
+    });
+
+    it('10. True-positive preservation: explicit OTP in body prose correctly flags CREDENTIAL_HARVESTING', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const text = 'Your one-time passcode is ready. Please enter your otp immediately to verify your account.';
+      const result = await scoreIntent({
+        text,
+        subject: 'Account Verification',
+      });
+
+      expect(result.intentLabels).toContain('CREDENTIAL_HARVESTING');
+      expect(result.findings).toContainEqual(
+        expect.objectContaining({
+          type: 'HEURISTIC_CREDENTIAL',
+          severity: 'HIGH',
+        })
+      );
+      expect(result.credentialHarvestingScore).toBe(85);
+    });
+  });
+
+  describe('Transactional vs Phishing Classification Suite', () => {
+    it('1. Legitimate transactional content does not produce FINANCIAL_COERCION or AUTHORITY_TRAP', async () => {
+      const mockGenerate = vi.fn().mockResolvedValueOnce({
+        text: JSON.stringify({
+          intentLabels: ['TRANSACTIONAL', 'BENIGN'],
+          urgency_score: 10,
+          financial_score: 25,
+          authority_score: 15,
+          harvesting_score: 0,
+          nlpScore: 20,
+        }),
+      });
+
+      vi.mocked(GoogleGenAI).mockImplementationOnce(() => ({
+        models: {
+          generateContent: mockGenerate,
+        },
+      } as unknown as GoogleGenAI));
+
+      const result = await scoreIntent({
+        subject: 'Contract Note - Trade Confirmation for Order #NSE-884920',
+        text: 'Your equity trade for 50 shares at Rs. 2,450.00 has executed on NSE. Margin requirement settled. View statement on portal.',
+        senderDomain: 'zerodha.com',
+      });
+
+      expect(result.intentLabels).not.toContain('FINANCIAL_COERCION');
+      expect(result.intentLabels).not.toContain('AUTHORITY_TRAP');
+      expect(result.intentLabels).toContain('TRANSACTIONAL');
+      expect(result.nlpScore).toBeLessThanOrEqual(30);
+    });
+
+    it('2. Isolated AI financial signal (financial=97, urgency=5, authority=3, harvesting=2) is tempered and does NOT become 97', async () => {
+      const mockGenerate = vi.fn().mockResolvedValueOnce({
+        text: JSON.stringify({
+          intentLabels: ['TRANSACTIONAL'],
+          urgency_score: 5,
+          financial_score: 97,
+          authority_score: 3,
+          harvesting_score: 2,
+          nlpScore: 97, // Hallucinated uncorroborated composite
+        }),
+      });
+
+      vi.mocked(GoogleGenAI).mockImplementationOnce(() => ({
+        models: {
+          generateContent: mockGenerate,
+        },
+      } as unknown as GoogleGenAI));
+
+      const result = await scoreIntent({
+        subject: 'BSE Trade Confirmation',
+        text: 'Total transaction value Rs. 1,950,000 executed.',
+        senderDomain: 'bseindia.com',
+      });
+
+      // Crucial: Single uncorroborated financial category MUST NOT produce severe nlpScore (97)
+      expect(result.nlpScore).toBeLessThanOrEqual(40);
+      expect(result.financialRequestScore).toBe(97);
+    });
+
+    it('3. Genuine credential harvesting with impersonation produces high semantic signals', async () => {
+      const mockGenerate = vi.fn().mockResolvedValueOnce({
+        text: JSON.stringify({
+          intentLabels: ['CREDENTIAL_HARVESTING', 'BRAND_IMPERSONATION'],
+          urgency_score: 80,
+          financial_score: 0,
+          authority_score: 90,
+          harvesting_score: 95,
+          nlpScore: 95,
+        }),
+      });
+
+      vi.mocked(GoogleGenAI).mockImplementationOnce(() => ({
+        models: {
+          generateContent: mockGenerate,
+        },
+      } as unknown as GoogleGenAI));
+
+      const result = await scoreIntent({
+        subject: 'Urgent: Microsoft 365 Account Suspension',
+        text: 'Your access has been disabled. Login immediately at the external link below to update credentials.',
+        senderDomain: 'unrelated-host.net',
+      });
+
+      expect(result.intentLabels).toContain('CREDENTIAL_HARVESTING');
+      expect(result.intentLabels).toContain('BRAND_IMPERSONATION');
+      expect(result.nlpScore).toBeGreaterThanOrEqual(85);
+    });
+
+    it('4. Legitimate login links matching sender domain are not considered credential harvesting in heuristic fallback', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const result = await scoreIntent({
+        subject: 'Monthly Brokerage Statement',
+        text: 'Your statement is available. Please login to your account to review.',
+        senderDomain: 'zerodha.com',
+        urls: [
+          {
+            href: 'https://kite.zerodha.com/login',
+            text: 'Login to Kite',
+            domain: 'kite.zerodha.com',
+          },
+        ],
+      });
+
+      expect(result.intentLabels).not.toContain('CREDENTIAL_HARVESTING');
+      expect(result.intentLabels).not.toContain('SUSPICIOUS_LINK');
+      expect(result.nlpScore).toBeLessThanOrEqual(30);
+    });
+
+    it('5. Unrelated/suspicious login destinations remain high-risk in heuristic fallback', async () => {
+      delete process.env['GEMINI_API_KEY'];
+
+      const result = await scoreIntent({
+        subject: 'Security Alert: Verify your account',
+        text: 'Action required immediately. Verify your credentials now.',
+        senderDomain: 'bank-of-india.in',
+        urls: [
+          {
+            href: 'https://phishing-portal.xyz/verify',
+            text: 'Verify Now',
+            domain: 'phishing-portal.xyz',
+          },
+        ],
+      });
+
+      expect(result.intentLabels).toContain('CREDENTIAL_HARVESTING');
+      expect(result.intentLabels).toContain('SUSPICIOUS_LINK');
+      expect(result.findings).toContainEqual(
+        expect.objectContaining({
+          type: 'SUSPICIOUS_EXTERNAL_LINK',
+          severity: 'HIGH',
+        })
+      );
+      expect(result.nlpScore).toBeGreaterThanOrEqual(70);
     });
   });
 });

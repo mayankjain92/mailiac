@@ -86,7 +86,10 @@ Unlike naive security tools that blindly forward untrusted email bodies to LLMs,
 | **🔍 Reverse-Hop Evidence Boundary** | Traces untrusted `Received:` headers back through relays to isolate the true originating infrastructure IP. |
 | **🔐 Hard Cryptographic Auth** | Validates SPF, DKIM 1024/2048-bit RSA signatures, DMARC alignment (`strict` / `relaxed`), and Multi-Hop ARC chains. |
 | **🧩 Anti-Obfuscation De-cloaking** | Strips zero-width unicode characters, invisible HTML CSS overlays, homoglyphic lookalikes, and defangs malicious URLs. |
-| **🧠 Hybrid Semantic Intent Scoring** | Google Gemini 3.6-flash structured intent classification backed by zero-downtime local heuristic classification. |
+| **🧠 Multi-Model & Multi-Key AI Router** | Automated failover across Gemini models (`gemini-3.1-flash-lite`, `gemini-3.5-flash`, `gemini-3.6-flash`), multi-key rotation, 429/503 cooldown tracking, and zero-downtime local heuristic classification. |
+| **🛡️ Evidence-Gated Identity Defense** | Distance metrics (Levenshtein, Damerau-Levenshtein, Jaro-Winkler) gated by deceptive signals to eliminate false positives on legitimate subdomains. |
+| **🔄 In-Place Case Re-Analysis** | Re-run the full 9-step pipeline for existing cases without duplicating entries, recovering payloads from durable MongoDB raw storage or Gmail API. |
+| **👥 Human-in-the-Loop Feedback** | SOC analysts can submit ground-truth verdicts (`TRUE_POSITIVE`, `FALSE_POSITIVE`), pillar accuracy ratings, and suggested scores. |
 | **⚖️ Circuit-Breaker Risk Engine** | Hard mathematical rules ($C_1 - C_4$) ensure zero false-positive quarantines from isolated AI hallucinations. |
 | **📄 Zero-Dependency PDF Engine** | Generates tamper-evident forensic PDF 1.4 inspection dossiers with embedded SHA-256 integrity hash verification. |
 | **📡 Real-Time Analyst Telemetry** | Server-Sent Events (SSE) pipe live step-by-step pipeline execution logs straight to the analyst console. |
@@ -116,10 +119,10 @@ graph TD
 3. **Reverse-Hop Tracer:** Parses bottom-up `Received:` headers to locate the true boundary IP while filtering out internal relays.
 4. **Crypto Auth Validator:** Evaluates SPF, DKIM key lengths & selectors, DMARC domain alignment, and ARC seal integrity.
 5. **HTML De-Cloaker:** Neutralizes Glassworm attacks, strips zero-width spaces, and extracts obscured target URLs.
-6. **AI Intent Classifier:** Scores urgency, financial coercion, credential theft intent, and fake authority cues.
+6. **AI Intent Classifier:** Multi-model Gemini failover router scoring urgency, financial coercion, credential theft intent, and fake authority cues.
 7. **GeoIP & IP Reputation:** Enriches boundary IP with ASN, country, proxy/VPN/Tor flags, and AbuseIPDB confidence scores.
 8. **4-Pillar Risk Aggregator:** Combines signals deterministically into a unified 0–100 threat score with mathematical circuit breakers.
-9. **Persistence & Reporting:** Persists forensic record in MongoDB (24h TTL), broadcasts real-time SSE telemetry, and generates downloadable PDF reports.
+9. **Persistence & Reporting:** Persists forensic report (24h TTL) and raw EML buffer in MongoDB, broadcasts real-time SSE telemetry, and generates downloadable PDF reports.
 
 ---
 
@@ -157,21 +160,21 @@ Mailiac is structured as an ultra-strict **Turborepo monorepo** with explicit pa
 ```
 mailiac/
 ├── apps/
-│   ├── api/                    # Express REST Gateway (Upload, Gmail OAuth, SSE, Reports, PDF)
+│   ├── api/                    # Express REST Gateway (Upload, Gmail OAuth, SSE, Reports, Re-Analysis, PDF)
 │   ├── worker/                 # BullMQ Multi-Stage Pipeline Consumer & Orchestrator
 │   └── web/                    # Next.js 14 SOC Analyst Evidence Explorer & Visualizer
 ├── packages/
 │   ├── shared-types/           # Frozen Monorepo Data Model Contract (MDM)
-│   ├── db/                     # Mongoose Schemas (AnalysisReport, GmailAccount, EmailAnalysisRecord)
+│   ├── db/                     # Mongoose Schemas (AnalysisReport, RawEmail, AnalystFeedback, GmailAccount)
 │   ├── parsing/
 │   │   ├── mime/               # RFC 822 Parser & SHA-256 Attachment Hasher
 │   │   ├── decloak/            # HTML Glassworm & Zero-Width Unicode Sanitizer
 │   │   ├── geoip/              # Geolocation & ASN Hop Enrichment Engine
-│   │   └── ai-intent/          # Hybrid Gemini 3.6-flash & Local Heuristic NLP Engine
+│   │   └── ai-intent/          # Multi-Model & Multi-Key Failover Router + Local Heuristic Engine
 │   ├── scoring/
 │   │   ├── reverse-hop/        # Network Received Header Boundary Tracer
 │   │   ├── auth/               # SPF, DKIM, DMARC, ARC Cryptographic Validator
-│   │   ├── identity/           # Levenshtein, Jaro-Winkler & Homoglyph Spoof Detector
+│   │   ├── identity/           # Evidence-Gated Levenshtein, Jaro-Winkler & Homoglyph Spoof Detector
 │   │   ├── ip-reputation/      # AbuseIPDB, Proxy/VPN & Timezone Anomaly Engine
 │   │   └── risk-engine/        # Deterministic 4-Pillar Risk Aggregator (C1-C4 Rules)
 │   ├── reporting/
@@ -211,10 +214,23 @@ Fill in the required configuration variables:
 PORT=4000
 MONGODB_URI=mongodb://localhost:27017/mailiac
 REDIS_URL=redis://localhost:6379
+
+# External Threat Intelligence APIs
 GEMINI_API_KEY=your_gemini_api_key
+# Multi-Model Routing (Optional fallbacks)
+GEMINI_MODEL=gemini-3.1-flash-lite
+GEMINI_FALLBACK_MODELS=gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.6-flash
+GEMINI_MAX_ATTEMPTS=4
+
+# IP Enrichment & Reputation
+ABUSEIPDB_API_KEY=your_abuseipdb_api_key
+GEOIP_API_KEY=your_geoip_api_key
+
+# Google Workspace / Gmail OAuth 2.0
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
-ABUSEIPDB_API_KEY=your_abuseipdb_api_key
+GOOGLE_REDIRECT_URI=http://localhost:4000/api/integrations/gmail/callback
+FRONTEND_URL=http://localhost:3000
 ```
 
 ### 4. Run Development Cluster

@@ -135,7 +135,7 @@ export default function EvidenceExplorerPage(): React.JSX.Element {
             </div>
           </div>
         ) : (
-          <EvidenceExplorer report={report} caseId={caseId || report.messageId} />
+          <EvidenceExplorer report={report} caseId={caseId || report.messageId} onReportUpdated={setReport} />
         )}
       </main>
 

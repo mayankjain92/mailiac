@@ -11,6 +11,14 @@ import {
   detectTldSwapping,
   cleanDomain,
   normalizeDomainList,
+  getCommonPrefixLength,
+  getLongestCommonSubstringLength,
+  evaluateTyposquatSimilarity,
+  SHORT_DOMAIN_MAX_LENGTH,
+  MIN_JARO_WINKLER_FOR_TYPOSQUAT,
+  MAX_EDIT_RATIO_HIGH,
+  MAX_EDIT_RATIO_MODERATE,
+  DEFAULT_PROTECTED_DOMAINS,
 } from '../src/index.js';
 
 const protectedDomains = ['target-corp.com', 'paypal.com', 'google.com', 'microsoft.com', 'sap.com'];
@@ -270,4 +278,213 @@ describe('Domain and String Distance Helpers', () => {
     expect(res2.isHighRiskTld).toBe(false);
     expect(res2.severity).toBe('MEDIUM');
   });
+});
+
+describe('scoreIdentity - False Positive Suppression (Evidence Gating)', () => {
+  it('suppresses false positive: render.com vs fedex.com (distance 3)', () => {
+    const result = scoreIdentity('render.com');
+    expect(result.identityScore).toBe(0);
+    expect(result.matchedProtectedDomain).toBeUndefined();
+    expect(result.findings.some(f => f.type === 'TYPOSQUATTING' || f.type === 'TYPOSQUATTING_MODERATE')).toBe(false);
+  });
+
+  it('suppresses false positive: gitlab.com vs github.com (distance 2)', () => {
+    const result = scoreIdentity('gitlab.com');
+    expect(result.identityScore).toBe(0);
+    expect(result.matchedProtectedDomain).toBeUndefined();
+    expect(result.findings.some(f => f.type === 'TYPOSQUATTING' || f.type === 'TYPOSQUATTING_MODERATE')).toBe(false);
+  });
+
+  it('suppresses false positive: figma.com vs visa.com (distance 3 against short brand)', () => {
+    const result = scoreIdentity('figma.com');
+    expect(result.identityScore).toBe(0);
+    expect(result.matchedProtectedDomain).toBeUndefined();
+    expect(result.findings.some(f => f.type === 'TYPOSQUATTING' || f.type === 'TYPOSQUATTING_MODERATE')).toBe(false);
+  });
+
+  it('suppresses false positive: prisma.io vs visa.com (distance 3 against short brand)', () => {
+    const result = scoreIdentity('prisma.io');
+    expect(result.identityScore).toBe(0);
+    expect(result.matchedProtectedDomain).toBeUndefined();
+    expect(result.findings.some(f => f.type === 'TYPOSQUATTING' || f.type === 'TYPOSQUATTING_MODERATE')).toBe(false);
+  });
+
+  it('suppresses false positive: linear.app vs linkedin.com (distance 4)', () => {
+    const result = scoreIdentity('linear.app');
+    expect(result.identityScore).toBe(0);
+    expect(result.findings.some(f => f.type === 'COMBOSQUATTING_MODERATE' || f.type === 'TYPOSQUATTING')).toBe(false);
+  });
+
+  it('suppresses false positive: docker.com vs docusign.com', () => {
+    const result = scoreIdentity('docker.com');
+    expect(result.identityScore).toBe(0);
+    expect(result.findings.some(f => f.type === 'TYPOSQUATTING' || f.type === 'TYPOSQUATTING_MODERATE')).toBe(false);
+  });
+});
+
+describe('scoreIdentity - Genuine Typosquatting Verification', () => {
+  it('detects fedx.com as a genuine typosquat of fedex.com', () => {
+    const result = scoreIdentity('fedx.com');
+    expect(result.identityScore).toBeGreaterThanOrEqual(90);
+    expect(result.matchedProtectedDomain).toBe('fedex.com');
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ type: 'TYPOSQUATTING', severity: 'HIGH' })
+    );
+    // Explainable finding includes distance and similarity percentage
+    const finding = result.findings.find(f => f.type === 'TYPOSQUATTING');
+    expect(finding?.description).toMatch(/Distance: 1/);
+    expect(finding?.description).toMatch(/Similarity:/);
+  });
+
+  it('detects micros0ft.com as a malicious brand mutation of microsoft.com', () => {
+    const result = scoreIdentity('micros0ft.com');
+    expect(result.identityScore).toBeGreaterThanOrEqual(90);
+    expect(result.matchedProtectedDomain).toBe('microsoft.com');
+    expect(result.findings.some(f => f.severity === 'HIGH')).toBe(true);
+  });
+
+  it('detects paypa1.com as a malicious mutation of paypal.com', () => {
+    const result = scoreIdentity('paypa1.com');
+    expect(result.identityScore).toBeGreaterThanOrEqual(90);
+    expect(result.matchedProtectedDomain).toBe('paypal.com');
+    expect(result.findings.some(f => f.severity === 'HIGH')).toBe(true);
+  });
+
+  it('detects non-homoglyph insertion typosquat: microsoftt.com vs microsoft.com', () => {
+    const result = scoreIdentity('microsoftt.com');
+    expect(result.identityScore).toBe(100);
+    expect(result.matchedProtectedDomain).toBe('microsoft.com');
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ type: 'TYPOSQUATTING', severity: 'HIGH' })
+    );
+  });
+
+  it('detects omission typosquat: docusn.com vs docusign.com (distance 2)', () => {
+    const result = scoreIdentity('docusn.com');
+    expect(result.identityScore).toBe(100);
+    expect(result.matchedProtectedDomain).toBe('docusign.com');
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ type: 'TYPOSQUATTING', severity: 'HIGH' })
+    );
+  });
+});
+
+describe('scoreIdentity - Adversarial & Boundary Cases', () => {
+  it('rejects rhyming words with distance 1 and no common prefix (phase vs chase)', () => {
+    const result = scoreIdentity('phase.com', ['chase.com']);
+    expect(result.findings.some(f => f.type.startsWith('TYPOSQUAT'))).toBe(false);
+    expect(result.identityScore).toBe(0);
+  });
+
+  it('rejects rhyming words with distance 1 and no common prefix (black vs slack)', () => {
+    const result = scoreIdentity('black.com', ['slack.com']);
+    expect(result.findings.some(f => f.type.startsWith('TYPOSQUAT'))).toBe(false);
+    expect(result.identityScore).toBe(0);
+  });
+
+  it('rejects short domain distance-1 without brand impersonation (meta vs beta)', () => {
+    const result = scoreIdentity('beta.com', ['meta.com']);
+    expect(result.findings.some(f => f.type.startsWith('TYPOSQUAT'))).toBe(false);
+    expect(result.identityScore).toBe(0);
+  });
+
+  it('rejects short domain distance-1 without brand impersonation (uber vs user)', () => {
+    const result = scoreIdentity('user.com', ['uber.com']);
+    expect(result.findings.some(f => f.type.startsWith('TYPOSQUAT'))).toBe(false);
+    expect(result.identityScore).toBe(0);
+  });
+
+  it('rejects short domain distance-1 without brand impersonation (visa vs vita)', () => {
+    const result = scoreIdentity('vita.com', ['visa.com']);
+    expect(result.findings.some(f => f.type.startsWith('TYPOSQUAT'))).toBe(false);
+    expect(result.identityScore).toBe(0);
+  });
+
+  it('rejects unrelated domains with distance 2 (cisco vs costco)', () => {
+    const result = scoreIdentity('cisco.com', ['costco.com']);
+    expect(result.findings.some(f => f.type.startsWith('TYPOSQUAT'))).toBe(false);
+    expect(result.identityScore).toBe(0);
+  });
+
+  it('rejects unrelated domains with distance 2 (apple vs maple)', () => {
+    const result = scoreIdentity('maple.com', ['apple.com']);
+    expect(result.findings.some(f => f.type.startsWith('TYPOSQUAT'))).toBe(false);
+    expect(result.identityScore).toBe(0);
+  });
+
+  it('rejects unrelated domains with high distance (stripe vs target)', () => {
+    const result = scoreIdentity('stripe.com', ['target.com']);
+    expect(result.findings.some(f => f.type.startsWith('TYPOSQUAT'))).toBe(false);
+    expect(result.identityScore).toBe(0);
+  });
+});
+
+describe('evaluateTyposquatSimilarity & Stem Utilities', () => {
+  it('calculates common prefix length correctly', () => {
+    expect(getCommonPrefixLength('paypal', 'paypa1')).toBe(5);
+    expect(getCommonPrefixLength('microsoft', 'micros0ft')).toBe(6);
+    expect(getCommonPrefixLength('fedex', 'render')).toBe(0);
+    expect(getCommonPrefixLength('', 'abc')).toBe(0);
+  });
+
+  it('calculates longest common substring length correctly', () => {
+    expect(getLongestCommonSubstringLength('paypal', 'paypa1')).toBe(5);
+    expect(getLongestCommonSubstringLength('docusign', 'docusn')).toBe(5);
+    expect(getLongestCommonSubstringLength('amazon', 'arnazon')).toBe(4);
+    expect(getLongestCommonSubstringLength('fedex', 'render')).toBe(2);
+    expect(getLongestCommonSubstringLength('', 'abc')).toBe(0);
+  });
+
+  it('returns structured evidence from evaluateTyposquatSimilarity', () => {
+    const evidence = evaluateTyposquatSimilarity('fedx', 'fedex');
+    expect(evidence.isMatch).toBe(true);
+    expect(evidence.severity).toBe('HIGH');
+    expect(evidence.damerauDistance).toBe(1);
+    expect(evidence.editRatio).toBe(0.2);
+    expect(evidence.jaroWinkler).toBeGreaterThan(0.9);
+    expect(evidence.sharedStemLength).toBe(3);
+    expect(evidence.stemRatio).toBe(0.6);
+    expect(evidence.reason).toBeDefined();
+  });
+
+  it('correctly gates distance 3 to require minLength >= 7 and low edit ratio', () => {
+    // Distance 3 on 5/6 letter domains fails
+    const shortCase = evaluateTyposquatSimilarity('render', 'fedex');
+    expect(shortCase.isMatch).toBe(false);
+    expect(shortCase.damerauDistance).toBe(3);
+
+    // Distance 3 on 10-letter domain with high similarity can match moderate
+    const longEvidence = evaluateTyposquatSimilarity('microsooftt', 'microsoft');
+    expect(longEvidence.damerauDistance).toBe(2); // Actually 2 edits (extra o, extra t)
+  });
+});
+
+describe('Before vs After Comparative Matrix Verification', () => {
+  const comparisonMatrix = [
+    { candidate: 'render.com', protectedDomain: 'fedex.com', expectedMatch: false },
+    { candidate: 'gitlab.com', protectedDomain: 'github.com', expectedMatch: false },
+    { candidate: 'figma.com', protectedDomain: 'visa.com', expectedMatch: false },
+    { candidate: 'prisma.io', protectedDomain: 'visa.com', expectedMatch: false },
+    { candidate: 'paypa1.com', protectedDomain: 'paypal.com', expectedMatch: true },
+    { candidate: 'fedx.com', protectedDomain: 'fedex.com', expectedMatch: true },
+    { candidate: 'micros0ft.com', protectedDomain: 'microsoft.com', expectedMatch: true },
+  ];
+
+  for (const { candidate, protectedDomain, expectedMatch } of comparisonMatrix) {
+    it(`correctly evaluates ${candidate} vs ${protectedDomain} -> match: ${expectedMatch}`, () => {
+      const candSLD = candidate.split('.')[0]!;
+      const protSLD = protectedDomain.split('.')[0]!;
+      const evidence = evaluateTyposquatSimilarity(candSLD, protSLD);
+      expect(evidence.isMatch).toBe(expectedMatch);
+
+      const result = scoreIdentity(candidate, [protectedDomain]);
+      if (expectedMatch) {
+        expect(result.identityScore).toBeGreaterThanOrEqual(90);
+        expect(result.matchedProtectedDomain).toBe(protectedDomain);
+      } else {
+        expect(result.findings.some(f => f.type.startsWith('TYPOSQUAT'))).toBe(false);
+        expect(result.matchedProtectedDomain).not.toBe(protectedDomain);
+      }
+    });
+  }
 });

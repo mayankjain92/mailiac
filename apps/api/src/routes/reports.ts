@@ -1,7 +1,39 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from 'express';
-import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel, AnalystFeedbackModel } from '@mailiac/db';
+import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel, AnalystFeedbackModel, RawEmailModel, GmailAccountModel } from '@mailiac/db';
 import { generateForensicPdf } from '@mailiac/reporting-pdf';
+import { emailQueue } from '../queue.js';
 import type { AnalysisReport } from '@mailiac/shared-types';
+import { getOAuthClient } from '../services/googleAuth.js';
+import { fetchRawMessage } from '../services/gmailClient.js';
+
+function coerceToBuffer(val: unknown): Buffer | null {
+  if (!val) return null;
+  if (Buffer.isBuffer(val)) {
+    return val.length > 0 ? val : null;
+  }
+  // BSON Binary from MongoDB / Mongoose (e.g. from .lean())
+  if (typeof (val as { value?: (asBuffer?: boolean) => Buffer }).value === 'function') {
+    const buf = (val as { value: (asBuffer?: boolean) => Buffer }).value(true);
+    if (Buffer.isBuffer(buf) && buf.length > 0) return buf;
+  }
+  if ((val as { buffer?: unknown }).buffer) {
+    const inner = (val as { buffer: unknown }).buffer;
+    if (Buffer.isBuffer(inner) && inner.length > 0) return inner;
+    if (inner instanceof Uint8Array && inner.byteLength > 0) {
+      return Buffer.from(inner.buffer, inner.byteOffset, inner.byteLength);
+    }
+  }
+  // BullMQ JSON-serialized buffer: { type: 'Buffer', data: number[] }
+  if (Array.isArray((val as { data?: unknown[] }).data)) {
+    const arr = (val as { data: number[] }).data;
+    if (arr.length > 0) return Buffer.from(arr);
+  }
+  // Standard Uint8Array
+  if (val instanceof Uint8Array && val.byteLength > 0) {
+    return Buffer.from(val.buffer, val.byteOffset, val.byteLength);
+  }
+  return null;
+}
 
 export const reportsRouter: IRouter = Router();
 
@@ -207,4 +239,153 @@ reportsRouter.get('/reports/:id/feedback', async (req: Request, res: Response, n
     next(err);
   }
 });
+
+/**
+ * POST /api/reports/:id/reanalyze
+ * Re-runs the complete forensic pipeline for an existing case in-place without creating duplicates.
+ */
+reportsRouter.post('/reports/:id/reanalyze', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const rawId = req.params['id'];
+    if (!rawId || typeof rawId !== 'string' || rawId.trim() === '') {
+      res.status(400).json({ error: 'Report ID is required.' });
+      return;
+    }
+
+    const caseId = rawId.trim();
+    const decodedId = decodeURIComponent(caseId);
+
+    const mongoUri = process.env['MONGODB_URI'] ?? 'mongodb://localhost:27017/mailiac';
+    await connectDb(mongoUri);
+
+    // 1. Verify the existing analysis exists
+    const existingReport = await AnalysisReportModel.findOne({
+      $or: [{ messageId: caseId }, { messageId: decodedId }],
+    }).lean<Record<string, unknown> | null>();
+
+    if (!existingReport) {
+      res.status(404).json({ error: 'Report not found. Cannot re-analyze non-existent case.' });
+      return;
+    }
+
+    const canonicalMessageId = (existingReport['messageId'] as string) || caseId;
+
+    // 2. Check for concurrent in-flight re-analysis in BullMQ queue
+    const existingJob = await emailQueue.getJob(canonicalMessageId);
+    if (existingJob) {
+      const state = await existingJob.getState();
+      if (state === 'active' || state === 'waiting' || state === 'delayed' || state === 'prioritized') {
+        res.status(409).json({
+          error: 'Re-analysis is already in progress for this case.',
+          jobId: canonicalMessageId,
+          status: 'processing',
+        });
+        return;
+      }
+    }
+
+    // 3. Retrieve the original canonical EML / raw message bytes
+    let rawBuffer: Buffer | null = null;
+    let source: 'eml' | 'gmail' = 'eml';
+    let gmailMessageId: string | undefined;
+
+    // 3a. First check durable RawEmailModel in MongoDB
+    const rawEmailDoc = await RawEmailModel.findOne({ messageId: canonicalMessageId }).lean();
+    if (rawEmailDoc) {
+      rawBuffer = coerceToBuffer(rawEmailDoc.buffer);
+      source = (rawEmailDoc.source as 'eml' | 'gmail') || source;
+      gmailMessageId = rawEmailDoc.gmailMessageId || gmailMessageId;
+    }
+
+    // 3b. Fallback to BullMQ Redis job data if not found in MongoDB
+    if (!rawBuffer && existingJob?.data) {
+      rawBuffer = coerceToBuffer(existingJob.data.buffer);
+      source = existingJob.data.source || source;
+      gmailMessageId = existingJob.data.gmailMessageId || gmailMessageId;
+    }
+
+    // 3c. If still not found, check EmailAnalysisRecordModel for metadata
+    if (!gmailMessageId) {
+      const emailRecord = await EmailAnalysisRecordModel.findOne({ jobId: canonicalMessageId }).lean();
+      if (emailRecord) {
+        source = (emailRecord.source as 'eml' | 'gmail') || source;
+        gmailMessageId = emailRecord.gmailMessageId || gmailMessageId;
+      }
+    }
+
+    // 3d. Fallback: If source is Gmail and buffer is missing from storage, re-fetch live message from Gmail API
+    if (!rawBuffer && source === 'gmail' && gmailMessageId) {
+      try {
+        const account = await GmailAccountModel.findOne().sort({ updatedAt: -1 }).lean();
+        if (account) {
+          const auth = getOAuthClient();
+          auth.setCredentials({
+            access_token: account.accessToken,
+            ...(account.refreshToken ? { refresh_token: account.refreshToken } : {}),
+          });
+          const fetchedBuffer = await fetchRawMessage(auth, gmailMessageId);
+          if (fetchedBuffer && fetchedBuffer.length > 0) {
+            rawBuffer = fetchedBuffer;
+          }
+        }
+      } catch (gmailFetchErr) {
+        console.warn(`[reanalyze] Notice: Could not re-fetch from Gmail:`, gmailFetchErr);
+      }
+    }
+
+    if (!rawBuffer || rawBuffer.length === 0) {
+      res.status(422).json({
+        error: 'Original email payload is no longer available in storage for re-analysis.',
+      });
+      return;
+    }
+
+    // 4. If an old completed/failed BullMQ job exists, remove it so BullMQ accepts the re-analysis job under the same ID
+    if (existingJob) {
+      try {
+        await existingJob.remove();
+      } catch (rmErr) {
+        console.warn(`[reanalyze] Notice: Could not remove previous job ${canonicalMessageId}:`, rmErr);
+      }
+    }
+
+    // 5. Ensure RawEmailModel has the buffer preserved for future re-analyses
+    await RawEmailModel.findOneAndUpdate(
+      { messageId: canonicalMessageId },
+      {
+        $set: {
+          messageId: canonicalMessageId,
+          buffer: rawBuffer,
+          source,
+          gmailMessageId,
+        },
+      },
+      { upsert: true }
+    );
+
+    // 6. Enqueue the re-analysis job into BullMQ with identical jobId for zero duplicate jobs
+    await emailQueue.add(
+      'process-email',
+      {
+        messageId: canonicalMessageId,
+        buffer: rawBuffer,
+        source,
+        gmailMessageId,
+        isReanalysis: true,
+      },
+      { jobId: canonicalMessageId }
+    );
+
+    res.status(202).json({
+      success: true,
+      jobId: canonicalMessageId,
+      messageId: canonicalMessageId,
+      status: 'queued',
+      message: 'Forensic re-analysis scheduled. Results will update in-place upon completion.',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 

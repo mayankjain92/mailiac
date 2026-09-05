@@ -98,14 +98,14 @@ Mailiac enforces strict isolation between ingestion, orchestration, pure algorit
 | Package | Entrypoint Function | Responsibility |
 |---|---|---|
 | **`@mailiac/shared-types`** | `src/index.ts` | **Frozen Contract**: Holds shared interfaces (`MDM`, `ForensicHop`, `AuthResult`, `IdentityResult`, `RiskMatrix`, `AnalysisReport`). |
-| **`@mailiac/db`** | `connectDb()`, Models | Mongoose models for `AnalysisReportModel`, `GmailAccountModel`, `EmailAnalysisRecordModel`, and TTL expiration indexes. |
+| **`@mailiac/db`** | `connectDb()`, Models | Mongoose models for `AnalysisReportModel`, `RawEmailModel` (re-analysis buffer store), `AnalystFeedbackModel` (SOC reviews), `GmailAccountModel`, `EmailAnalysisRecordModel`, and TTL expiration indexes. |
 | **`@mailiac/parsing/mime`** | `parseEmlToMdm()` | Converts raw RFC 822 buffers to structured `MDM` and generates SHA-256 attachment hashes. |
 | **`@mailiac/parsing/decloak`** | `decloakHtml()` | Detects zero-width evasion Unicode characters and strips hidden tracking structures. |
 | **`@mailiac/parsing/geoip`** | `enrichHopsWithGeo()` | Enriches IP hops with geolocation coordinates, city/country, and ASN info. |
-| **`@mailiac/parsing/ai-intent`** | `scoreIntent()` | Hybrid intent classifier (Gemini 3.6-flash + deterministic local heuristic engine). |
+| **`@mailiac/parsing/ai-intent`** | `scoreIntent()` | Multi-Model & Multi-Key Failover Router (`gemini-3.1-flash-lite`, `gemini-3.5-flash`, `gemini-3.6-flash`), `InMemoryHealthTracker` cooldown engine, and deterministic local heuristic fallback. |
 | **`@mailiac/scoring/reverse-hop`**| `traceReverseHops()` | Parses `Received` headers, detects private-to-public evidence boundaries, and flags proxy injection. |
 | **`@mailiac/scoring/auth`** | `verifyAuth()` | Cryptographically verifies SPF, DKIM, DMARC, and ARC authentication. |
-| **`@mailiac/scoring/identity`** | `scoreIdentity()` | Levenshtein, Damerau-Levenshtein, and Jaro-Winkler homoglyph spoofing detector. |
+| **`@mailiac/scoring/identity`** | `scoreIdentity()` | Evidence-Gated Levenshtein, Damerau-Levenshtein, and Jaro-Winkler homoglyph spoofing detector (suppresses false positives on legitimate subdomains). |
 | **`@mailiac/scoring/ip-reputation`**| `scoreIpReputation()`| AbuseIPDB threat score, Tor/VPN/proxy detection, and timezone drift checks. |
 | **`@mailiac/scoring/risk-engine`** | `aggregateRisk()` | 4-pillar mathematical aggregator enforcing corroboration rules and circuit breakers. |
 | **`@mailiac/reporting/pdf`** | `generateForensicPdf()` | Zero-dependency binary PDF 1.4 forensic report generator. |
@@ -113,20 +113,25 @@ Mailiac enforces strict isolation between ingestion, orchestration, pure algorit
 
 ---
 
-## 4. Dual Ingestion Architecture
+## 4. Ingestion & Re-Analysis Architecture
 
-Mailiac accommodates two ingestion modes without compromising privacy or pipeline uniformity:
+Mailiac accommodates flexible ingestion and case audit modes without compromising pipeline uniformity:
 
 1. **Manual EML Upload (`POST /api/upload`)**:
    - Accepts raw `.eml` multipart uploads up to 20MB.
-   - Enqueues raw bytes directly into BullMQ `email-forensics` queue.
+   - Enqueues raw bytes directly into BullMQ `email-forensics` queue and archives payload into `RawEmailModel`.
    - Immediately returns `202 Accepted` with a tracking `jobId`.
 
 2. **On-Demand Gmail OAuth 2.0 (`/api/gmail/*`)**:
    - Connects user account via Google OAuth 2.0 using least-privilege `gmail.readonly` scope.
    - Lists message metadata (Sender, Subject, Snippet, Date) without downloading email bodies.
    - When the user selects an email and clicks **"Analyze with Mailiac"**, the backend fetches *only that specific message* as raw RFC 822 bytes (`format: 'raw'`).
-   - Dispatches the exact same byte buffer into BullMQ, achieving 100% forensic parity with manual uploads.
+   - Dispatches the exact same byte buffer into BullMQ and persists to `RawEmailModel`, achieving 100% forensic parity with manual uploads.
+
+3. **In-Place Case Re-Analysis (`POST /api/reports/:id/reanalyze`)**:
+   - Allows SOC analysts to re-trigger analysis on previously parsed emails after rule updates or intelligence feed refresh.
+   - Operates strictly under the original canonical `messageId` to maintain zero-duplicate database hygiene.
+   - Recovers raw MIME bytes through a tiered fallback strategy: `RawEmailModel` in MongoDB → BullMQ job data in Redis → on-demand Gmail API fetch.
 
 ---
 
@@ -146,8 +151,9 @@ $$\text{BaseScore} = (0.35 \times S_{\text{identity}}) + (0.35 \times S_{\text{n
 ## 6. Storage & Data Lifecycle
 
 - **Transient MongoDB TTL:** Analysis reports are tagged with `expireAt` (24-hour TTL index), auto-pruning old records to optimize disk usage.
+- **Durable Raw Email Persistence (`RawEmailModel`):** Preserves immutable RFC 822 byte buffers to empower seamless in-place forensic re-analysis without requiring manual file re-upload.
+- **Human-in-the-Loop Feedback (`AnalystFeedbackModel`):** Records analyst verdicts (`CONFIRMED_TRUE_POSITIVE`, `FALSE_POSITIVE`, etc.), suggested scores, and pillar accuracy grading for active learning and audit trails.
 - **Deduplication Engine:** `EmailAnalysisRecordModel` uses sparse unique indexes on `gmailMessageId` and `jobId` to avoid redundant duplicate analysis records on re-runs.
-- **Zero Raw PII Storage:** Raw EML file buffers are kept solely in memory during processing and are discarded immediately after report generation.
 
 ---
 

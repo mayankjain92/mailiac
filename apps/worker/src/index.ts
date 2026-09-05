@@ -37,13 +37,40 @@ const connection = new Redis(redisUrl, {
   maxRetriesPerRequest: null,
 });
 
+function coerceToBuffer(val: unknown): Buffer | null {
+  if (!val) return null;
+  if (Buffer.isBuffer(val)) {
+    return val.length > 0 ? val : null;
+  }
+  if (typeof (val as { value?: (asBuffer?: boolean) => Buffer }).value === 'function') {
+    const buf = (val as { value: (asBuffer?: boolean) => Buffer }).value(true);
+    if (Buffer.isBuffer(buf) && buf.length > 0) return buf;
+  }
+  if ((val as { buffer?: unknown }).buffer) {
+    const inner = (val as { buffer: unknown }).buffer;
+    if (Buffer.isBuffer(inner) && inner.length > 0) return inner;
+    if (inner instanceof Uint8Array && inner.byteLength > 0) {
+      return Buffer.from(inner.buffer, inner.byteOffset, inner.byteLength);
+    }
+  }
+  if (Array.isArray((val as { data?: unknown[] }).data)) {
+    const arr = (val as { data: number[] }).data;
+    if (arr.length > 0) return Buffer.from(arr);
+  }
+  if (val instanceof Uint8Array && val.byteLength > 0) {
+    return Buffer.from(val.buffer, val.byteOffset, val.byteLength);
+  }
+  return null;
+}
+
 async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
   const { messageId, source, gmailMessageId } = job.data;
 
   try {
-    const rawEmlBuffer = Buffer.isBuffer(job.data.buffer)
-      ? job.data.buffer
-      : Buffer.from((job.data.buffer as unknown as { data: number[] }).data || []);
+    const rawEmlBuffer = coerceToBuffer(job.data.buffer);
+    if (!rawEmlBuffer || rawEmlBuffer.length === 0) {
+      throw new Error('Invalid EML input: buffer is empty');
+    }
 
     await runForensicPipeline(messageId, rawEmlBuffer, {
       mongoUri,

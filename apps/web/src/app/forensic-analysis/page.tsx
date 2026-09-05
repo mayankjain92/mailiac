@@ -24,17 +24,18 @@ function ForensicAnalysisContent(): React.JSX.Element {
   useEffect(() => {
     if (initialJobId) {
       setJobs((prev) => {
-        if (prev.some((j) => j.id === initialJobId)) return prev;
+        const remaining = prev.filter((j) => j.id !== initialJobId);
         return [
           {
             id: initialJobId,
             fileName: decodeURIComponent(initialFileName),
             status: 'queued',
           },
-          ...prev,
+          ...remaining,
         ];
       });
       setActiveJobId(initialJobId);
+      setIsIngestionModalOpen(false);
     }
   }, [initialJobId, initialFileName]);
 
