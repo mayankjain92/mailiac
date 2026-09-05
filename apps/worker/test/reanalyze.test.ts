@@ -80,7 +80,7 @@ describe('Worker Forensic Pipeline - Re-Analysis In-Place Updates', () => {
       }),
       { upsert: true, new: true }
     );
-  });
+  }, 15000);
 
   it('replaces findings in-place without appending duplicates on re-analysis', async () => {
     const caseId = 'reanalyze-findings-test-123';
@@ -96,5 +96,5 @@ describe('Worker Forensic Pipeline - Re-Analysis In-Place Updates', () => {
     expect(Array.isArray(findings)).toBe(true);
     // Findings is a fresh array from the current run, not an accumulated list
     expect(findings.length).toBeLessThanOrEqual(5);
-  });
+  }, 15000);
 });

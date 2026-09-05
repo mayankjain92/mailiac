@@ -26,7 +26,6 @@ import {
   Info,
   RefreshCw,
   X,
-  Loader2,
 } from 'lucide-react';
 import AnalystFeedbackModal from './AnalystFeedbackModal';
 import ReverseHopMapVisualizer from './ReverseHopMapVisualizer';
@@ -152,7 +151,7 @@ function synthesizeAiInterpretation(
   return `High-confidence malicious threat detected. The AI identified aggressive deceptive intent, deceptive sender impersonation, and fraudulent payload triggers requiring immediate quarantine.`;
 }
 
-export default function EvidenceExplorer({ report: initialReport, caseId, onReportUpdated }: EvidenceExplorerProps): React.JSX.Element {
+export default function EvidenceExplorer({ report: initialReport, caseId, onReportUpdated: _onReportUpdated }: EvidenceExplorerProps): React.JSX.Element {
   const [report, setReport] = useState<AnalysisReport>(initialReport);
   useEffect(() => {
     setReport(initialReport);
