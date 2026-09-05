@@ -62,6 +62,7 @@ export async function runForensicPipeline(
         sender: mdm.from.name ? `${mdm.from.name} <${mdm.from.address}>` : mdm.from.address,
         senderDomain,
         urls: decloakResult.extractedUrls,
+        attachments: mdm.attachments,
       }),
       enrichHopsWithGeo(reverseHopResult.path),
       scoreIpReputation(originatingIp, mdm.date),

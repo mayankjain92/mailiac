@@ -1,4 +1,4 @@
-import type { Finding } from '@mailiac/shared-types';
+import type { Finding, ParsedAttachment } from '@mailiac/shared-types';
 
 export interface ExtractedUrlInfo {
   href: string;
@@ -12,6 +12,7 @@ export interface ScoreIntentOptions {
   sender?: string;
   senderDomain?: string;
   urls?: ExtractedUrlInfo[];
+  attachments?: ParsedAttachment[];
   timeoutMs?: number;
   healthTracker?: AIHealthTracker;
 }
