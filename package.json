@@ -11,7 +11,8 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "start:all": "node apps/worker/dist/index.js & node apps/api/dist/server.js"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",
