@@ -5,7 +5,8 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   async rewrites() {
-    const backendUrl = process.env.API_URL || 'http://localhost:4000';
+    const rawUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+    const backendUrl = rawUrl.replace(/\/+$/, '');
     return [
       {
         source: '/api/:path*',
