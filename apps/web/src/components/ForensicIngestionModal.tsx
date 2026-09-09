@@ -11,6 +11,7 @@ import {
   Shield,
   X,
   HelpCircle,
+  Sparkles,
 } from 'lucide-react';
 
 interface ForensicIngestionModalProps {
@@ -135,6 +136,54 @@ export default function ForensicIngestionModal({
     }
   };
 
+  // 1-Click Load Sample Phishing Email for Testing & Evaluation
+  const handleLoadSample = async (): Promise<void> => {
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      const res = await fetch('/samples/sample-phish.eml');
+      if (!res.ok) throw new Error('Could not retrieve sample phishing file');
+      const blob = await res.blob();
+      const sampleFile = new File([blob], 'Urgent_Wire_Transfer_BEC_Phish.eml', {
+        type: 'message/rfc822',
+      });
+      setSelectedFile(sampleFile);
+
+      const formData = new FormData();
+      formData.append('eml', sampleFile);
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || `Upload failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as { jobId: string };
+      if (!data.jobId) {
+        throw new Error('No jobId returned from API server');
+      }
+
+      if (onJobCreated) {
+        onJobCreated(data.jobId, sampleFile.name);
+      } else {
+        router.push(
+          `/forensic-analysis?jobId=${data.jobId}&fileName=${encodeURIComponent(sampleFile.name)}`
+        );
+      }
+      onClose();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load sample payload.';
+      setError(message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   // Connect Gmail or Navigate to /mailbox
   const handleGmailAction = async (): Promise<void> => {
     if (isGmailConnected) {
@@ -208,6 +257,44 @@ export default function ForensicIngestionModal({
               </button>
             </div>
           )}
+
+          {/* Interactive Threat Simulation Banner */}
+          <div className="mb-5 p-3.5 bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-mono font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                  <span>Interactive Threat Simulation</span>
+                  <span className="px-1.5 py-0.5 text-[9px] font-bold bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded">
+                    SANDBOX DEMO
+                  </span>
+                </p>
+                <p className="text-[11px] text-amber-800/80 dark:text-amber-400/80 mt-0.5">
+                  Test the complete 9-stage forensics pipeline instantly using a simulated CEO wire-transfer BEC attack scenario.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleLoadSample}
+              disabled={isUploading}
+              className="shrink-0 w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-mono font-bold rounded shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Ingesting...</span>
+                </>
+              ) : (
+                <>
+                  <span>⚡ Run Sample Attack</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
+            </button>
+          </div>
 
           {/* Options Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -307,42 +394,69 @@ export default function ForensicIngestionModal({
                       CONNECTED
                     </>
                   ) : (
-                    'GMAIL CONNECTION'
+                    <span className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                      GMAIL SANDBOX
+                    </span>
                   )}
                 </span>
               </div>
 
               <h2 className="text-base font-bold text-[#1a1c1c] dark:text-[#F2F2EE] mb-1">
-                {isGmailConnected ? 'Browse Gmail Mailbox' : 'Connect Gmail'}
+                {isGmailConnected ? 'Browse Gmail Mailbox' : 'Gmail & Mailbox Gateway'}
               </h2>
-              <p className="text-xs text-[#434656] dark:text-[#A0A7A3] mb-6 flex-grow leading-relaxed">
+              <p className="text-xs text-[#434656] dark:text-[#A0A7A3] mb-5 flex-grow leading-relaxed">
                 {isGmailConnected
                   ? `Active account: ${connectedGmailEmail || 'Google Mail'}. Inspect and deconstruct emails directly from your inbox.`
-                  : 'Analyze emails directly from your mailbox without downloading individual .eml files.'}
+                  : 'Inspect mailbox headers, search threats, and run one-click deep forensic analysis. Open the interactive sandbox mailbox or authorize a live Google account.'}
               </p>
 
-              <button
-                onClick={handleGmailAction}
-                disabled={isConnecting}
-                className="w-full py-3 px-4 bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center justify-between shadow-sm disabled:opacity-50"
-              >
-                {isConnecting ? (
-                  <span className="flex items-center gap-2 mx-auto">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Connecting with Google...
-                  </span>
-                ) : isGmailConnected ? (
-                  <>
-                    <span>Open Mailbox</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                ) : (
-                  <>
-                    <span>Connect Gmail</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+              {isGmailConnected ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    router.push('/mailbox');
+                  }}
+                  className="w-full py-3 px-4 bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center justify-between shadow-sm"
+                >
+                  <span>Open Connected Mailbox</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <div className="space-y-2 mt-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      router.push('/mailbox?demo=true');
+                    }}
+                    className="w-full py-3 px-4 bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center justify-between shadow-sm group"
+                  >
+                    <span>⚡ Explore Sandbox Mailbox</span>
+                    <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleGmailAction}
+                    disabled={isConnecting}
+                    className="w-full py-2.5 px-3 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] text-[#434656] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#F2F2EE] hover:border-[#0052ff] dark:hover:border-[#3b82f6] text-xs font-mono font-medium rounded transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isConnecting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Connecting Google OAuth...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mail className="w-3.5 h-3.5 text-[#0052ff] dark:text-[#3b82f6]" />
+                        <span>Connect Live Google Account</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 

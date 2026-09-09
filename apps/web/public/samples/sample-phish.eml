@@ -1,0 +1,29 @@
+Received: from mx.target.com (mx.target.com [198.51.100.1]) by mail.corp.target.com; Tue, 25 Aug 2026 11:30:05 +0000
+Received: from relay.evil-spoofer.net (relay.evil-spoofer.net [203.0.113.200]) by mx.target.com; Tue, 25 Aug 2026 11:30:02 +0000
+Received: from botnet-node-42.ru ([185.220.101.5]) by relay.evil-spoofer.net; Tue, 25 Aug 2026 11:30:00 +0000
+From: "CEO Executive" <ceo@target-corp.com>
+To: "Finance Department" <accounting@target-corp.com>
+Reply-To: "Executive Secretarial" <attacker-mailbox@evil-domain.ru>
+Subject: URGENT: Immediate Wire Transfer Required
+Date: Tue, 25 Aug 2026 11:30:00 +0000
+Message-ID: <evil-phish-666@evil-domain.ru>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="MALICIOUS-BOUNDARY-999"
+
+--MALICIOUS-BOUNDARY-999
+Content-Type: text/html; charset="utf-8"
+
+<html>
+<body>
+<p>Team,</p>
+<p>I need an immediate wire transfer processed for vendor invoice settlement before 2 PM today.</p>
+<p>Open the attached confidential invoice and execute payment details.</p>
+</body>
+</html>
+--MALICIOUS-BOUNDARY-999
+Content-Type: application/x-msdownload; name="Invoice_Confidential.pdf.exe"
+Content-Disposition: attachment; filename="Invoice_Confidential.pdf.exe"
+Content-Transfer-Encoding: base64
+
+TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAA4fug4AtAnNIbgBTM0hVGhpcyBwcm9ncmFtIGNhbm5vdCBiZSBydW4gaW4gRE9TIG1vZGUuDQ0KJAAAAAAAAAA=
+--MALICIOUS-BOUNDARY-999--

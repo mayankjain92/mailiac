@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import ForensicIngestionModal from '@/components/ForensicIngestionModal';
 import type { GmailMessageAnalysisEnrichment } from '@mailiac/shared-types';
@@ -26,6 +26,7 @@ import {
   ExternalLink,
   Sun,
   Moon,
+  Sparkles,
 } from 'lucide-react';
 
 import { useTheme } from '@/components/ThemeProvider';
@@ -41,6 +42,7 @@ export interface GmailMessageSummary extends Partial<GmailMessageAnalysisEnrichm
   snippet: string;
   unread?: boolean;
   messageIdHeader?: string;
+  rawEml?: string;
 }
 
 export interface RecentReportItem {
@@ -55,12 +57,194 @@ export interface RecentReportItem {
 
 type MailboxFilter = 'inbox' | 'all' | 'quarantine' | 'suspicious' | 'safe' | 'unanalyzed';
 
-export default function MailboxPage(): React.JSX.Element {
+const DEMO_SANDBOX_MESSAGES: GmailMessageSummary[] = [
+  {
+    id: 'demo-bec-wire-01',
+    sender: 'CEO Executive <ceo@target-corp.com>',
+    subject: 'URGENT: Immediate Wire Transfer Settlement Required',
+    date: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+    snippet: 'Team, I need an immediate wire transfer processed for vendor invoice settlement before 2 PM today. Open the attached confidential invoice and execute payment details.',
+    unread: true,
+    messageIdHeader: '<evil-phish-666@evil-domain.ru>',
+    analyzed: true,
+    verdict: 'QUARANTINE',
+    finalScore: 94,
+    rawEml: `Received: from relay.evil-spoofer.net (relay.evil-spoofer.net [203.0.113.200]) by mx.target.com; Tue, 25 Aug 2026 11:30:02 +0000
+From: "CEO Executive" <ceo@target-corp.com>
+To: "Finance Department" <accounting@target-corp.com>
+Reply-To: "Executive Secretarial" <attacker-mailbox@evil-domain.ru>
+Subject: URGENT: Immediate Wire Transfer Settlement Required
+Date: Tue, 25 Aug 2026 11:30:00 +0000
+Message-ID: <evil-phish-666@evil-domain.ru>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="MALICIOUS-BOUNDARY-999"
+
+--MALICIOUS-BOUNDARY-999
+Content-Type: text/html; charset="utf-8"
+
+<html>
+<body>
+<p>Team,</p>
+<p>I need an immediate wire transfer processed for vendor invoice settlement before 2 PM today.</p>
+<p>Open the attached confidential invoice and execute payment details immediately.</p>
+</body>
+</html>
+--MALICIOUS-BOUNDARY-999
+Content-Type: application/x-msdownload; name="Invoice_Confidential.pdf.exe"
+Content-Disposition: attachment; filename="Invoice_Confidential.pdf.exe"
+Content-Transfer-Encoding: base64
+
+TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAA4fug4AtAnNIbgBTM0hVGhpcyBwcm9ncmFtIGNhbm5vdCBiZSBydW4gaW4gRE9TIG1vZGUuDQ0KJAAAAAAAAAA=
+--MALICIOUS-BOUNDARY-999--
+`,
+  },
+  {
+    id: 'demo-dhl-trojan-02',
+    sender: 'DHL Express Dispatch <tracking@dhl-express-dispatch.net>',
+    subject: 'Delivery Exception: Parcel #US-98214 On Hold (Action Required)',
+    date: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+    snippet: 'We could not deliver your consignment due to an incomplete delivery address. Download the revised shipping manifest to confirm clearance.',
+    unread: true,
+    messageIdHeader: '<dhl-parcel-98214@dhl-express-dispatch.net>',
+    analyzed: true,
+    verdict: 'QUARANTINE',
+    finalScore: 88,
+    rawEml: `Received: from mail.dhl-express-dispatch.net (unknown [194.26.29.110]) by mx.target.com; Tue, 25 Aug 2026 09:15:00 +0000
+From: "DHL Express Dispatch" <tracking@dhl-express-dispatch.net>
+To: <target-user@target-corp.com>
+Subject: Delivery Exception: Parcel #US-98214 On Hold (Action Required)
+Date: Tue, 25 Aug 2026 09:15:00 +0000
+Message-ID: <dhl-parcel-98214@dhl-express-dispatch.net>
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+
+<html>
+<body>
+<p>Dear Customer,</p>
+<p>Your package #US-98214 could not be delivered due to invalid recipient postal metadata.</p>
+<p><a href="http://194.26.29.110/dhl-portal/clearance.html">Click here to update your delivery address</a> within 24 hours.</p>
+</body>
+</html>
+`,
+  },
+  {
+    id: 'demo-msft-phish-03',
+    sender: 'Microsoft 365 Security <no-reply@security-msoffice365.com>',
+    subject: 'Action Required: Organizational Password Expiration in 2 Hours',
+    date: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
+    snippet: 'Your corporate password expires today. Retain your existing credentials by completing single sign-on re-verification immediately.',
+    unread: false,
+    messageIdHeader: '<msft-security-notice@security-msoffice365.com>',
+    analyzed: true,
+    verdict: 'FLAG',
+    finalScore: 68,
+    rawEml: `Received: from server2.security-msoffice365.com ([45.142.214.88]) by mx.target.com; Mon, 24 Aug 2026 16:40:00 +0000
+From: "Microsoft 365 Security" <no-reply@security-msoffice365.com>
+To: <target-user@target-corp.com>
+Subject: Action Required: Organizational Password Expiration in 2 Hours
+Date: Mon, 24 Aug 2026 16:40:00 +0000
+Message-ID: <msft-security-notice@security-msoffice365.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+
+<html>
+<body>
+<p>Your Active Directory password will expire in 2 hours.</p>
+<p>To continue using your current credentials without disruption, <a href="https://auth-msoffice365-verify.com/login">keep current password</a>.</p>
+</body>
+</html>
+`,
+  },
+  {
+    id: 'demo-chase-ach-04',
+    sender: 'Chase Commercial Banking <alerts@secure-chase-notify.org>',
+    subject: 'Suspicious ACH Ingress Hold - Reference #ACH-77189',
+    date: new Date(Date.now() - 1000 * 60 * 60 * 36).toISOString(),
+    snippet: 'An inbound ACH payment of $48,250.00 is currently placed on automated compliance hold. Identity clearance required.',
+    unread: false,
+    messageIdHeader: '<chase-alert-77189@secure-chase-notify.org>',
+    analyzed: false,
+    rawEml: `Received: from unknown ([193.106.191.24]) by mx.target.com; Sat, 22 Aug 2026 08:30:00 +0000
+From: "Chase Commercial Banking" <alerts@secure-chase-notify.org>
+To: <accounting@target-corp.com>
+Subject: Suspicious ACH Ingress Hold - Reference #ACH-77189
+Date: Sat, 22 Aug 2026 08:30:00 +0000
+Message-ID: <chase-alert-77189@secure-chase-notify.org>
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+
+<html>
+<body>
+<p>Attention Merchant Services,</p>
+<p>An inbound ACH payment of $48,250.00 is held pending verification.</p>
+<p>Please log into your treasury portal to acknowledge or return the funds.</p>
+</body>
+</html>
+`,
+  },
+  {
+    id: 'demo-github-safe-05',
+    sender: 'GitHub <notifications@github.com>',
+    subject: '[GitHub] Personal access token expiration reminder',
+    date: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
+    snippet: 'A personal access token (classic) associated with mailiac-bot will expire in 7 days. Review your token settings on GitHub.',
+    unread: false,
+    messageIdHeader: '<github-pat-notice@github.com>',
+    analyzed: true,
+    verdict: 'SAFE',
+    finalScore: 12,
+    rawEml: `Received: from out-21.smtp.github.com (out-21.smtp.github.com [192.30.252.204]) by mx.target.com; Sun, 23 Aug 2026 14:10:00 +0000
+Authentication-Results: mx.target.com; dkim=pass header.i=@github.com; spf=pass (mx.target.com: domain of support@github.com designates 192.30.252.204 as permitted sender)
+From: "GitHub" <notifications@github.com>
+To: <developer@target-corp.com>
+Subject: [GitHub] Personal access token expiration reminder
+Date: Sun, 23 Aug 2026 14:10:00 +0000
+Message-ID: <github-pat-notice@github.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Hi developer,
+
+Your personal access token (classic) mailiac-bot will expire in 7 days.
+You can regenerate or delete this token at https://github.com/settings/tokens.
+`,
+  },
+  {
+    id: 'demo-soc-safe-06',
+    sender: 'Enterprise Security Operations <soc@enterprise-defense.internal>',
+    subject: 'Weekly Incident Response & Threat Metrics Briefing',
+    date: new Date(Date.now() - 1000 * 60 * 60 * 96).toISOString(),
+    snippet: 'Here is the summary of security events monitored across perimeter gateways, quarantined attachments, and internal posture reports for Week 34.',
+    unread: false,
+    messageIdHeader: '<soc-weekly-brief-34@enterprise-defense.internal>',
+    analyzed: true,
+    verdict: 'SAFE',
+    finalScore: 8,
+    rawEml: `Received: from internal-smtp.enterprise-defense.internal ([10.0.4.12]) by mx.target.com; Fri, 21 Aug 2026 17:00:00 +0000
+From: "Enterprise Security Operations" <soc@enterprise-defense.internal>
+To: <security-team@target-corp.com>
+Subject: Weekly Incident Response & Threat Metrics Briefing
+Date: Fri, 21 Aug 2026 17:00:00 +0000
+Message-ID: <soc-weekly-brief-34@enterprise-defense.internal>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Team,
+
+This is the scheduled weekly SOC briefing.
+All gateway security appliances reported normal baseline metrics with zero confirmed lateral intrusions.
+`,
+  },
+];
+
+function MailboxContent(): React.JSX.Element {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { theme, toggleTheme } = useTheme();
   const isDarkMode = theme === 'dark';
 
   // State
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [connectedEmail, setConnectedEmail] = useState<string | null>(null);
   const [messages, setMessages] = useState<GmailMessageSummary[]>([]);
@@ -98,12 +282,29 @@ export default function MailboxPage(): React.JSX.Element {
     }
   }, []);
 
-  // Fetch messages from Gmail
+  // Fetch messages from Gmail or Sandbox
   const fetchMessages = useCallback(
     async (query = '', pageToken?: string): Promise<void> => {
       setIsLoading(true);
       setError(null);
       try {
+        if (isDemoMode) {
+          const q = query.trim().toLowerCase();
+          if (!q) {
+            setMessages(DEMO_SANDBOX_MESSAGES);
+          } else {
+            setMessages(
+              DEMO_SANDBOX_MESSAGES.filter(
+                (m) =>
+                  m.subject.toLowerCase().includes(q) ||
+                  m.sender.toLowerCase().includes(q) ||
+                  m.snippet.toLowerCase().includes(q)
+              )
+            );
+          }
+          return;
+        }
+
         const params = new URLSearchParams();
         if (query.trim()) params.append('q', query.trim());
         if (pageToken) params.append('pageToken', pageToken);
@@ -139,11 +340,22 @@ export default function MailboxPage(): React.JSX.Element {
         setIsRefreshing(false);
       }
     },
-    []
+    [isDemoMode]
   );
 
   // Initial load
   useEffect(() => {
+    const isDemoRequested = searchParams.get('demo') === 'true';
+    if (isDemoRequested) {
+      setIsDemoMode(true);
+      setIsConnected(true);
+      setConnectedEmail('sandbox-audit@mailiac.security');
+      setMessages(DEMO_SANDBOX_MESSAGES);
+      setSelectedEmailId(DEMO_SANDBOX_MESSAGES[0].id);
+      setIsLoading(false);
+      return;
+    }
+
     checkStatus().then((connected) => {
       if (connected) {
         fetchMessages();
@@ -151,10 +363,19 @@ export default function MailboxPage(): React.JSX.Element {
         setIsLoading(false);
       }
     });
-  }, [checkStatus, fetchMessages]);
+  }, [checkStatus, fetchMessages, searchParams]);
 
-  // Disconnect account
+  // Disconnect account or exit sandbox
   const handleDisconnect = async (): Promise<void> => {
+    if (isDemoMode) {
+      setIsDemoMode(false);
+      setIsConnected(false);
+      setConnectedEmail(null);
+      setMessages([]);
+      setSelectedEmailId(null);
+      return;
+    }
+
     if (!confirm('Are you sure you want to disconnect your Gmail account from Mailiac?')) return;
     setIsDisconnecting(true);
     setError(null);
@@ -184,6 +405,37 @@ export default function MailboxPage(): React.JSX.Element {
     setAnalyzingMessageId(message.id);
     setError(null);
     try {
+      if (isDemoMode || message.rawEml || message.id.startsWith('demo-')) {
+        const rawContent =
+          message.rawEml ||
+          DEMO_SANDBOX_MESSAGES.find((m) => m.id === message.id)?.rawEml ||
+          '';
+
+        const blob = new Blob([rawContent], { type: 'message/rfc822' });
+        const cleanName = `${message.subject.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 36)}.eml`;
+        const sampleFile = new File([blob], cleanName, { type: 'message/rfc822' });
+
+        const formData = new FormData();
+        formData.append('eml', sampleFile);
+
+        const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!uploadRes.ok) {
+          throw new Error('Sandbox email ingestion failed');
+        }
+
+        const data = (await uploadRes.json()) as { jobId: string };
+        router.push(
+          `/forensic-analysis?jobId=${encodeURIComponent(data.jobId)}&fileName=${encodeURIComponent(
+            sampleFile.name
+          )}`
+        );
+        return;
+      }
+
       const res = await fetch(`/api/gmail/messages/${message.id}/analyze`, {
         method: 'POST',
       });
@@ -428,7 +680,25 @@ export default function MailboxPage(): React.JSX.Element {
 
         {/* Right: Status, Help, Theme, Profile */}
         <div className="flex items-center gap-2">
-          {isConnected ? (
+          {isDemoMode ? (
+            <div className="flex items-center gap-2">
+              <div
+                className="flex items-center gap-1.5 px-3 py-1 bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 border border-[#0052ff]/30 dark:border-[#3b82f6]/40 rounded-full font-mono text-[11px] font-bold text-[#0052ff] dark:text-[#3b82f6]"
+                title="Interactive Sandbox Mailbox Environment"
+              >
+                <span className="w-2 h-2 rounded-full bg-[#0052ff] dark:bg-[#3b82f6] animate-pulse"></span>
+                <span>SANDBOX MAILBOX</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsIngestionModalOpen(true)}
+                className="hidden md:inline-flex items-center gap-1 text-[11px] font-mono text-[#737688] dark:text-[#A0A7A3] hover:text-[#0052ff] dark:hover:text-[#3b82f6] border border-[#D5D5CE] dark:border-[#29342F] px-2.5 py-1 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-colors"
+              >
+                <Mail className="w-3 h-3" />
+                <span>Live OAuth</span>
+              </button>
+            </div>
+          ) : isConnected ? (
             <div
               className="flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/30 rounded-full font-mono text-[11px] font-bold text-green-700 dark:text-green-400"
               title={connectedEmail ? `Connected: ${connectedEmail}` : 'Gmail Connected'}
@@ -452,12 +722,12 @@ export default function MailboxPage(): React.JSX.Element {
             {isDarkMode ? <Sun className="w-4 h-4 text-[#fbbf24]" /> : <Moon className="w-4 h-4 text-[#434656]" />}
           </button>
 
-          {isConnected && (
+          {(isConnected || isDemoMode) && (
             <button
               onClick={handleDisconnect}
               disabled={isDisconnecting}
               className="p-2 text-[#737688] dark:text-[#A0A7A3] hover:text-[#ef4444] hover:bg-[#EAEAE5] dark:hover:bg-[#202124] rounded-full transition-colors disabled:opacity-50"
-              title="Disconnect Gmail Account"
+              title={isDemoMode ? 'Exit Sandbox Mailbox' : 'Disconnect Gmail Account'}
             >
               {isDisconnecting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -732,23 +1002,42 @@ export default function MailboxPage(): React.JSX.Element {
                   <span>Loading Gmail mailbox intelligence...</span>
                 </div>
               ) : !isConnected ? (
-                <div className="py-24 px-6 text-center max-w-md mx-auto space-y-4">
-                  <div className="w-12 h-12 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6] mx-auto">
-                    <Mail className="w-6 h-6" />
+                <div className="py-20 px-6 text-center max-w-lg mx-auto space-y-5">
+                  <div className="w-14 h-14 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6] mx-auto">
+                    <Mail className="w-7 h-7" />
                   </div>
-                  <h3 className="text-base font-bold text-[#1a1c1c] dark:text-[#fdfcf8]">
-                    No Gmail Account Connected
-                  </h3>
-                  <p className="text-xs text-[#434656] dark:text-[#A0A7A3] leading-relaxed">
-                    Connect your Gmail or Google Workspace inbox to inspect email headers and run one-click forensic deconstruction.
-                  </p>
-                  <button
-                    onClick={() => setIsIngestionModalOpen(true)}
-                    className="bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white text-xs font-semibold px-5 py-2.5 rounded shadow-sm inline-flex items-center gap-2 transition-colors font-mono"
-                  >
-                    <span>Connect Gmail Ingestion</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-bold text-[#1a1c1c] dark:text-[#fdfcf8]">
+                      No Live Gmail Account Connected
+                    </h3>
+                    <p className="text-xs text-[#434656] dark:text-[#A0A7A3] leading-relaxed max-w-md mx-auto">
+                      Inspect email headers and run one-click forensics on incoming threats. Launch the interactive Sandbox Mailbox to test with realistic email payloads, or authenticate an authorized Google account.
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsDemoMode(true);
+                        setIsConnected(true);
+                        setConnectedEmail('sandbox-audit@mailiac.security');
+                        setMessages(DEMO_SANDBOX_MESSAGES);
+                        setSelectedEmailId(DEMO_SANDBOX_MESSAGES[0].id);
+                      }}
+                      className="w-full sm:w-auto bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white text-xs font-semibold px-5 py-3 rounded shadow-sm inline-flex items-center justify-center gap-2 transition-colors font-mono"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      <span>⚡ Launch Sandbox Mailbox</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsIngestionModalOpen(true)}
+                      className="w-full sm:w-auto border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold px-5 py-3 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#202124] inline-flex items-center justify-center gap-2 transition-colors font-mono"
+                    >
+                      <Mail className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" />
+                      <span>Connect Google Account</span>
+                    </button>
+                  </div>
                 </div>
               ) : filteredMessages.length === 0 ? (
                 <div className="py-24 text-center text-xs font-mono text-[#737688] dark:text-[#7D8681] space-y-2">
@@ -1071,5 +1360,20 @@ export default function MailboxPage(): React.JSX.Element {
         }}
       />
     </div>
+  );
+}
+
+export default function MailboxPage(): React.JSX.Element {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen h-screen flex flex-col items-center justify-center bg-[#F2F2EE] dark:bg-[#0b0b0b] text-[#737688] dark:text-[#A0A7A3] font-mono text-xs gap-3">
+          <Loader2 className="w-6 h-6 animate-spin text-[#0052ff] dark:text-[#3b82f6]" />
+          <span>Loading Mailiac Mailbox Console...</span>
+        </div>
+      }
+    >
+      <MailboxContent />
+    </Suspense>
   );
 }
