@@ -20,6 +20,10 @@ describe('GET /api/jobs/:id', () => {
     vi.clearAllMocks();
     const app = express();
     app.use(express.json());
+    app.use((req, _res, next) => {
+      req.user = { id: 'mock-user-123', email: 'test@example.com' };
+      next();
+    });
     app.use('/api', jobsRouter);
     app.use(errorHandler);
 

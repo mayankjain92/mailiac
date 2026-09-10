@@ -1,73 +1,269 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams } from 'next/navigation';
 import StitchLandingHeader from '@/components/StitchLandingHeader';
 import EvidenceExplorer from '@/components/EvidenceExplorer';
+import SignInRequiredState from '@/components/SignInRequiredState';
+import { useAuth } from '@/lib/auth';
+import { api, isAuthError, isForbiddenError, reanalyzeReport, getErrorMessage } from '@/lib/api';
 import type { AnalysisReport } from '@mailiac/shared-types';
-import { Loader2, RefreshCw, UploadCloud, ShieldAlert } from 'lucide-react';
+import axios from 'axios';
+import {
+  Loader2,
+  RefreshCw,
+  UploadCloud,
+  ShieldAlert,
+  ArrowLeft,
+  Lock,
+  Clock,
+  Terminal,
+  ArrowRight,
+  Mail,
+} from 'lucide-react';
 import Link from 'next/link';
 
 export default function EvidenceExplorerPage(): React.JSX.Element {
+  const { user, isLoading: isAuthLoading } = useAuth();
   const params = useParams();
-  const router = useRouter();
   const rawCaseId = params?.['caseId'];
   const caseId = Array.isArray(rawCaseId) ? rawCaseId[0] : rawCaseId;
 
   const [report, setReport] = useState<AnalysisReport | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isForbidden, setIsForbidden] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
+
+  // Auto-reanalysis states for expired 24h reports
+  const [isAutoReanalyzing, setIsAutoReanalyzing] = useState<boolean>(false);
+  const [reanalyzeStep, setReanalyzeStep] = useState<string>('Initializing forensic pipeline...');
+  const [isPayloadExpired, setIsPayloadExpired] = useState<boolean>(false);
+
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const clearPolling = useCallback((): void => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return (): void => {
+      clearPolling();
+    };
+  }, [clearPolling]);
+
+  const pollForJobCompletion = useCallback(
+    (targetJobId: string): void => {
+      clearPolling();
+      let attempts = 0;
+      const maxAttempts = 75; // 75 * 1200ms = 90s max
+
+      pollTimerRef.current = setInterval(async () => {
+        attempts++;
+
+        // 1. Check if the fresh report is already saved in the database
+        try {
+          const repRes = await api.get<AnalysisReport>(`/api/reports/${encodeURIComponent(targetJobId)}`);
+          if (repRes.data) {
+            clearPolling();
+            setReport(repRes.data);
+            setIsAutoReanalyzing(false);
+            setIsLoading(false);
+            return;
+          }
+        } catch {
+          // Report not ready yet, continue polling job status
+        }
+
+        // 2. Poll BullMQ pipeline progress
+        try {
+          const jobRes = await api.get<{ status: string; failedReason?: string }>(
+            `/api/jobs/${encodeURIComponent(targetJobId)}`
+          );
+          const jobData = jobRes.data;
+          setJobStatus(jobData.status);
+
+          if (jobData.status === 'processing') {
+            setReanalyzeStep('Extracting MIME headers, verifying DKIM/SPF, and scoring risk pillars...');
+          } else if (jobData.status === 'completed') {
+            // Attempt to fetch the completed report immediately
+            try {
+              const repRes = await api.get<AnalysisReport>(`/api/reports/${encodeURIComponent(targetJobId)}`);
+              if (repRes.data) {
+                clearPolling();
+                setReport(repRes.data);
+                setIsAutoReanalyzing(false);
+                setIsLoading(false);
+                return;
+              }
+            } catch {
+              setReanalyzeStep('Finalizing forensic evidence report...');
+            }
+          } else if (jobData.status === 'failed') {
+            clearPolling();
+            setIsAutoReanalyzing(false);
+            setError(jobData.failedReason || 'Forensic analysis failed during re-execution.');
+            return;
+          }
+        } catch (jobErr: unknown) {
+          if (isForbiddenError(jobErr)) {
+            clearPolling();
+            setIsForbidden(true);
+            setIsAutoReanalyzing(false);
+            return;
+          }
+          if (isAuthError(jobErr)) {
+            clearPolling();
+            setIsAutoReanalyzing(false);
+            return;
+          }
+        }
+
+        if (attempts >= maxAttempts) {
+          clearPolling();
+          setIsAutoReanalyzing(false);
+          setError('Automatic re-analysis timed out. You can monitor the pipeline directly in the console.');
+        }
+      }, 1200);
+    },
+    [clearPolling]
+  );
+
+  const startReanalysis = useCallback(
+    async (targetCaseId: string) => {
+      setIsLoading(false);
+      setIsAutoReanalyzing(true);
+      setError(null);
+      setIsPayloadExpired(false);
+      setReanalyzeStep('Dispatching email payload to forensic worker queue...');
+
+      try {
+        const data = await reanalyzeReport(targetCaseId);
+        const resolvedJobId = data.jobId || targetCaseId;
+        setJobStatus(data.status || 'queued');
+        setReanalyzeStep('Email queued for multi-pillar forensic inspection...');
+        pollForJobCompletion(resolvedJobId);
+      } catch (err: unknown) {
+        setIsAutoReanalyzing(false);
+        if (isAuthError(err)) {
+          return;
+        }
+        if (isForbiddenError(err)) {
+          setIsForbidden(true);
+          setError('You are not authorized to re-analyze this report.');
+          return;
+        }
+
+        const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+        const respData = axios.isAxiosError(err) ? (err.response?.data as Record<string, unknown>) : undefined;
+
+        if (status === 422 || respData?.['expired']) {
+          setIsPayloadExpired(true);
+          setError(getErrorMessage(err, 'The original email payload is no longer available in temporary cache.'));
+          return;
+        }
+
+        setError(getErrorMessage(err, 'Failed to re-analyze this case.'));
+      }
+    },
+    [pollForJobCompletion]
+  );
 
   const fetchAnalysisReport = useCallback(async () => {
     if (!caseId) {
       return;
     }
 
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
+    setIsForbidden(false);
+    setIsPayloadExpired(false);
+    clearPolling();
 
     try {
       // 1. Try to fetch completed report
-      const res = await fetch(`/api/reports/${encodeURIComponent(caseId)}`);
-      
-      if (res.ok) {
-        const reportData: AnalysisReport = await res.json();
-        setReport(reportData);
+      const res = await api.get<AnalysisReport>(`/api/reports/${encodeURIComponent(caseId)}`);
+      if (res.data) {
+        setReport(res.data);
+        setIsLoading(false);
+        return;
+      }
+    } catch (err: unknown) {
+      if (isForbiddenError(err)) {
+        setIsForbidden(true);
+        setError('You are not authorized to access this report.');
         setIsLoading(false);
         return;
       }
 
-      // 2. If report is not yet in MongoDB, check BullMQ job status
-      const jobRes = await fetch(`/api/jobs/${encodeURIComponent(caseId)}`);
-      if (jobRes.ok) {
-        const jobData = await jobRes.json();
+      if (isAuthError(err)) {
+        // Handled centrally by AuthProvider modal
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. If report is not in database, check if an active BullMQ job is already running
+      try {
+        const jobRes = await api.get<{ status: string; failedReason?: string }>(
+          `/api/jobs/${encodeURIComponent(caseId)}`
+        );
+        const jobData = jobRes.data;
         setJobStatus(jobData.status);
 
         if (jobData.status === 'processing' || jobData.status === 'queued' || jobData.status === 'active') {
-          // If job is still in-flight, show real-time sequential pipeline execution
-          router.replace(`/forensic-analysis?jobId=${encodeURIComponent(caseId)}`);
+          setIsLoading(false);
+          setIsAutoReanalyzing(true);
+          setReanalyzeStep(`Analysis already in progress (${jobData.status}). Monitoring pipeline...`);
+          pollForJobCompletion(caseId);
           return;
-        } else if (jobData.status === 'failed') {
-          setError(jobData.failedReason || 'Forensic analysis job failed during execution.');
+        }
+      } catch (jobErr: unknown) {
+        if (isForbiddenError(jobErr)) {
+          setIsForbidden(true);
+          setError('You are not authorized to access this report.');
+          setIsLoading(false);
+          return;
+        }
+        if (isAuthError(jobErr)) {
           setIsLoading(false);
           return;
         }
       }
 
-      // 3. If not found in reports or jobs
-      setError('Forensic report not found. The case ID may be invalid or analysis has expired.');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to connect to Mailiac forensic API.';
-      setError(message);
-    } finally {
-      setIsLoading(false);
+      // 3. Report is missing/expired from MongoDB 24h cache and no job is active:
+      // AUTOMATICALLY RE-ANALYZE THAT MAIL! Don't just show 'Forensic Case Unavailable'.
+      await startReanalysis(caseId);
     }
-  }, [caseId, router]);
+  }, [caseId, user, clearPolling, pollForJobCompletion, startReanalysis]);
 
   useEffect(() => {
-    fetchAnalysisReport();
-  }, [fetchAnalysisReport]);
+    if (!isAuthLoading) {
+      fetchAnalysisReport();
+    }
+  }, [fetchAnalysisReport, isAuthLoading]);
+
+  // Logged-out state: show friendly "Sign in required" experience
+  if (!isAuthLoading && !user) {
+    return (
+      <div className="min-h-screen bg-[#F2F2EE] dark:bg-[#0E1210] text-[#1a1c1c] dark:text-[#F2F2EE] transition-colors duration-200 flex flex-col">
+        <StitchLandingHeader />
+        <main className="flex-1 w-full flex items-center justify-center p-6">
+          <SignInRequiredState
+            title="Sign in required to view Forensic Evidence"
+            description="You need to sign in with your Google account to access this forensic investigation report."
+          />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F2F2EE] dark:bg-[#0E1210] text-[#1a1c1c] dark:text-[#F2F2EE] transition-colors duration-200 flex flex-col">
@@ -75,12 +271,13 @@ export default function EvidenceExplorerPage(): React.JSX.Element {
 
       <main className="flex-1 w-full">
         {isLoading ? (
+          /* Initial loading state */
           <div className="min-h-[75vh] flex flex-col items-center justify-center p-6 text-center">
             <div className="w-16 h-16 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center mb-6 relative">
               <Loader2 className="w-8 h-8 text-[#0052ff] dark:text-[#3b82f6] animate-spin" />
             </div>
 
-            <div className="font-mono text-xs font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-widest mb-2">
+            <div className="text-xs font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-widest mb-2">
               FORENSIC INVESTIGATION PIPELINE
             </div>
 
@@ -88,47 +285,185 @@ export default function EvidenceExplorerPage(): React.JSX.Element {
               LOADING FORENSIC EVIDENCE
             </h2>
 
-            <p className="text-xs font-mono text-[#737688] dark:text-[#A0A7A3] max-w-md mb-4">
-              Retrieving multi-stage forensic analysis for Case ID{' '}
-              <code className="text-[#0052ff] dark:text-[#3b82f6] font-bold">{caseId}</code>...
+            <p className="text-xs text-[#737688] dark:text-[#A0A7A3] max-w-md mb-4">
+              Retrieving forensic analysis for Case ID{' '}
+              <code className="text-[#0052ff] dark:text-[#3b82f6] font-bold font-mono">{caseId}</code>...
+            </p>
+          </div>
+        ) : isAutoReanalyzing ? (
+          /* Automatic Re-analysis in Progress State (Replaces 'Forensic Case Unavailable') */
+          <div className="min-h-[75vh] flex flex-col items-center justify-center p-6 text-center max-w-xl mx-auto animate-in fade-in duration-300">
+            <div className="w-20 h-20 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center mb-6 relative">
+              <RefreshCw className="w-10 h-10 text-[#0052ff] dark:text-[#3b82f6] animate-spin" />
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 animate-ping" />
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[11px] font-bold tracking-wider uppercase mb-3">
+              <Clock className="w-3.5 h-3.5" />
+              <span>Report Expired · Automatically Re-Analyzing</span>
+            </div>
+
+            <h2 className="text-2xl md:text-3xl font-extrabold text-[#1a1c1c] dark:text-[#F2F2EE] mb-3 tracking-tight">
+              RE-RUNNING FORENSIC INSPECTION
+            </h2>
+
+            <p className="text-xs md:text-sm text-[#737688] dark:text-[#A0A7A3] mb-6 leading-relaxed">
+              The 24-hour report cache for Case{' '}
+              <code className="text-[#0052ff] dark:text-[#3b82f6] font-mono font-bold">{caseId}</code> has expired.
+              Mailiac is automatically re-running the multi-pillar forensic pipeline using the preserved email payload.
             </p>
 
-            {jobStatus && (
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#EAEAE5] dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded text-xs font-mono text-[#434656] dark:text-[#A0A7A3]">
-                <span className="w-2 h-2 rounded-full bg-[#0052ff] animate-ping" />
-                Pipeline status: <strong className="uppercase">{jobStatus}</strong>
+            {/* Pipeline Stage Indicator */}
+            <div className="w-full bg-[#EAEAE5] dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-lg p-4 mb-6 text-left shadow-sm">
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="font-bold text-[#1a1c1c] dark:text-[#F2F2EE] flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#0052ff] dark:bg-[#3b82f6] animate-pulse" />
+                  Pipeline Status: <span className="uppercase font-mono text-[#0052ff] dark:text-[#3b82f6]">{jobStatus || 'active'}</span>
+                </span>
+                <span className="text-[10px] text-[#737688] dark:text-[#A0A7A3]">Live Execution</span>
               </div>
-            )}
+              <p className="text-xs text-[#434656] dark:text-[#A0A7A3] flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#0052ff] dark:text-[#3b82f6] shrink-0" />
+                <span>{reanalyzeStep}</span>
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-wrap gap-4 justify-center">
+              <Link
+                href={`/forensic-analysis?jobId=${encodeURIComponent(caseId || '')}&fileName=reanalyzed_case.eml`}
+                className="bg-[#0052ff] dark:bg-[#3b82f6] text-white px-5 py-2.5 rounded text-xs font-bold tracking-wider hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 shadow-sm"
+              >
+                <Terminal className="w-4 h-4" /> Watch Live Pipeline Console <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+
+              <Link
+                href="/history"
+                className="border border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] px-5 py-2.5 rounded text-xs font-semibold hover:border-[#0052ff] transition-colors flex items-center gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" /> Back to History
+              </Link>
+            </div>
+          </div>
+        ) : isForbidden ? (
+          /* 403 Forbidden State: Logged-in user has no access to this report */
+          <div className="min-h-[75vh] flex flex-col items-center justify-center p-6 text-center max-w-lg mx-auto animate-in fade-in duration-300">
+            <div className="w-16 h-16 rounded-full bg-amber-500/10 dark:bg-amber-500/20 flex items-center justify-center mb-6 text-amber-600 dark:text-amber-400">
+              <Lock className="w-8 h-8" />
+            </div>
+
+            <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-2">
+              ACCESS RESTRICTED
+            </div>
+
+            <h2 className="text-2xl font-extrabold text-[#1a1c1c] dark:text-[#F2F2EE] mb-3 tracking-tight">
+              You are not authorized to access this report.
+            </h2>
+
+            <p className="text-xs text-[#737688] dark:text-[#A0A7A3] mb-8 leading-relaxed">
+              This forensic case belongs to another user account. Multi-tenant security policies prevent unauthorized inspection of private email analysis data.
+            </p>
+
+            <div className="flex flex-wrap gap-4 justify-center">
+              <Link
+                href="/history"
+                className="bg-[#0052ff] dark:bg-[#3b82f6] text-white px-5 py-2.5 rounded text-xs font-bold tracking-wider hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 shadow-sm"
+              >
+                <ArrowLeft className="w-4 h-4" /> Go to Your Audit History
+              </Link>
+
+              <Link
+                href="/mailbox"
+                className="border border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] px-5 py-2.5 rounded text-xs font-semibold hover:border-[#0052ff] transition-colors flex items-center gap-2"
+              >
+                Open Mailbox
+              </Link>
+            </div>
+          </div>
+        ) : isPayloadExpired ? (
+          /* Payload Expired State: Both 24h cache and raw payload buffer are expired */
+          <div className="min-h-[75vh] flex flex-col items-center justify-center p-6 text-center max-w-lg mx-auto animate-in fade-in duration-300">
+            <div className="w-16 h-16 rounded-full bg-amber-500/10 dark:bg-amber-500/20 flex items-center justify-center mb-6 text-amber-600 dark:text-amber-400">
+              <Clock className="w-8 h-8" />
+            </div>
+
+            <div className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-2">
+              PAYLOAD EXPIRED
+            </div>
+
+            <h2 className="text-2xl font-extrabold text-[#1a1c1c] dark:text-[#F2F2EE] mb-3 tracking-tight">
+              ORIGINAL EMAIL PAYLOAD NO LONGER AVAILABLE
+            </h2>
+
+            <p className="text-xs text-[#737688] dark:text-[#A0A7A3] mb-8 leading-relaxed">
+              The 24-hour detailed report has expired and the raw MIME email payload is no longer stored in temporary cache.
+              To re-inspect this email, please upload the original .EML file or re-sync from your connected Gmail mailbox.
+            </p>
+
+            <div className="flex flex-wrap gap-4 justify-center">
+              <Link
+                href="/forensic-analysis"
+                className="bg-[#0052ff] dark:bg-[#3b82f6] text-white px-5 py-2.5 rounded text-xs font-bold tracking-wider hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 shadow-sm"
+              >
+                <UploadCloud className="w-4 h-4" /> Re-upload .EML Sample
+              </Link>
+
+              <Link
+                href="/mailbox"
+                className="border border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] px-5 py-2.5 rounded text-xs font-semibold hover:border-[#0052ff] transition-colors flex items-center gap-2"
+              >
+                <Mail className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" /> Open Mailbox
+              </Link>
+
+              <Link
+                href="/history"
+                className="border border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] px-5 py-2.5 rounded text-xs font-semibold hover:border-[#0052ff] transition-colors flex items-center gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" /> Audit History
+              </Link>
+            </div>
           </div>
         ) : error || !report ? (
-          <div className="min-h-[75vh] flex flex-col items-center justify-center p-6 text-center max-w-lg mx-auto">
+          /* General Error or Failure State with explicit Re-Analyze trigger */
+          <div className="min-h-[75vh] flex flex-col items-center justify-center p-6 text-center max-w-lg mx-auto animate-in fade-in duration-300">
             <div className="w-16 h-16 rounded-full bg-[#ba1a1a]/10 dark:bg-[#ba1a1a]/20 flex items-center justify-center mb-6">
               <ShieldAlert className="w-8 h-8 text-[#ba1a1a] dark:text-[#ef4444]" />
             </div>
 
-            <div className="font-mono text-xs font-bold text-[#ba1a1a] dark:text-[#ef4444] uppercase tracking-widest mb-2">
-              INVESTIGATION UNAVAILABLE
+            <div className="text-xs font-bold text-[#ba1a1a] dark:text-[#ef4444] uppercase tracking-widest mb-2">
+              INVESTIGATION STATUS
             </div>
 
             <h2 className="text-2xl font-extrabold text-[#1a1c1c] dark:text-[#F2F2EE] mb-3 tracking-tight">
               FORENSIC CASE UNAVAILABLE
             </h2>
 
-            <p className="text-xs text-[#737688] dark:text-[#A0A7A3] mb-8 leading-relaxed font-mono">
+            <p className="text-xs text-[#737688] dark:text-[#A0A7A3] mb-8 leading-relaxed">
               {error || 'The requested forensic investigation could not be retrieved from the database.'}
             </p>
 
             <div className="flex flex-wrap gap-4 justify-center">
+              {caseId && (
+                <button
+                  type="button"
+                  onClick={() => startReanalysis(caseId)}
+                  className="bg-[#0052ff] dark:bg-[#3b82f6] text-white px-5 py-2.5 rounded text-xs font-bold tracking-wider hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 shadow-sm"
+                >
+                  <RefreshCw className="w-4 h-4" /> Re-analyze Case Now
+                </button>
+              )}
+
               <button
+                type="button"
                 onClick={() => fetchAnalysisReport()}
-                className="bg-[#0052ff] dark:bg-[#3b82f6] text-white px-5 py-2.5 rounded text-xs font-mono font-bold tracking-wider hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 shadow-sm"
+                className="border border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] px-5 py-2.5 rounded text-xs font-semibold hover:border-[#0052ff] transition-colors flex items-center gap-2"
               >
                 <RefreshCw className="w-4 h-4" /> Retry Retrieval
               </button>
 
               <Link
                 href="/forensic-analysis"
-                className="border border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] px-5 py-2.5 rounded text-xs font-mono font-semibold hover:border-[#0052ff] transition-colors flex items-center gap-2"
+                className="border border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] px-5 py-2.5 rounded text-xs font-semibold hover:border-[#0052ff] transition-colors flex items-center gap-2"
               >
                 <UploadCloud className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" /> Return to Analysis
               </Link>
@@ -141,7 +476,7 @@ export default function EvidenceExplorerPage(): React.JSX.Element {
 
       {/* Forensic Footer */}
       <footer className="bg-[#EAEAE5] dark:bg-[#151A17] border-t border-[#D5D5CE] dark:border-[#29342F] w-full px-6 md:px-16 py-8 max-w-[1440px] mx-auto transition-colors duration-200 mt-auto">
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-mono text-[#737688] dark:text-[#A0A7A3]">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-[#737688] dark:text-[#A0A7A3]">
           <div>Mailiac Forensic Intelligence · Evidence Explorer</div>
           <div>© {new Date().getFullYear()} Mailiac. All rights reserved.</div>
         </div>

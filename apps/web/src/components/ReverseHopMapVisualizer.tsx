@@ -32,7 +32,7 @@ const ReverseHopLeafletMap = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="w-full h-full min-h-[380px] bg-[#0E1210] flex flex-col items-center justify-center text-xs font-mono text-[#737688] dark:text-[#A0A7A3] gap-2">
+      <div className="w-full h-full min-h-[380px] bg-[#0E1210] flex flex-col items-center justify-center text-xs text-[#737688] dark:text-[#A0A7A3] gap-2">
         <Loader2 className="w-6 h-6 animate-spin text-[#0052FF]" />
         <span>Initializing Forensics Basemap...</span>
       </div>
@@ -92,7 +92,7 @@ export default function ReverseHopMapVisualizer({
   if (mappedCount === 0) {
     return (
       <div
-        className={`p-4 bg-[#F2F2EE] dark:bg-[#1B211E] rounded border border-[#E5E5E5] dark:border-[#29342F] text-xs font-mono text-center text-[#737688] dark:text-[#A0A7A3] ${className}`}
+        className={`p-4 bg-[#F2F2EE] dark:bg-[#1B211E] rounded border border-[#E5E5E5] dark:border-[#29342F] text-xs text-center text-[#737688] dark:text-[#A0A7A3] ${className}`}
       >
         <div className="flex items-center justify-center gap-2 mb-1 text-[#121212] dark:text-[#F2F2EE] font-bold">
           <Globe className="w-4 h-4 text-[#737688] dark:text-[#A0A7A3]" />
@@ -113,19 +113,19 @@ export default function ReverseHopMapVisualizer({
       <div className="px-4 py-3 border-b border-[#E5E5E5] dark:border-[#29342F] bg-[#F2F2EE]/60 dark:bg-[#1B211E]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-mono text-xs font-bold text-[#121212] dark:text-[#F2F2EE] uppercase tracking-wider flex items-center gap-1.5">
+            <span className="text-xs font-bold text-[#121212] dark:text-[#F2F2EE] uppercase tracking-wider flex items-center gap-1.5">
               <Globe className="w-3.5 h-3.5 text-[#0052FF] dark:text-[#3b82f6]" />
               Observed Infrastructure Locations
             </span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0052FF]/10 text-[#0052FF] dark:text-[#3b82f6] font-bold border border-[#0052FF]/20">
+            <span className="text-[10px] px-2 py-0.5 rounded bg-[#0052FF]/10 text-[#0052FF] dark:text-[#3b82f6] font-bold border border-[#0052FF]/20">
               {mappedCount} of {totalHops} Hops Mapped
             </span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#10B981]/10 text-[#10B981] font-semibold border border-[#10B981]/20 flex items-center gap-1">
+            <span className="text-[10px] px-2 py-0.5 rounded bg-[#10B981]/10 text-[#10B981] font-semibold border border-[#10B981]/20 flex items-center gap-1">
               <Shield className="w-2.5 h-2.5" />
               ArcGIS Forensics Basemap
             </span>
           </div>
-          <p className="text-[11px] font-mono text-[#737688] dark:text-[#A0A7A3] mt-0.5">
+          <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3] mt-0.5">
             Approximate IP Geolocation Trace • Great Circle Geodesic Routing
           </p>
         </div>
@@ -135,7 +135,7 @@ export default function ReverseHopMapVisualizer({
             <button
               type="button"
               onClick={() => onSelectHop(null)}
-              className="text-[11px] font-mono text-[#737688] dark:text-[#A0A7A3] hover:text-[#121212] dark:hover:text-[#F2F2EE] underline cursor-pointer"
+              className="text-[11px] text-[#737688] dark:text-[#A0A7A3] hover:text-[#121212] dark:hover:text-[#F2F2EE] underline cursor-pointer"
             >
               Reset Selection
             </button>
@@ -153,7 +153,7 @@ export default function ReverseHopMapVisualizer({
 
       {/* Unmapped Nodes Explanatory Ribbon */}
       {unmappedHops.length > 0 && (
-        <div className="px-4 py-1.5 bg-[#F2F2EE]/70 dark:bg-[#1B211E]/70 border-b border-[#E5E5E5] dark:border-[#29342F] flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+        <div className="px-4 py-1.5 bg-[#F2F2EE]/70 dark:bg-[#1B211E]/70 border-b border-[#E5E5E5] dark:border-[#29342F] flex flex-wrap items-center justify-between gap-2 text-[11px]">
           <div className="flex items-center gap-1.5 flex-wrap">
             <Info className="w-3 h-3 text-[#F59E0B]" />
             <span className="font-semibold text-[#121212] dark:text-[#F2F2EE]">
@@ -191,7 +191,7 @@ export default function ReverseHopMapVisualizer({
 
         {/* Floating Detailed Telemetry Card */}
         {activeHop && (
-          <div className="absolute top-3 left-3 max-w-[280px] sm:max-w-[320px] bg-[#FFFFFF]/95 dark:bg-[#151A17]/95 backdrop-blur-md p-3.5 rounded border border-[#E5E5E5] dark:border-[#29342F] shadow-lg font-mono text-xs z-[400] transition-all pointer-events-auto">
+          <div className="absolute top-3 left-3 max-w-[280px] sm:max-w-[320px] bg-[#FFFFFF]/95 dark:bg-[#151A17]/95 backdrop-blur-md p-3.5 rounded border border-[#E5E5E5] dark:border-[#29342F] shadow-lg text-xs z-[400] transition-all pointer-events-auto">
             <div className="flex items-center justify-between gap-2 border-b border-[#E5E5E5] dark:border-[#29342F] pb-2 mb-2">
               <div className="flex items-center gap-1.5">
                 <span className="w-5 h-5 rounded-full bg-[#0052FF] text-[#FFFFFF] flex items-center justify-center text-[10px] font-bold">
@@ -211,7 +211,7 @@ export default function ReverseHopMapVisualizer({
             <div className="space-y-1.5 text-[11px] text-[#434656] dark:text-[#A0A7A3]">
               <div className="flex justify-between items-start gap-1">
                 <span className="text-[#737688]">IP Address:</span>
-                <strong className="text-[#121212] dark:text-[#F2F2EE]">{activeHop.hop.ip}</strong>
+                <strong className="text-[#121212] dark:text-[#F2F2EE] font-mono">{activeHop.hop.ip}</strong>
               </div>
 
               {activeHop.hop.hostnameClaimed && (
@@ -265,7 +265,7 @@ export default function ReverseHopMapVisualizer({
         )}
 
         {/* Map Legend Overlay */}
-        <div className="absolute bottom-2 left-2 px-2.5 py-1.5 bg-[#FFFFFF]/90 dark:bg-[#151A17]/90 backdrop-blur-sm rounded border border-[#E5E5E5] dark:border-[#29342F] flex items-center gap-3 text-[10px] font-mono text-[#737688] dark:text-[#A0A7A3] z-[400]">
+        <div className="absolute bottom-2 left-2 px-2.5 py-1.5 bg-[#FFFFFF]/90 dark:bg-[#151A17]/90 backdrop-blur-sm rounded border border-[#E5E5E5] dark:border-[#29342F] flex items-center gap-3 text-[10px] text-[#737688] dark:text-[#A0A7A3] z-[400]">
           <div className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-[#10B981]" />
             <span>Trusted</span>

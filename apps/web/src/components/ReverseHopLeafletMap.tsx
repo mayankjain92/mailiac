@@ -312,12 +312,12 @@ export default function ReverseHopLeafletMap({
 
       marker.bindTooltip(
         `
-        <div class="font-mono text-xs p-1">
+        <div class="text-xs p-1 font-sans">
           <div class="flex items-center gap-1.5 font-bold mb-0.5">
             <span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] text-white" style="background-color: ${theme.primary}">
               ${m.hopNumber}
             </span>
-            <span>Hop ${m.hopNumber}: ${m.ip}</span>
+            <span>Hop ${m.hopNumber}: <span class="font-mono">${m.ip}</span></span>
           </div>
           <div class="text-[10px] text-gray-400">
             ${m.city ? `${m.city}, ` : ''}${m.country || 'Unknown Location'}
@@ -325,7 +325,7 @@ export default function ReverseHopLeafletMap({
           <div class="text-[9px] font-semibold mt-0.5" style="color: ${theme.primary}">
             ${m.classification.tier}
           </div>
-          ${m.isCollocated ? '<div class="text-[8.5px] text-amber-400 font-mono mt-0.5">Collocated Infrastructure Node</div>' : ''}
+          ${m.isCollocated ? '<div class="text-[8.5px] text-amber-400 mt-0.5">Collocated Infrastructure Node</div>' : ''}
         </div>
       `,
         {

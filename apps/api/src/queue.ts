@@ -7,4 +7,10 @@ const connection = new Redis(redisUrl, {
   maxRetriesPerRequest: null,
 });
 
-export const emailQueue = new Queue('email-forensics', { connection });
+export const emailQueue = new Queue('email-forensics', {
+  connection,
+  defaultJobOptions: {
+    removeOnComplete: { count: 100 },
+    removeOnFail: { count: 500 },
+  },
+});

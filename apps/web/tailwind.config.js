@@ -21,9 +21,9 @@ module.exports = {
         'error': '#ba1a1a',
       },
       fontFamily: {
-        sans: ['Hanken Grotesk', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        sans: ['var(--font-sans)', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
-        display: ['Hanken Grotesk', 'sans-serif'],
+        display: ['var(--font-sans)', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
       },
     },
   },

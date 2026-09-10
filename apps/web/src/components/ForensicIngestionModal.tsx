@@ -13,6 +13,9 @@ import {
   HelpCircle,
   Sparkles,
 } from 'lucide-react';
+import { sessionFetch } from '@/lib/session';
+import { useAuth } from '@/lib/auth';
+import { uploadEml, isAuthError, getErrorMessage } from '@/lib/api';
 
 interface ForensicIngestionModalProps {
   isOpen: boolean;
@@ -26,6 +29,7 @@ export default function ForensicIngestionModal({
   onJobCreated,
 }: ForensicIngestionModalProps): React.JSX.Element | null {
   const router = useRouter();
+  const { user, openSignInModal } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -40,11 +44,11 @@ export default function ForensicIngestionModal({
   // Check Gmail connection status
   const checkGmailStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/gmail/status');
+      const res = await sessionFetch('/api/gmail/status');
       if (res.ok) {
         const data = (await res.json()) as { connected: boolean; email?: string };
         setIsGmailConnected(data.connected);
-        setConnectedGmailEmail(data.email ?? null);
+        setConnectedGmailEmail(data.email || null);
       } else {
         setIsGmailConnected(false);
       }
@@ -89,8 +93,8 @@ export default function ForensicIngestionModal({
 
   const processFile = (file: File): void => {
     setError(null);
-    if (!file.name.toLowerCase().endsWith('.eml') && file.type !== 'message/rfc822') {
-      setError('Please select a valid .eml email file.');
+    if (!file.name.toLowerCase().endsWith('.eml')) {
+      setError('Invalid file format. Please upload a standard RFC-822 formatted .eml file.');
       return;
     }
     setSelectedFile(file);
@@ -100,24 +104,16 @@ export default function ForensicIngestionModal({
   const handleUploadEml = async (): Promise<void> => {
     if (!selectedFile) return;
 
+    if (!user) {
+      openSignInModal('You need to sign in to upload and analyze emails.');
+      return;
+    }
+
     setIsUploading(true);
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('eml', selectedFile);
-
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errJson = await response.json().catch(() => ({}));
-        throw new Error(errJson.error || `Upload failed with status ${response.status}`);
-      }
-
-      const data = (await response.json()) as { jobId: string };
+      const data = await uploadEml(selectedFile);
       if (!data.jobId) {
         throw new Error('No jobId returned from API server');
       }
@@ -129,7 +125,10 @@ export default function ForensicIngestionModal({
       }
       onClose();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to upload .eml file.';
+      if (isAuthError(err)) {
+        return;
+      }
+      const message = getErrorMessage(err, 'Failed to upload .eml file.');
       setError(message);
     } finally {
       setIsUploading(false);
@@ -138,6 +137,11 @@ export default function ForensicIngestionModal({
 
   // 1-Click Load Sample Phishing Email for Testing & Evaluation
   const handleLoadSample = async (): Promise<void> => {
+    if (!user) {
+      openSignInModal('You need to sign in to run forensic analysis.');
+      return;
+    }
+
     setIsUploading(true);
     setError(null);
 
@@ -150,20 +154,7 @@ export default function ForensicIngestionModal({
       });
       setSelectedFile(sampleFile);
 
-      const formData = new FormData();
-      formData.append('eml', sampleFile);
-
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errJson = await response.json().catch(() => ({}));
-        throw new Error(errJson.error || `Upload failed with status ${response.status}`);
-      }
-
-      const data = (await response.json()) as { jobId: string };
+      const data = await uploadEml(sampleFile);
       if (!data.jobId) {
         throw new Error('No jobId returned from API server');
       }
@@ -177,18 +168,26 @@ export default function ForensicIngestionModal({
       }
       onClose();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load sample payload.';
+      if (isAuthError(err)) {
+        return;
+      }
+      const message = getErrorMessage(err, 'Failed to load sample phishing email.');
       setError(message);
     } finally {
       setIsUploading(false);
     }
   };
 
-  // Connect Gmail or Navigate to /mailbox
-  const handleGmailAction = async (): Promise<void> => {
+  // Connect or switch to Gmail mode
+  const handleConnectGmail = async (): Promise<void> => {
     if (isGmailConnected) {
       onClose();
       router.push('/mailbox');
+      return;
+    }
+
+    if (!user) {
+      openSignInModal('You need to sign in to connect your Gmail account.');
       return;
     }
 
@@ -196,12 +195,19 @@ export default function ForensicIngestionModal({
     setError(null);
 
     try {
-      const res = await fetch('/api/gmail/auth/url');
-      if (!res.ok) throw new Error('Failed to obtain Google authentication URL');
+      const res = await sessionFetch('/api/gmail/auth/url');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to obtain Google authentication URL');
+      }
       const data = (await res.json()) as { url: string };
       window.location.href = data.url;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Authentication initiation failed';
+      if (isAuthError(err)) {
+        setIsConnecting(false);
+        return;
+      }
+      const msg = getErrorMessage(err, 'Authentication initiation failed');
       setError(msg);
       setIsConnecting(false);
     }
@@ -230,7 +236,7 @@ export default function ForensicIngestionModal({
 
         {/* Modal Header */}
         <header className="p-8 md:p-10 border-b border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17]">
-          <p className="font-mono text-xs font-bold text-[#0052ff] dark:text-[#3b82f6] mb-2 tracking-widest uppercase">
+          <p className="text-xs font-semibold text-[#0052ff] dark:text-[#3b82f6] mb-2 tracking-widest uppercase">
             MAILIAC · FORENSIC INGESTION
           </p>
           <h1 className="text-2xl md:text-3xl font-extrabold text-[#1a1c1c] dark:text-[#F2F2EE] tracking-tight mb-2">
@@ -265,7 +271,7 @@ export default function ForensicIngestionModal({
                 <Sparkles className="w-4 h-4" />
               </div>
               <div>
-                <p className="text-xs font-mono font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                <p className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
                   <span>Interactive Threat Simulation</span>
                   <span className="px-1.5 py-0.5 text-[9px] font-bold bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded">
                     SANDBOX DEMO
@@ -280,7 +286,7 @@ export default function ForensicIngestionModal({
               type="button"
               onClick={handleLoadSample}
               disabled={isUploading}
-              className="shrink-0 w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-mono font-bold rounded shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+              className="shrink-0 w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               {isUploading ? (
                 <>
@@ -321,7 +327,7 @@ export default function ForensicIngestionModal({
                 <div className="w-10 h-10 rounded bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6]">
                   <FileText className="w-5 h-5" />
                 </div>
-                <span className="font-mono text-[10px] font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-wider">
+                <span className="text-[10px] font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-wider">
                   LOCAL INGESTION
                 </span>
               </div>
@@ -387,7 +393,7 @@ export default function ForensicIngestionModal({
                 <div className="w-10 h-10 rounded bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6]">
                   <Mail className="w-5 h-5" />
                 </div>
-                <span className="font-mono text-[10px] font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-wider flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-wider flex items-center gap-1.5">
                   {isGmailConnected ? (
                     <>
                       <span className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse"></span>
@@ -439,9 +445,9 @@ export default function ForensicIngestionModal({
 
                   <button
                     type="button"
-                    onClick={handleGmailAction}
+                    onClick={handleConnectGmail}
                     disabled={isConnecting}
-                    className="w-full py-2.5 px-3 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] text-[#434656] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#F2F2EE] hover:border-[#0052ff] dark:hover:border-[#3b82f6] text-xs font-mono font-medium rounded transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="w-full py-2.5 px-3 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] text-[#434656] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#F2F2EE] hover:border-[#0052ff] dark:hover:border-[#3b82f6] text-xs font-medium rounded transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {isConnecting ? (
                       <>
@@ -473,7 +479,7 @@ export default function ForensicIngestionModal({
 
             <button
               onClick={() => setShowHelpOverlay(!showHelpOverlay)}
-              className="font-mono text-xs font-bold text-[#0052ff] dark:text-[#3b82f6] hover:underline flex items-center gap-1.5 border-b border-[#0052ff] dark:border-[#3b82f6] pb-0.5"
+              className="text-xs font-semibold text-[#0052ff] dark:text-[#3b82f6] hover:underline flex items-center gap-1.5 border-b border-[#0052ff] dark:border-[#3b82f6] pb-0.5"
             >
               <HelpCircle className="w-3.5 h-3.5" />
               <span>How to get an .EML from Gmail</span>
@@ -483,7 +489,7 @@ export default function ForensicIngestionModal({
 
           {/* Help Drawer / Instructions Overlay */}
           {showHelpOverlay && (
-            <div className="p-5 bg-[#EAEAE5] dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-lg animate-fadeIn text-xs font-mono space-y-3">
+            <div className="p-5 bg-[#EAEAE5] dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-lg animate-fadeIn text-xs space-y-3">
               <div className="flex justify-between items-center pb-2 border-b border-[#D5D5CE] dark:border-[#29342F]">
                 <span className="font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-wider">
                   EXPORTING .EML FROM GMAIL

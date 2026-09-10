@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import ForensicIngestionModal from '@/components/ForensicIngestionModal';
+import AppHeader from '@/components/StitchLandingHeader';
 import type { GmailMessageAnalysisEnrichment } from '@mailiac/shared-types';
 import {
   Shield,
@@ -22,16 +22,16 @@ import {
   LogOut,
   X,
   Menu,
-  FileSearch,
   ExternalLink,
-  Sun,
-  Moon,
   Sparkles,
+  User,
 } from 'lucide-react';
 
-import { useTheme } from '@/components/ThemeProvider';
 import { decodeHtmlEntities } from '@/lib/utils';
 import VerdictBadge from '@/components/VerdictBadge';
+import { sessionFetch, getOrCreateSessionId, clearSession } from '@/lib/session';
+import { useAuth } from '@/lib/auth';
+import SignInRequiredState from '@/components/SignInRequiredState';
 
 export interface GmailMessageSummary extends Partial<GmailMessageAnalysisEnrichment> {
   id: string;
@@ -240,8 +240,7 @@ All gateway security appliances reported normal baseline metrics with zero confi
 function MailboxContent(): React.JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { theme, toggleTheme } = useTheme();
-  const isDarkMode = theme === 'dark';
+  const { user, isLoading: isAuthLoading, login: loginWithGoogle, openSignInModal } = useAuth();
 
   // State
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
@@ -260,14 +259,27 @@ function MailboxContent(): React.JSX.Element {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [analyzingMessageId, setAnalyzingMessageId] = useState<string | null>(null);
   const [isDisconnecting, setIsDisconnecting] = useState<boolean>(false);
-  const [isIngestionModalOpen, setIsIngestionModalOpen] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // User switching & logout isolation: clear all user-specific state when user ID changes
+  useEffect(() => {
+    if (!isDemoMode) {
+      setMessages([]);
+      setSelectedEmailId(null);
+      setSelectedCheckboxIds(new Set());
+      setRecentReports([]);
+      setSearchQuery('');
+      setError(null);
+      setIsConnected(null);
+      setConnectedEmail(null);
+    }
+  }, [user?.id, isDemoMode]);
 
   // Check connection status
   const checkStatus = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await fetch('/api/gmail/status');
+      const res = await sessionFetch('/api/gmail/status');
       if (res.ok) {
         const data = (await res.json()) as { connected: boolean; email?: string };
         setIsConnected(data.connected);
@@ -310,7 +322,7 @@ function MailboxContent(): React.JSX.Element {
         if (pageToken) params.append('pageToken', pageToken);
         params.append('maxResults', '30');
 
-        const res = await fetch(`/api/gmail/messages?${params.toString()}`);
+        const res = await sessionFetch(`/api/gmail/messages?${params.toString()}`);
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.error || `Failed to fetch messages (${res.status})`);
@@ -345,6 +357,7 @@ function MailboxContent(): React.JSX.Element {
 
   // Initial load
   useEffect(() => {
+    getOrCreateSessionId();
     const isDemoRequested = searchParams.get('demo') === 'true';
     if (isDemoRequested) {
       setIsDemoMode(true);
@@ -356,6 +369,16 @@ function MailboxContent(): React.JSX.Element {
       return;
     }
 
+    if (isAuthLoading) return;
+
+    if (!user) {
+      setIsConnected(false);
+      setConnectedEmail(null);
+      setMessages([]);
+      setIsLoading(false);
+      return;
+    }
+
     checkStatus().then((connected) => {
       if (connected) {
         fetchMessages();
@@ -363,7 +386,31 @@ function MailboxContent(): React.JSX.Element {
         setIsLoading(false);
       }
     });
-  }, [checkStatus, fetchMessages, searchParams]);
+  }, [checkStatus, fetchMessages, searchParams, user, isAuthLoading]);
+
+  // Connect Gmail account
+  const handleConnectGmail = async (): Promise<void> => {
+    if (!user) {
+      openSignInModal('You need to sign in to connect your Gmail account.');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+      const res = await sessionFetch('/api/gmail/auth/url');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to obtain Google authentication URL');
+      }
+      const data = (await res.json()) as { url: string };
+      window.location.href = data.url;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Authentication initiation failed';
+      setError(msg);
+      setIsLoading(false);
+    }
+  };
 
   // Disconnect account or exit sandbox
   const handleDisconnect = async (): Promise<void> => {
@@ -380,8 +427,9 @@ function MailboxContent(): React.JSX.Element {
     setIsDisconnecting(true);
     setError(null);
     try {
-      const res = await fetch('/api/gmail/disconnect', { method: 'DELETE' });
+      const res = await sessionFetch('/api/gmail/disconnect', { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to disconnect Gmail account');
+      clearSession();
       setIsConnected(false);
       setConnectedEmail(null);
       setMessages([]);
@@ -436,7 +484,7 @@ function MailboxContent(): React.JSX.Element {
         return;
       }
 
-      const res = await fetch(`/api/gmail/messages/${message.id}/analyze`, {
+      const res = await sessionFetch(`/api/gmail/messages/${message.id}/analyze`, {
         method: 'POST',
       });
 
@@ -517,8 +565,12 @@ function MailboxContent(): React.JSX.Element {
 
   // Fetch recent forensic reports from backend API (capped at 5)
   const fetchRecentReports = useCallback(async (): Promise<void> => {
+    if (!user && !isDemoMode) {
+      setRecentReports([]);
+      return;
+    }
     try {
-      const res = await fetch('/api/reports/history?limit=5');
+      const res = await sessionFetch('/api/reports/history?limit=5');
       if (res.ok) {
         const data = await res.json();
         const records: RecentReportItem[] = Array.isArray(data?.records)
@@ -527,15 +579,22 @@ function MailboxContent(): React.JSX.Element {
           ? data
           : [];
         setRecentReports(records.slice(0, 5));
+      } else {
+        setRecentReports([]);
       }
     } catch {
       // Graceful fallback on network glitch
+      setRecentReports([]);
     }
-  }, []);
+  }, [user, isDemoMode]);
 
   useEffect(() => {
-    fetchRecentReports();
-  }, [fetchRecentReports]);
+    if (user || isDemoMode) {
+      fetchRecentReports();
+    } else {
+      setRecentReports([]);
+    }
+  }, [fetchRecentReports, user, isDemoMode]);
 
   // Selected email object
   const selectedEmail = useMemo(() => {
@@ -613,46 +672,51 @@ function MailboxContent(): React.JSX.Element {
 
   return (
     <div className="min-h-screen h-screen flex flex-col bg-[#F2F2EE] dark:bg-[#0b0b0b] text-[#1a1c1c] dark:text-[#fdfcf8] grid-bg overflow-hidden font-sans selection:bg-[#0052ff] selection:text-white transition-colors duration-200">
-      {/* Top Bar (Stitch Gmail Header) */}
-      <header className="bg-[#F2F2EE] dark:bg-[#0b0b0b] flex items-center justify-between w-full px-4 py-2 shrink-0 z-50 border-b border-[#D5D5CE] dark:border-[#29342F] h-[64px] transition-colors">
-        {/* Left: Brand + Hamburger */}
-        <div className="flex items-center gap-3">
+      {/* Unified App Header */}
+      <AppHeader
+        onJobCreated={(jobId, fileName) => {
+          router.push(
+            `/forensic-analysis?jobId=${encodeURIComponent(jobId)}&fileName=${encodeURIComponent(
+              fileName || 'Uploaded EML Sample'
+            )}`
+          );
+        }}
+      />
+
+      {/* Mailbox Sub-Toolbar */}
+      <div className="bg-[#F2F2EE] dark:bg-[#0b0b0b] flex items-center justify-between w-full px-4 py-2 shrink-0 z-30 border-b border-[#D5D5CE] dark:border-[#29342F] h-[52px] transition-colors">
+        {/* Left: Sidebar toggle + Mailbox label */}
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 text-[#737688] dark:text-[#A0A7A3] hover:bg-[#EAEAE5] dark:hover:bg-[#202124] rounded-full transition-colors focus:outline-none"
+            className="p-1.5 text-[#737688] dark:text-[#A0A7A3] hover:bg-[#EAEAE5] dark:hover:bg-[#202124] rounded-md transition-colors focus:outline-none"
             title="Toggle Sidebar"
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-4 h-4" />
           </button>
-
-          <Link href="/" className="flex items-center gap-2 group cursor-pointer mr-4">
-            <div className="w-8 h-8 rounded bg-[#0052ff] dark:bg-[#3b82f6] flex items-center justify-center text-white font-bold text-base shadow-sm">
-              <Shield className="w-5 h-5" />
-            </div>
-            <span className="text-xl font-extrabold text-[#1a1c1c] dark:text-[#fdfcf8] tracking-tight">
-              Mailiac
-            </span>
-          </Link>
+          <span className="text-xs font-bold uppercase tracking-wider text-[#434656] dark:text-[#A0A7A3]">
+            Inbox Viewer
+          </span>
         </div>
 
-        {/* Center: Search Bar & Analyze CTA */}
-        <div className="flex-1 max-w-[720px] mx-4 flex items-center gap-3">
+        {/* Center: Search Bar */}
+        <div className="flex-1 max-w-[600px] mx-4">
           <form
             onSubmit={handleSearchSubmit}
-            className="relative flex-1 flex items-center bg-white dark:bg-[#202124] rounded-full overflow-hidden focus-within:ring-1 focus-within:ring-[#0052ff] transition-all border border-[#D5D5CE] dark:border-[#333] shadow-sm"
+            className="relative flex items-center bg-white dark:bg-[#151A17] rounded-full overflow-hidden focus-within:ring-1 focus-within:ring-[#0052ff] dark:focus-within:ring-[#3b82f6] transition-all border border-[#D5D5CE] dark:border-[#29342F] shadow-sm h-8"
           >
             <button
               type="submit"
-              className="p-2.5 text-[#737688] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] pl-3.5 focus:outline-none"
+              className="p-1.5 text-[#737688] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] pl-3 focus:outline-none"
             >
-              <Search className="w-4 h-4" />
+              <Search className="w-3.5 h-3.5" />
             </button>
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search mail (e.g. from:paypal, invoice, subject:urgent)..."
-              className="bg-transparent border-none w-full px-2 py-2 text-xs font-mono text-[#1a1c1c] dark:text-[#fdfcf8] placeholder-[#737688] dark:placeholder-[#7D8681] focus:outline-none focus:ring-0"
+              className="bg-transparent border-none w-full px-2 py-1 text-xs text-[#1a1c1c] dark:text-[#fdfcf8] placeholder-[#737688] dark:placeholder-[#7D8681] focus:outline-none focus:ring-0"
             />
             {searchQuery && (
               <button
@@ -661,90 +725,61 @@ function MailboxContent(): React.JSX.Element {
                   setSearchQuery('');
                   fetchMessages('');
                 }}
-                className="p-2 text-[#737688] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] pr-3"
+                className="p-1 text-[#737688] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] pr-2.5"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-3 h-3" />
               </button>
             )}
           </form>
-
-          <button
-            type="button"
-            onClick={() => setIsIngestionModalOpen(true)}
-            className="bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white text-xs font-semibold px-4 py-2.5 rounded-full flex items-center gap-1.5 transition-colors shrink-0 shadow-sm font-mono uppercase tracking-wider"
-          >
-            <FileSearch className="w-4 h-4" />
-            <span className="hidden sm:inline">Analyze an email</span>
-          </button>
         </div>
 
-        {/* Right: Status, Help, Theme, Profile */}
+        {/* Right: Mailbox-specific Connection Status / Actions */}
         <div className="flex items-center gap-2">
           {isDemoMode ? (
-            <div className="flex items-center gap-2">
-              <div
-                className="flex items-center gap-1.5 px-3 py-1 bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 border border-[#0052ff]/30 dark:border-[#3b82f6]/40 rounded-full font-mono text-[11px] font-bold text-[#0052ff] dark:text-[#3b82f6]"
-                title="Interactive Sandbox Mailbox Environment"
-              >
-                <span className="w-2 h-2 rounded-full bg-[#0052ff] dark:bg-[#3b82f6] animate-pulse"></span>
-                <span>SANDBOX MAILBOX</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsIngestionModalOpen(true)}
-                className="hidden md:inline-flex items-center gap-1 text-[11px] font-mono text-[#737688] dark:text-[#A0A7A3] hover:text-[#0052ff] dark:hover:text-[#3b82f6] border border-[#D5D5CE] dark:border-[#29342F] px-2.5 py-1 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-colors"
-              >
-                <Mail className="w-3 h-3" />
-                <span>Live OAuth</span>
-              </button>
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 border border-[#0052ff]/30 dark:border-[#3b82f6]/40 rounded-full text-[10px] font-bold text-[#0052ff] dark:text-[#3b82f6]"
+              title="Interactive Sandbox Mailbox Environment"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-[#0052ff] dark:bg-[#3b82f6] animate-pulse"></span>
+              <span>SANDBOX</span>
             </div>
           ) : isConnected ? (
             <div
-              className="flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/30 rounded-full font-mono text-[11px] font-bold text-green-700 dark:text-green-400"
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-green-500/10 border border-green-500/30 rounded-full text-[10px] font-bold text-green-700 dark:text-green-400"
               title={connectedEmail ? `Connected: ${connectedEmail}` : 'Gmail Connected'}
             >
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-              <span className="hidden md:inline">Gmail Connected</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+              <span className="hidden sm:inline">Connected</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-full font-mono text-[11px] font-bold text-amber-700 dark:text-amber-400">
-              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-              <span>Disconnected</span>
-            </div>
+            <button
+              type="button"
+              onClick={handleConnectGmail}
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-full text-[10px] font-bold text-amber-700 dark:text-amber-400 transition-colors"
+              title="Connect your Gmail account"
+            >
+              <Mail className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+              <span>Connect Gmail</span>
+            </button>
           )}
-
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="p-2 text-[#737688] dark:text-[#A0A7A3] hover:bg-[#EAEAE5] dark:hover:bg-[#202124] rounded-full transition-colors"
-            title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          >
-            {isDarkMode ? <Sun className="w-4 h-4 text-[#fbbf24]" /> : <Moon className="w-4 h-4 text-[#434656]" />}
-          </button>
 
           {(isConnected || isDemoMode) && (
             <button
               onClick={handleDisconnect}
               disabled={isDisconnecting}
-              className="p-2 text-[#737688] dark:text-[#A0A7A3] hover:text-[#ef4444] hover:bg-[#EAEAE5] dark:hover:bg-[#202124] rounded-full transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-[#737688] dark:text-[#A0A7A3] hover:text-[#ef4444] hover:bg-[#ef4444]/10 rounded border border-transparent hover:border-[#ef4444]/30 transition-colors disabled:opacity-50 font-medium"
               title={isDemoMode ? 'Exit Sandbox Mailbox' : 'Disconnect Gmail Account'}
             >
               {isDisconnecting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-3 h-3 animate-spin" />
               ) : (
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-3 h-3" />
               )}
+              <span className="hidden sm:inline">Disconnect</span>
             </button>
           )}
-
-          <div
-            className="w-8 h-8 rounded-full bg-white dark:bg-[#202124] border border-[#D5D5CE] dark:border-[#333] flex items-center justify-center text-xs font-bold font-mono text-[#0052ff] dark:text-[#3b82f6] ml-1 shadow-sm"
-            title={connectedEmail || 'Mailiac User'}
-          >
-            {connectedEmail ? connectedEmail[0].toUpperCase() : 'M'}
-          </div>
         </div>
-      </header>
+      </div>
 
       {/* Main Mailbox Content Area */}
       <div className="flex flex-1 overflow-hidden bg-[#F2F2EE] dark:bg-[#0b0b0b]">
@@ -754,7 +789,7 @@ function MailboxContent(): React.JSX.Element {
             isSidebarOpen ? 'w-60' : 'w-0 hidden'
           } flex flex-col h-full shrink-0 z-40 bg-[#F2F2EE] dark:bg-[#0b0b0b] pt-3 pr-2 transition-all duration-200 border-r border-[#D5D5CE] dark:border-[#29342F] select-none`}
         >
-          <nav className="flex-1 overflow-y-auto space-y-1 text-xs font-mono">
+          <nav className="flex-1 overflow-y-auto space-y-1 text-xs">
             {/* Mailbox Section */}
             <div className="px-5 text-[10px] font-bold text-[#737688] dark:text-[#7D8681] uppercase tracking-widest mb-1.5">
               MAILBOX
@@ -869,11 +904,11 @@ function MailboxContent(): React.JSX.Element {
             <div className="pt-6 pb-2">
               <div className="px-5 text-[10px] font-bold text-[#737688] dark:text-[#7D8681] uppercase tracking-widest mb-2 flex items-center justify-between">
                 <span>RECENT INVESTIGATIONS</span>
-                <span className="text-[9px] font-mono opacity-60">LAST 5</span>
+                <span className="text-[9px] opacity-60">LAST 5</span>
               </div>
 
               {recentReports.length === 0 ? (
-                <div className="px-5 py-1.5 text-[11px] font-mono text-[#737688] dark:text-[#656464]">
+                <div className="px-5 py-1.5 text-[11px] text-[#737688] dark:text-[#656464]">
                   No recent investigations
                 </div>
               ) : (
@@ -891,7 +926,7 @@ function MailboxContent(): React.JSX.Element {
                           score={report.finalScore}
                           size="sm"
                         />
-                        <span className="text-[10px] font-mono text-[#737688] dark:text-[#7D8681] shrink-0">
+                        <span className="text-[10px] text-[#737688] dark:text-[#7D8681] shrink-0">
                           {formatTimestamp(report.timestamp || report.createdAt || '')}
                         </span>
                       </div>
@@ -904,7 +939,7 @@ function MailboxContent(): React.JSX.Element {
                   <div className="pt-2 px-3 mt-1 border-t border-[#D5D5CE]/50 dark:border-[#29342F]/50">
                     <Link
                       href="/history"
-                      className="text-[10px] font-mono text-[#0052ff] dark:text-[#3b82f6] hover:underline flex items-center justify-between font-bold uppercase tracking-wider"
+                      className="text-[10px] text-[#0052ff] dark:text-[#3b82f6] hover:underline flex items-center justify-between font-bold uppercase tracking-wider"
                     >
                       <span>View full audit log</span>
                       <ArrowRight className="w-3 h-3" />
@@ -945,18 +980,19 @@ function MailboxContent(): React.JSX.Element {
                     fetchMessages(searchQuery);
                   }}
                   disabled={isLoading || isRefreshing}
-                  className="p-1.5 text-[#737688] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] hover:bg-[#EAEAE5] dark:hover:bg-[#202124] rounded-full transition-colors"
-                  title="Refresh Mailbox"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[#434656] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] hover:bg-[#EAEAE5] dark:hover:bg-[#202124] rounded transition-colors text-[11px] border border-[#D5D5CE] dark:border-[#29342F]"
+                  title="Sync Inbox"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  <span>Sync Inbox</span>
                 </button>
 
-                <span className="text-[11px] font-mono font-bold uppercase text-[#737688] dark:text-[#7D8681] tracking-wider ml-1">
+                <span className="text-[11px] font-bold uppercase text-[#737688] dark:text-[#7D8681] tracking-wider ml-1">
                   {activeFilter} ({filteredMessages.length})
                 </span>
               </div>
 
-              <div className="flex items-center gap-3 text-xs text-[#737688] dark:text-[#A0A7A3] font-mono">
+              <div className="flex items-center gap-3 text-xs text-[#737688] dark:text-[#A0A7A3]">
                 <span>
                   {filteredMessages.length === 0
                     ? '0 emails'
@@ -968,7 +1004,7 @@ function MailboxContent(): React.JSX.Element {
                     <button
                       onClick={() => fetchMessages(searchQuery, nextPageToken)}
                       disabled={isLoading}
-                      className="p-1 text-[#737688] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] hover:bg-[#EAEAE5] dark:hover:bg-[#202124] rounded transition-colors text-[11px] font-mono flex items-center gap-1"
+                      className="p-1 text-[#737688] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] hover:bg-[#EAEAE5] dark:hover:bg-[#202124] rounded transition-colors text-[11px] flex items-center gap-1"
                     >
                       <span>More</span>
                       <ChevronRight className="w-3.5 h-3.5" />
@@ -997,24 +1033,32 @@ function MailboxContent(): React.JSX.Element {
             {/* List Body */}
             <div className="flex-1 overflow-y-auto divide-y divide-[#EAEAE5] dark:divide-[#202124]">
               {isLoading && messages.length === 0 ? (
-                <div className="py-24 text-center text-xs font-mono text-[#737688] dark:text-[#A0A7A3] flex flex-col items-center gap-3">
+                <div className="py-24 text-center text-xs text-[#737688] dark:text-[#A0A7A3] flex flex-col items-center gap-3">
                   <Loader2 className="w-6 h-6 animate-spin text-[#0052ff] dark:text-[#3b82f6]" />
                   <span>Loading Gmail mailbox intelligence...</span>
                 </div>
-              ) : !isConnected ? (
+              ) : !user && !isDemoMode ? (
                 <div className="py-20 px-6 text-center max-w-lg mx-auto space-y-5">
                   <div className="w-14 h-14 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6] mx-auto">
-                    <Mail className="w-7 h-7" />
+                    <Shield className="w-7 h-7" />
                   </div>
                   <div className="space-y-2">
                     <h3 className="text-lg font-bold text-[#1a1c1c] dark:text-[#fdfcf8]">
-                      No Live Gmail Account Connected
+                      Sign in with Google to access Gmail Forensics
                     </h3>
                     <p className="text-xs text-[#434656] dark:text-[#A0A7A3] leading-relaxed max-w-md mx-auto">
-                      Inspect email headers and run one-click forensics on incoming threats. Launch the interactive Sandbox Mailbox to test with realistic email payloads, or authenticate an authorized Google account.
+                      Mailiac requires user identity authentication before synchronizing mailboxes or executing security scans. Sign in to your account to continue.
                     </p>
                   </div>
                   <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => loginWithGoogle()}
+                      className="w-full sm:w-auto bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white text-xs font-semibold px-5 py-3 rounded shadow-sm inline-flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <User className="w-4 h-4" />
+                      <span>Sign in with Google</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -1024,23 +1068,77 @@ function MailboxContent(): React.JSX.Element {
                         setMessages(DEMO_SANDBOX_MESSAGES);
                         setSelectedEmailId(DEMO_SANDBOX_MESSAGES[0].id);
                       }}
-                      className="w-full sm:w-auto bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white text-xs font-semibold px-5 py-3 rounded shadow-sm inline-flex items-center justify-center gap-2 transition-colors font-mono"
+                      className="w-full sm:w-auto border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold px-5 py-3 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#202124] inline-flex items-center justify-center gap-2 transition-colors"
                     >
                       <Sparkles className="w-4 h-4" />
                       <span>⚡ Launch Sandbox Mailbox</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsIngestionModalOpen(true)}
-                      className="w-full sm:w-auto border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold px-5 py-3 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#202124] inline-flex items-center justify-center gap-2 transition-colors font-mono"
-                    >
-                      <Mail className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" />
-                      <span>Connect Google Account</span>
-                    </button>
                   </div>
                 </div>
+              ) : !isConnected ? (
+                !user && !isDemoMode ? (
+                  <SignInRequiredState
+                    title="Sign in required to access Gmail Forensics"
+                    description="Connect your Google Workspace or Gmail account to inspect email headers, scan message attachments, and run automated forensic threat analysis."
+                    actionText="Sign in with Google"
+                    secondaryAction={
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsDemoMode(true);
+                          setIsConnected(true);
+                          setConnectedEmail('sandbox-audit@mailiac.security');
+                          setMessages(DEMO_SANDBOX_MESSAGES);
+                          setSelectedEmailId(DEMO_SANDBOX_MESSAGES[0].id);
+                        }}
+                        className="w-full sm:w-auto border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold px-5 py-3 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#202124] inline-flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>⚡ Launch Sandbox Mailbox</span>
+                      </button>
+                    }
+                  />
+                ) : (
+                  <div className="py-20 px-6 text-center max-w-lg mx-auto space-y-5">
+                    <div className="w-14 h-14 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6] mx-auto">
+                      <Mail className="w-7 h-7" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-bold text-[#1a1c1c] dark:text-[#fdfcf8]">
+                        Connect Gmail
+                      </h3>
+                      <p className="text-xs text-[#434656] dark:text-[#A0A7A3] leading-relaxed max-w-md mx-auto">
+                        Connect your Google Workspace or Gmail account with read-only permissions to inspect email headers, scan message attachments, and run automated forensic threat analysis.
+                      </p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={handleConnectGmail}
+                        className="w-full sm:w-auto bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white text-xs font-semibold px-5 py-3 rounded shadow-sm inline-flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <Mail className="w-4 h-4" />
+                        <span>Connect Gmail</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsDemoMode(true);
+                          setIsConnected(true);
+                          setConnectedEmail('sandbox-audit@mailiac.security');
+                          setMessages(DEMO_SANDBOX_MESSAGES);
+                          setSelectedEmailId(DEMO_SANDBOX_MESSAGES[0].id);
+                        }}
+                        className="w-full sm:w-auto border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold px-5 py-3 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#202124] inline-flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>⚡ Launch Sandbox Mailbox</span>
+                      </button>
+                    </div>
+                  </div>
+                )
               ) : filteredMessages.length === 0 ? (
-                <div className="py-24 text-center text-xs font-mono text-[#737688] dark:text-[#7D8681] space-y-2">
+                <div className="py-24 text-center text-xs text-[#737688] dark:text-[#7D8681] space-y-2">
                   <p>No messages match the active filter ({activeFilter}).</p>
                   {searchQuery && (
                     <button
@@ -1064,7 +1162,7 @@ function MailboxContent(): React.JSX.Element {
                     <div
                       key={msg.id}
                       onClick={() => setSelectedEmailId(msg.id)}
-                      className={`email-row flex items-center px-4 py-2.5 cursor-pointer text-xs font-sans transition-colors relative group select-none ${
+                      className={`email-row flex items-center px-4 py-2.5 cursor-pointer text-xs transition-colors relative group select-none ${
                         isSelected
                           ? 'bg-[#E8F0FE] dark:bg-[#1e232b] text-[#1a1c1c] dark:text-white border-l-2 border-[#0052ff]'
                           : 'bg-white dark:bg-[#0b0b0b] hover:bg-[#F4F6F8] dark:hover:bg-[#15181b] text-[#434656] dark:text-[#A0A7A3]'
@@ -1082,7 +1180,7 @@ function MailboxContent(): React.JSX.Element {
 
                       {/* Sender */}
                       <div
-                        className={`w-36 shrink-0 truncate font-mono text-xs pr-2 ${
+                        className={`w-36 shrink-0 truncate text-xs pr-2 ${
                           isSelected || msg.unread ? 'font-bold text-[#1a1c1c] dark:text-[#fdfcf8]' : 'text-[#434656] dark:text-[#A0A7A3]'
                         }`}
                       >
@@ -1101,7 +1199,7 @@ function MailboxContent(): React.JSX.Element {
                         ) : (
                           <span
                             title="Unanalyzed email · Click to run forensic pipeline"
-                            className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#EAEAE5] dark:bg-[#202124] text-[#555] dark:text-[#737688] border border-[#D5D5CE] dark:border-[#333] shrink-0 uppercase tracking-wider cursor-help"
+                            className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#EAEAE5] dark:bg-[#202124] text-[#555] dark:text-[#737688] border border-[#D5D5CE] dark:border-[#333] shrink-0 uppercase tracking-wider cursor-help"
                           >
                             [UNANALYZED]
                           </span>
@@ -1111,19 +1209,19 @@ function MailboxContent(): React.JSX.Element {
                           className={`truncate text-xs shrink-0 max-w-[65%] ${
                             isSelected || msg.unread
                               ? 'font-bold text-[#1a1c1c] dark:text-[#fdfcf8]'
-                              : 'font-normal text-[#333] dark:text-[#d0d0d0]'
+                              : 'font-medium text-[#1a1c1c] dark:text-[#E0E2EC]'
                           }`}
                         >
                           {decodeHtmlEntities(msg.subject) || '(No Subject)'}
                         </span>
 
-                        <span className="text-[#737688] dark:text-[#656464] truncate text-xs font-mono hidden md:inline flex-1 min-w-0">
+                        <span className="text-[#737688] dark:text-[#656464] truncate text-xs hidden md:inline flex-1 min-w-0">
                           — {decodeHtmlEntities(msg.snippet)}
                         </span>
                       </div>
 
                       {/* Timestamp */}
-                      <div className="text-[11px] font-mono text-[#737688] dark:text-[#7D8681] shrink-0 w-16 text-right group-hover:hidden">
+                      <div className="text-[11px] text-[#737688] dark:text-[#7D8681] shrink-0 w-16 text-right group-hover:hidden">
                         {formatTimestamp(msg.date)}
                       </div>
 
@@ -1133,7 +1231,7 @@ function MailboxContent(): React.JSX.Element {
                           <Link
                             href={`/analysis-console/${msg.jobId}/evidence`}
                             onClick={(e) => e.stopPropagation()}
-                            className="text-[10px] font-mono font-bold text-[#0052ff] dark:text-[#3b82f6] border border-[#0052ff]/40 dark:border-[#3b82f6]/40 bg-[#0052ff]/10 px-2 py-1 rounded hover:bg-[#0052ff]/20 flex items-center gap-1 transition-colors uppercase tracking-wider"
+                            className="text-[10px] font-bold text-[#0052ff] dark:text-[#3b82f6] border border-[#0052ff]/40 dark:border-[#3b82f6]/40 bg-[#0052ff]/10 px-2 py-1 rounded hover:bg-[#0052ff]/20 flex items-center gap-1 transition-colors uppercase tracking-wider"
                           >
                             <span>Report</span>
                             <ArrowRight className="w-3 h-3" />
@@ -1145,7 +1243,7 @@ function MailboxContent(): React.JSX.Element {
                               handleAnalyze(msg);
                             }}
                             disabled={isAnalyzing}
-                            className="text-[10px] font-mono font-bold text-white border border-[#0052ff] bg-[#0052ff] px-2 py-1 rounded hover:bg-[#004ced] flex items-center gap-1 transition-colors uppercase tracking-wider disabled:opacity-50"
+                            className="text-[10px] font-bold text-white border border-[#0052ff] bg-[#0052ff] px-2 py-1 rounded hover:bg-[#004ced] flex items-center gap-1 transition-colors uppercase tracking-wider disabled:opacity-50"
                           >
                             {isAnalyzing ? (
                               <Loader2 className="w-3 h-3 animate-spin" />
@@ -1178,14 +1276,14 @@ function MailboxContent(): React.JSX.Element {
                   >
                     <X className="w-4 h-4" />
                   </button>
-                  <span className="text-xs font-mono text-[#737688] dark:text-[#7D8681]">Email Inspection</span>
+                  <span className="text-xs text-[#737688] dark:text-[#7D8681]">Email Inspection</span>
                 </div>
 
-                <div className="flex items-center gap-2 text-xs font-mono">
+                <div className="flex items-center gap-2 text-xs">
                   {selectedEmail.analyzed && selectedEmail.jobId && (
                     <Link
                       href={`/analysis-console/${selectedEmail.jobId}/evidence`}
-                      className="text-xs font-mono font-bold text-[#0052ff] dark:text-[#3b82f6] hover:underline inline-flex items-center gap-1"
+                      className="text-xs font-bold text-[#0052ff] dark:text-[#3b82f6] hover:underline inline-flex items-center gap-1"
                     >
                       <span>Full Evidence Explorer</span>
                       <ExternalLink className="w-3.5 h-3.5" />
@@ -1203,13 +1301,13 @@ function MailboxContent(): React.JSX.Element {
                     <div className="bg-red-50 dark:bg-[#ef4444]/10 border-b border-red-200 dark:border-[#ef4444]/20 px-6 py-3 flex justify-between items-center text-red-700 dark:text-[#ef4444] animate-fadeIn">
                       <div className="flex items-center gap-3">
                         <ShieldAlert className="w-5 h-5 shrink-0" />
-                        <span className="font-mono text-xs font-bold uppercase tracking-wider">
+                        <span className="text-xs font-bold uppercase tracking-wider">
                           ⚠ QUARANTINE · RISK {selectedEmail.finalScore ?? 87}/100
                         </span>
                       </div>
                       <Link
                         href={`/analysis-console/${selectedEmail.jobId}/evidence`}
-                        className="text-[11px] font-mono font-bold border border-red-600 dark:border-[#ef4444] px-3 py-1 rounded bg-red-600 dark:bg-transparent text-white dark:text-[#ef4444] hover:bg-red-700 dark:hover:bg-[#ef4444] dark:hover:text-white transition-colors uppercase tracking-wider flex items-center gap-1"
+                        className="text-[11px] font-bold border border-red-600 dark:border-[#ef4444] px-3 py-1 rounded bg-red-600 dark:bg-transparent text-white dark:text-[#ef4444] hover:bg-red-700 dark:hover:bg-[#ef4444] dark:hover:text-white transition-colors uppercase tracking-wider flex items-center gap-1"
                       >
                         View Forensic Report <ArrowRight className="w-3.5 h-3.5" />
                       </Link>
@@ -1219,13 +1317,13 @@ function MailboxContent(): React.JSX.Element {
                     <div className="bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200 dark:border-amber-500/20 px-6 py-3 flex justify-between items-center text-amber-700 dark:text-amber-400 animate-fadeIn">
                       <div className="flex items-center gap-3">
                         <AlertTriangle className="w-5 h-5 shrink-0" />
-                        <span className="font-mono text-xs font-bold uppercase tracking-wider">
+                        <span className="text-xs font-bold uppercase tracking-wider">
                           ⚠ SUSPICIOUS · RISK {selectedEmail.finalScore ?? 45}/100
                         </span>
                       </div>
                       <Link
                         href={`/analysis-console/${selectedEmail.jobId}/evidence`}
-                        className="text-[11px] font-mono font-bold border border-amber-600 dark:border-amber-500 px-3 py-1 rounded bg-amber-600 dark:bg-transparent text-white dark:text-amber-400 hover:bg-amber-700 dark:hover:bg-amber-500 dark:hover:text-black transition-colors uppercase tracking-wider flex items-center gap-1"
+                        className="text-[11px] font-bold border border-amber-600 dark:border-amber-500 px-3 py-1 rounded bg-amber-600 dark:bg-transparent text-white dark:text-amber-400 hover:bg-amber-700 dark:hover:bg-amber-500 dark:hover:text-black transition-colors uppercase tracking-wider flex items-center gap-1"
                       >
                         View Report <ArrowRight className="w-3.5 h-3.5" />
                       </Link>
@@ -1234,13 +1332,13 @@ function MailboxContent(): React.JSX.Element {
                     <div className="bg-emerald-50 dark:bg-green-500/10 border-b border-emerald-200 dark:border-green-500/20 px-6 py-3 flex justify-between items-center text-emerald-700 dark:text-green-400 animate-fadeIn">
                       <div className="flex items-center gap-3">
                         <CheckCircle2 className="w-4 h-4" />
-                        <span className="font-mono text-xs font-bold uppercase tracking-wider">
+                        <span className="text-xs font-bold uppercase tracking-wider">
                           ✓ SAFE · RISK {selectedEmail.finalScore ?? 12}/100
                         </span>
                       </div>
                       <Link
                         href={`/analysis-console/${selectedEmail.jobId}/evidence`}
-                        className="text-[11px] font-mono font-bold border border-emerald-600 dark:border-green-500 px-3 py-1 rounded bg-emerald-600 dark:bg-transparent text-white dark:text-green-400 hover:bg-emerald-700 dark:hover:bg-green-500 dark:hover:text-black transition-colors uppercase tracking-wider flex items-center gap-1"
+                        className="text-[11px] font-bold border border-emerald-600 dark:border-green-500 px-3 py-1 rounded bg-emerald-600 dark:bg-transparent text-white dark:text-green-400 hover:bg-emerald-700 dark:hover:bg-green-500 dark:hover:text-black transition-colors uppercase tracking-wider flex items-center gap-1"
                       >
                         View Report <ArrowRight className="w-3.5 h-3.5" />
                       </Link>
@@ -1250,14 +1348,14 @@ function MailboxContent(): React.JSX.Element {
                   <div className="bg-[#0052ff]/5 dark:bg-[#0052ff]/10 border-b border-[#0052ff]/20 px-6 py-3 flex justify-between items-center text-[#0052ff] dark:text-[#3b82f6]">
                     <div className="flex items-center gap-3">
                       <HelpCircle className="w-5 h-5 shrink-0" />
-                      <span className="font-mono text-xs font-bold uppercase tracking-wider">
+                      <span className="text-xs font-bold uppercase tracking-wider">
                         MAILIAC ANALYSIS: This email has not been analyzed yet.
                       </span>
                     </div>
                     <button
                       onClick={() => handleAnalyze(selectedEmail)}
                       disabled={analyzingMessageId === selectedEmail.id}
-                      className="text-[11px] font-mono font-bold border border-[#0052ff] bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white px-3 py-1.5 rounded transition-colors uppercase tracking-wider flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                      className="text-[11px] font-bold border border-[#0052ff] bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white px-3 py-1.5 rounded transition-colors uppercase tracking-wider flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
                     >
                       {analyzingMessageId === selectedEmail.id ? (
                         <>
@@ -1282,7 +1380,7 @@ function MailboxContent(): React.JSX.Element {
 
                   <div className="flex justify-between items-start mb-8 pb-6 border-b border-[#D5D5CE] dark:border-[#29342F]">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-[#EAEAE5] dark:bg-[#202124] border border-[#D5D5CE] dark:border-[#333] text-[#1a1c1c] dark:text-[#fdfcf8] flex items-center justify-center font-bold text-sm font-mono shadow-sm">
+                      <div className="w-10 h-10 rounded-full bg-[#EAEAE5] dark:bg-[#202124] border border-[#D5D5CE] dark:border-[#333] text-[#1a1c1c] dark:text-[#fdfcf8] flex items-center justify-center font-bold text-sm shadow-sm">
                         {parseSender(selectedEmail.sender).name[0]?.toUpperCase() || 'U'}
                       </div>
                       <div>
@@ -1291,19 +1389,19 @@ function MailboxContent(): React.JSX.Element {
                             {parseSender(selectedEmail.sender).name}
                           </span>
                           {parseSender(selectedEmail.sender).email && (
-                            <span className="text-xs text-[#737688] dark:text-[#7D8681] font-mono">
+                            <span className="text-xs text-[#737688] dark:text-[#7D8681]">
                               &lt;{parseSender(selectedEmail.sender).email}&gt;
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-[#737688] dark:text-[#7D8681] mt-0.5 flex items-center gap-1 font-mono">
+                        <div className="text-xs text-[#737688] dark:text-[#7D8681] mt-0.5 flex items-center gap-1">
                           <span>to</span>
                           <span className="text-[#434656] dark:text-[#A0A7A3]">me</span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="text-xs text-[#737688] dark:text-[#7D8681] font-mono flex items-center gap-1.5 shrink-0">
+                    <div className="text-xs text-[#737688] dark:text-[#7D8681] flex items-center gap-1.5 shrink-0">
                       <Clock className="w-3.5 h-3.5" />
                       <span>{formatFullDate(selectedEmail.date)}</span>
                     </div>
@@ -1315,11 +1413,11 @@ function MailboxContent(): React.JSX.Element {
                       <p className="whitespace-pre-wrap">{decodeHtmlEntities(selectedEmail.snippet)}</p>
                     </div>
 
-                    <div className="pt-6 border-t border-[#D5D5CE] dark:border-[#29342F] text-[11px] font-mono text-[#737688] dark:text-[#7D8681] flex items-center justify-between">
-                      <span>Message-ID: {selectedEmail.messageIdHeader || selectedEmail.id}</span>
+                    <div className="pt-6 border-t border-[#D5D5CE] dark:border-[#29342F] text-[11px] text-[#737688] dark:text-[#7D8681] flex items-center justify-between">
+                      <span className="font-mono">Message-ID: {selectedEmail.messageIdHeader || selectedEmail.id}</span>
                       <button
                         onClick={() => handleAnalyze(selectedEmail)}
-                        className="text-[#0052ff] dark:text-[#3b82f6] hover:underline"
+                        className="text-[#0052ff] dark:text-[#3b82f6] hover:underline font-medium"
                       >
                         Deep forensic extraction →
                       </button>
@@ -1329,7 +1427,7 @@ function MailboxContent(): React.JSX.Element {
               </div>
             </div>
           ) : (
-            <div className="hidden lg:flex flex-1 items-center justify-center p-12 text-center text-xs font-mono text-[#737688] dark:text-[#7D8681]">
+            <div className="hidden lg:flex flex-1 items-center justify-center p-12 text-center text-xs text-[#737688] dark:text-[#7D8681]">
               <div className="max-w-sm space-y-3">
                 <div className="w-12 h-12 rounded-full bg-[#EAEAE5] dark:bg-[#15181b] border border-[#D5D5CE] dark:border-[#333] flex items-center justify-center text-[#737688] dark:text-[#7D8681] mx-auto shadow-sm">
                   <Mail className="w-6 h-6" />
@@ -1342,23 +1440,6 @@ function MailboxContent(): React.JSX.Element {
         </main>
       </div>
 
-      {/* Ingestion Modal Dialog */}
-      <ForensicIngestionModal
-        isOpen={isIngestionModalOpen}
-        onClose={() => {
-          setIsIngestionModalOpen(false);
-          checkStatus().then((conn) => {
-            if (conn) fetchMessages(searchQuery);
-          });
-        }}
-        onJobCreated={(jobId, fileName) => {
-          router.push(
-            `/forensic-analysis?jobId=${encodeURIComponent(jobId)}&fileName=${encodeURIComponent(
-              fileName || 'Uploaded EML Sample'
-            )}`
-          );
-        }}
-      />
     </div>
   );
 }
@@ -1367,7 +1448,7 @@ export default function MailboxPage(): React.JSX.Element {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen h-screen flex flex-col items-center justify-center bg-[#F2F2EE] dark:bg-[#0b0b0b] text-[#737688] dark:text-[#A0A7A3] font-mono text-xs gap-3">
+        <div className="min-h-screen h-screen flex flex-col items-center justify-center bg-[#F2F2EE] dark:bg-[#0b0b0b] text-[#737688] dark:text-[#A0A7A3] text-xs gap-3">
           <Loader2 className="w-6 h-6 animate-spin text-[#0052ff] dark:text-[#3b82f6]" />
           <span>Loading Mailiac Mailbox Console...</span>
         </div>

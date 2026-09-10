@@ -2,6 +2,7 @@ import { Router, type IRouter } from 'express';
 import multer from 'multer';
 import { randomUUID } from 'crypto';
 import { emailQueue } from '../queue.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -10,7 +11,7 @@ const upload = multer({
 
 export const uploadRouter: IRouter = Router();
 
-uploadRouter.post('/upload', upload.single('eml'), async (req, res, next) => {
+uploadRouter.post('/upload', requireAuth, upload.single('eml'), async (req, res, next) => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No file uploaded. Send an EML file as the "eml" field.' });
@@ -40,6 +41,7 @@ uploadRouter.post('/upload', upload.single('eml'), async (req, res, next) => {
       {
         messageId,
         buffer: req.file.buffer,
+        userId: req.user!.id,
       },
       { jobId: messageId }
     );

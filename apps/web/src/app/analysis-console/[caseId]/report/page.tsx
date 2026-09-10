@@ -18,10 +18,10 @@ export default function CaseReportRedirectPage(): React.JSX.Element {
   }, [caseId, router]);
 
   return (
-    <div className="min-h-screen bg-[#F2F2EE] dark:bg-[#0E1210] flex flex-col items-center justify-center p-6 text-center font-mono">
+    <div className="min-h-screen bg-[#F2F2EE] dark:bg-[#0E1210] flex flex-col items-center justify-center p-6 text-center">
       <Loader2 className="w-6 h-6 animate-spin text-[#0052ff] dark:text-[#3b82f6] mb-4" />
       <p className="text-xs text-[#737688] dark:text-[#A0A7A3] mb-4">
-        Redirecting to Case <strong className="text-[#0052ff] dark:text-[#3b82f6]">{caseId}</strong> Report...
+        Redirecting to Case <strong className="text-[#0052ff] dark:text-[#3b82f6] font-mono">{caseId}</strong> Report...
       </p>
       <Link
         href={`/analysis-console/${caseId}/evidence`}

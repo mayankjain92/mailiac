@@ -15,6 +15,8 @@ import {
   User,
   Shield,
 } from 'lucide-react';
+import { useAuth } from '@/lib/auth';
+import { api, isAuthError, isForbiddenError, getErrorMessage } from '@/lib/api';
 
 export interface AnalystFeedbackData {
   feedbackMode: 'user' | 'expert';
@@ -61,6 +63,7 @@ export default function AnalystFeedbackModal({
   caseId,
   onFeedbackSaved,
 }: AnalystFeedbackModalProps): React.ReactElement | null {
+  const { user, openSignInModal } = useAuth();
   // Persona Selection State
   const [feedbackMode, setFeedbackMode] = useState<'user' | 'expert'>('user');
   const [isRoleChosen, setIsRoleChosen] = useState<boolean>(false);
@@ -95,9 +98,9 @@ export default function AnalystFeedbackModal({
       setError(null);
       setSuccessMessage(null);
 
-      fetch(`/api/reports/${encodeURIComponent(caseId)}/feedback`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
+      api.get(`/api/reports/${encodeURIComponent(caseId)}/feedback`)
+        .then((res) => {
+          const data = res.data;
           if (data?.feedback) {
             const fb = data.feedback;
             if (fb.feedbackMode) {
@@ -128,8 +131,14 @@ export default function AnalystFeedbackModal({
             if (fb.notes) setNotes(fb.notes);
           }
         })
-        .catch(() => {})
-        .finally(() => setIsLoading(false));
+        .catch((err: unknown) => {
+          if (isForbiddenError(err)) {
+            setError('You are not authorized to view feedback for this report.');
+          }
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
     }
   }, [isOpen, caseId]);
 
@@ -146,6 +155,11 @@ export default function AnalystFeedbackModal({
 
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
+    if (!user) {
+      openSignInModal('You need to sign in to submit feedback.');
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
     setSuccessMessage(null);
@@ -177,16 +191,7 @@ export default function AnalystFeedbackModal({
               notes,
             };
 
-      const res = await fetch(`/api/reports/${encodeURIComponent(caseId)}/feedback`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || `Feedback submission failed with status ${res.status}`);
-      }
+      await api.post(`/api/reports/${encodeURIComponent(caseId)}/feedback`, payload);
 
       setSuccessMessage('Thank you! Your feedback has been recorded successfully.');
       if (onFeedbackSaved) onFeedbackSaved();
@@ -194,7 +199,14 @@ export default function AnalystFeedbackModal({
         onClose();
       }, 1200);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to submit feedback.';
+      if (isAuthError(err)) {
+        return;
+      }
+      if (isForbiddenError(err)) {
+        setError('You are not authorized to submit feedback for this report.');
+        return;
+      }
+      const msg = getErrorMessage(err, 'Failed to submit feedback.');
       setError(msg);
     } finally {
       setIsSubmitting(false);
@@ -217,12 +229,12 @@ export default function AnalystFeedbackModal({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#0052ff] dark:text-[#3b82f6]">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#0052ff] dark:text-[#3b82f6]">
                   Submit Analysis Feedback
                 </span>
               </div>
-              <p className="text-xs font-mono text-[#737688] dark:text-[#A0A7A3]">
-                Case ID: <code className="font-bold text-[#1a1c1c] dark:text-[#F2F2EE]">{caseId}</code>
+              <p className="text-xs text-[#737688] dark:text-[#A0A7A3]">
+                Case ID: <code className="font-mono font-bold text-[#1a1c1c] dark:text-[#F2F2EE]">{caseId}</code>
               </p>
             </div>
           </div>
@@ -264,10 +276,10 @@ export default function AnalystFeedbackModal({
         )}
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs font-mono">
+        <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
           {!isRoleChosen ? (
             /* Role Selection Step */
-            <div className="py-6 space-y-6 text-xs font-mono">
+            <div className="py-6 space-y-6 text-xs">
               <div className="text-center space-y-1.5">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-[#1a1c1c] dark:text-[#F2F2EE]">
                   Select Your Feedback Persona

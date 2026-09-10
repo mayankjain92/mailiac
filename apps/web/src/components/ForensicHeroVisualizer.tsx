@@ -359,7 +359,7 @@ export default function ForensicHeroVisualizer(): React.JSX.Element {
       {/* CARD 1 — TOP LEFT: EMAIL · TRACE */}
       {/* ------------------------------------------------------------ */}
       <div
-        className="absolute z-20 w-[205px] sm:w-[220px] p-3 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-[3px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] font-mono transition-colors duration-200"
+        className="absolute z-20 w-[205px] sm:w-[220px] p-3 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-[3px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] transition-colors duration-200"
         style={{
           top: '6%',
           left: '3%',
@@ -396,7 +396,7 @@ export default function ForensicHeroVisualizer(): React.JSX.Element {
       {/* CARD 2 — TOP RIGHT: AUTH · VERIFY */}
       {/* ------------------------------------------------------------ */}
       <div
-        className="absolute z-20 w-[165px] sm:w-[180px] p-3 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-[3px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] font-mono transition-colors duration-200"
+        className="absolute z-20 w-[165px] sm:w-[180px] p-3 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-[3px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] transition-colors duration-200"
         style={{
           top: '7%',
           right: '2%',
@@ -437,7 +437,7 @@ export default function ForensicHeroVisualizer(): React.JSX.Element {
       {/* CARD 3 — BOTTOM LEFT: AI · ANALYSIS */}
       {/* ------------------------------------------------------------ */}
       <div
-        className="absolute z-20 w-[215px] sm:w-[230px] p-3 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-[3px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] font-mono transition-colors duration-200"
+        className="absolute z-20 w-[215px] sm:w-[230px] p-3 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-[3px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] transition-colors duration-200"
         style={{
           bottom: '6%',
           left: '3%',
@@ -476,7 +476,7 @@ export default function ForensicHeroVisualizer(): React.JSX.Element {
       {/* CARD 4 — BOTTOM RIGHT: FORENSIC CORE */}
       {/* ------------------------------------------------------------ */}
       <div
-        className="absolute z-20 w-[195px] sm:w-[210px] p-3 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-[3px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] font-mono transition-colors duration-200"
+        className="absolute z-20 w-[195px] sm:w-[210px] p-3 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-[3px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] transition-colors duration-200"
         style={{
           bottom: '6%',
           right: '3%',

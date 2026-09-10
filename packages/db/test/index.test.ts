@@ -180,10 +180,18 @@ describe('packages/db', () => {
       expect(indexFields.some((keys) => keys.includes('source'))).toBe(true);
       expect(indexFields.some((keys) => keys.includes('verdict'))).toBe(true);
 
-      // Verify sparse option on gmailMessageId index
+      // Verify compound tenant index on userId + gmailMessageId with partialFilterExpression
       const gmailIdx = schemaIndexes.find((idx) => 'gmailMessageId' in idx[0]);
-      expect(gmailIdx?.[1]?.sparse).toBe(true);
+      expect(gmailIdx?.[0]).toEqual({ userId: 1, gmailMessageId: 1 });
       expect(gmailIdx?.[1]?.unique).toBe(true);
+      expect(gmailIdx?.[1]?.partialFilterExpression).toEqual({
+        gmailMessageId: { $type: 'string' },
+      });
+
+      // Verify compound tenant index for history queries
+      expect(schemaIndexes.some((idx) => idx[0].userId === 1 && idx[0].createdAt === -1)).toBe(true);
+      expect(schemaIndexes.some((idx) => idx[0].userId === 1 && idx[0].source === 1 && idx[0].createdAt === -1)).toBe(true);
+      expect(schemaIndexes.some((idx) => idx[0].userId === 1 && idx[0].verdict === 1 && idx[0].createdAt === -1)).toBe(true);
     });
 
     it('cleanupDuplicateGmailRecords removes older duplicate records', async () => {
@@ -212,6 +220,19 @@ describe('packages/db', () => {
         _id: { $in: ['doc-2', 'doc-1'] },
       });
       expect(result.duplicatesRemoved).toBe(2);
+    });
+
+    it('cleanupStaleGmailAccounts deletes stale records and returns deleted count', async () => {
+      const mockDeleteMany = vi.spyOn(GmailAccountModel, 'deleteMany').mockResolvedValue({
+        acknowledged: true,
+        deletedCount: 5,
+      });
+
+      const { cleanupStaleGmailAccounts } = await import('../src/index.js');
+      const result = await cleanupStaleGmailAccounts({ olderThanHours: 24 });
+
+      expect(mockDeleteMany).toHaveBeenCalled();
+      expect(result.deletedCount).toBe(5);
     });
   });
 });

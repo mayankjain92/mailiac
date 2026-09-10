@@ -31,6 +31,7 @@ export interface PipelineOptions {
   skipRdap?: boolean;
   source?: 'eml' | 'gmail';
   gmailMessageId?: string;
+  userId?: string;
 }
 
 /**
@@ -233,7 +234,12 @@ export async function runForensicPipeline(
     if (!options?.skipDbPersist) {
       await AnalysisReportModel.findOneAndUpdate(
         { messageId },
-        { $set: report },
+        {
+          $set: {
+            ...report,
+            ...(options?.userId ? { userId: options.userId } : {}),
+          },
+        },
         { upsert: true, new: true }
       );
 
@@ -246,6 +252,7 @@ export async function runForensicPipeline(
             buffer: rawEmlBuffer,
             source: options?.source ?? (options?.gmailMessageId ? 'gmail' : 'eml'),
             gmailMessageId: options?.gmailMessageId,
+            ...(options?.userId ? { userId: options.userId } : {}),
           },
         },
         { upsert: true }
@@ -258,51 +265,97 @@ export async function runForensicPipeline(
       const source = options?.source ?? (options?.gmailMessageId ? 'gmail' : 'eml');
       const sender = mdm.from.name ? `${mdm.from.name} <${mdm.from.address}>` : mdm.from.address;
 
-      if (source === 'gmail' && options?.gmailMessageId) {
-        // Deduplicate on re-analysis: key on gmailMessageId
-        await EmailAnalysisRecordModel.findOneAndUpdate(
-          { gmailMessageId: options.gmailMessageId },
-          {
-            $set: {
-              jobId: messageId,
-              source: 'gmail',
-              gmailMessageId: options.gmailMessageId,
-              sender,
-              subject: mdm.subject,
-              senderDomain,
-              finalScore: riskMatrix.finalScore,
-              verdict,
-              authScore: riskMatrix.authScore,
-              identityScore: riskMatrix.identityScore,
-              ipScore: riskMatrix.ipScore,
-              nlpScore: riskMatrix.nlpScore,
-              timestamp: new Date().toISOString(),
+      try {
+        if (source === 'gmail' && options?.gmailMessageId) {
+          // Deduplicate on re-analysis: key on (userId, gmailMessageId)
+          const gmailQuery: Record<string, unknown> = { gmailMessageId: options.gmailMessageId };
+          if (options?.userId) {
+            gmailQuery.userId = options.userId;
+          }
+          await EmailAnalysisRecordModel.findOneAndUpdate(
+            gmailQuery,
+            {
+              $set: {
+                jobId: messageId,
+                source: 'gmail',
+                gmailMessageId: options.gmailMessageId,
+                sender,
+                subject: mdm.subject,
+                senderDomain,
+                finalScore: riskMatrix.finalScore,
+                verdict,
+                authScore: riskMatrix.authScore,
+                identityScore: riskMatrix.identityScore,
+                ipScore: riskMatrix.ipScore,
+                nlpScore: riskMatrix.nlpScore,
+                timestamp: new Date().toISOString(),
+                ...(options?.userId ? { userId: options.userId } : {}),
+              },
             },
-          },
-          { upsert: true, new: true }
-        );
-      } else {
-        // .EML file upload: key on jobId
-        await EmailAnalysisRecordModel.findOneAndUpdate(
-          { jobId: messageId },
-          {
-            $set: {
-              jobId: messageId,
-              source: 'eml',
-              sender,
-              subject: mdm.subject,
-              senderDomain,
-              finalScore: riskMatrix.finalScore,
-              verdict,
-              authScore: riskMatrix.authScore,
-              identityScore: riskMatrix.identityScore,
-              ipScore: riskMatrix.ipScore,
-              nlpScore: riskMatrix.nlpScore,
-              timestamp: new Date().toISOString(),
+            { upsert: true, new: true }
+          );
+        } else {
+          // .EML file upload: key on jobId
+          await EmailAnalysisRecordModel.findOneAndUpdate(
+            { jobId: messageId },
+            {
+              $set: {
+                jobId: messageId,
+                source: 'eml',
+                sender,
+                subject: mdm.subject,
+                senderDomain,
+                finalScore: riskMatrix.finalScore,
+                verdict,
+                authScore: riskMatrix.authScore,
+                identityScore: riskMatrix.identityScore,
+                ipScore: riskMatrix.ipScore,
+                nlpScore: riskMatrix.nlpScore,
+                timestamp: new Date().toISOString(),
+                ...(options?.userId ? { userId: options.userId } : {}),
+              },
             },
-          },
-          { upsert: true, new: true }
-        );
+            { upsert: true, new: true }
+          );
+        }
+      } catch (recordSaveErr: unknown) {
+        // Self-heal: If legacy userId_1_gmailMessageId_1 index caused duplicate key error on null gmailMessageId
+        const isLegacyIndexDup =
+          (recordSaveErr as { code?: number })?.code === 11000 &&
+          String((recordSaveErr as Error)?.message || '').includes('userId_1_gmailMessageId_1');
+
+        if (isLegacyIndexDup) {
+          console.warn('[pipeline] Recovering from legacy userId_1_gmailMessageId_1 duplicate key error, fixing index...');
+          try {
+            await EmailAnalysisRecordModel.collection?.dropIndex('userId_1_gmailMessageId_1');
+          } catch {
+            // Index might already be dropped or in-memory mock
+          }
+          // Retry the findOneAndUpdate for .EML upload
+          await EmailAnalysisRecordModel.findOneAndUpdate(
+            { jobId: messageId },
+            {
+              $set: {
+                jobId: messageId,
+                source: 'eml',
+                sender,
+                subject: mdm.subject,
+                senderDomain,
+                finalScore: riskMatrix.finalScore,
+                verdict,
+                authScore: riskMatrix.authScore,
+                identityScore: riskMatrix.identityScore,
+                ipScore: riskMatrix.ipScore,
+                nlpScore: riskMatrix.nlpScore,
+                timestamp: new Date().toISOString(),
+                ...(options?.userId ? { userId: options.userId } : {}),
+              },
+            },
+            { upsert: true, new: true }
+          );
+        } else {
+          throw recordSaveErr;
+        }
       }
     }
 

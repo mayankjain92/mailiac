@@ -16,6 +16,10 @@ vi.mock('@mailiac/db', () => ({
       lean: vi.fn().mockResolvedValue([]),
     }),
   },
+  OAuthTransactionModel: {
+    findOne: vi.fn().mockResolvedValue(null),
+    create: vi.fn().mockResolvedValue({}),
+  },
 }));
 
 vi.mock('../src/services/googleAuth.js', () => {
@@ -68,6 +72,15 @@ describe('Express Gmail Routes (/api/gmail)', () => {
 
     const app = express();
     app.use(express.json());
+    app.use((req, _res, next) => {
+      const sessionId = req.headers['x-session-id'];
+      if (sessionId) {
+        req.user = { id: String(sessionId), email: `${sessionId}@example.com` };
+      } else if (req.headers.authorization || req.headers.cookie) {
+        req.user = { id: 'test-user-id', email: 'test@example.com' };
+      }
+      next();
+    });
     app.use('/api/gmail', gmailRouter);
     app.use('/api/integrations/gmail', gmailRouter);
     app.use(errorHandler);
@@ -87,7 +100,9 @@ describe('Express Gmail Routes (/api/gmail)', () => {
 
   describe('GET /api/gmail/auth/url', () => {
     it('returns 200 with generated auth URL', async () => {
-      const res = await fetch(`${baseUrl}/api/gmail/auth/url`);
+      const res = await fetch(`${baseUrl}/api/gmail/auth/url`, {
+        headers: { 'x-session-id': 'sess-default' },
+      });
       expect(res.status).toBe(200);
 
       const data = (await res.json()) as { url: string };
@@ -119,7 +134,9 @@ describe('Express Gmail Routes (/api/gmail)', () => {
       );
 
       expect(res.status).toBe(302);
-      expect(res.headers.get('location')).toBe('http://localhost:3000/?gmail=connected');
+      expect(res.headers.get('location')).toBe(
+        'http://localhost:3000/mailbox?gmail=connected&sessionId=test-session-id'
+      );
 
       const setCookie = res.headers.get('set-cookie');
       expect(setCookie).toContain('mailiac_session_id=test-session-id');
@@ -150,7 +167,9 @@ describe('Express Gmail Routes (/api/gmail)', () => {
       );
 
       expect(res.status).toBe(302);
-      expect(res.headers.get('location')).toBe('http://localhost:3000/?gmail=connected');
+      expect(res.headers.get('location')).toBe(
+        'http://localhost:3000/mailbox?gmail=connected&sessionId=integration-sess'
+      );
     });
 
     it('returns 400 Bad Request when code query parameter is missing', async () => {
@@ -189,20 +208,71 @@ describe('Express Gmail Routes (/api/gmail)', () => {
       const data = (await res.json()) as { connected: boolean; email: string };
       expect(data.connected).toBe(true);
       expect(data.email).toBe('analyst@target-corp.com');
-      expect(GmailAccountModel.findOne).toHaveBeenCalledWith({ sessionId: 'sess-active' });
+      expect(GmailAccountModel.findOne).toHaveBeenCalledWith(expect.objectContaining({ userId: 'sess-active' }));
     });
 
-    it('returns connected false when no account exists', async () => {
-      vi.mocked(GmailAccountModel.findOne).mockReturnValue({
-        sort: vi.fn().mockResolvedValue(null),
-      } as unknown as ReturnType<typeof GmailAccountModel.findOne>);
-
+    it('Case 1: returns 401 Unauthorized when unauthenticated without querying the database', async () => {
       const res = await fetch(`${baseUrl}/api/gmail/status`);
+      expect(res.status).toBe(401);
+
+      const data = (await res.json()) as { error: string };
+      expect(data.error).toContain('Unauthorized');
+      expect(GmailAccountModel.findOne).not.toHaveBeenCalled();
+    });
+
+    it('Case 3: returns connected false when requesting with wrong/unknown session ID', async () => {
+      vi.mocked(GmailAccountModel.findOne).mockResolvedValue(null);
+
+      const res = await fetch(`${baseUrl}/api/gmail/status`, {
+        headers: { 'x-session-id': 'session-unknown' },
+      });
       expect(res.status).toBe(200);
 
       const data = (await res.json()) as { connected: boolean; email?: string };
       expect(data.connected).toBe(false);
       expect(data.email).toBeUndefined();
+      expect(GmailAccountModel.findOne).toHaveBeenCalledWith({ sessionId: 'session-unknown' });
+    });
+
+    it('Case 4: strictly isolates two different sessions (Session A vs Session B)', async () => {
+      vi.mocked(GmailAccountModel.findOne).mockImplementation(((query: { sessionId?: string }) => {
+        if (query?.sessionId === 'session-A') {
+          return Promise.resolve({ sessionId: 'session-A', email: 'userA@gmail.com' });
+        }
+        if (query?.sessionId === 'session-B') {
+          return Promise.resolve({ sessionId: 'session-B', email: 'userB@gmail.com' });
+        }
+        return Promise.resolve(null);
+      }) as unknown as typeof GmailAccountModel.findOne);
+
+      const resA = await fetch(`${baseUrl}/api/gmail/status`, {
+        headers: { 'x-session-id': 'session-A' },
+      });
+      const dataA = (await resA.json()) as { connected: boolean; email: string };
+      expect(dataA.connected).toBe(true);
+      expect(dataA.email).toBe('userA@gmail.com');
+
+      const resB = await fetch(`${baseUrl}/api/gmail/status`, {
+        headers: { 'x-session-id': 'session-B' },
+      });
+      const dataB = (await resB.json()) as { connected: boolean; email: string };
+      expect(dataB.connected).toBe(true);
+      expect(dataB.email).toBe('userB@gmail.com');
+
+      const resNone = await fetch(`${baseUrl}/api/gmail/status`);
+      expect(resNone.status).toBe(401);
+    });
+
+    it('Case 5: regression test - rejects unauthenticated requests before any findOne query', async () => {
+      const sortSpy = vi.fn();
+      vi.mocked(GmailAccountModel.findOne).mockReturnValue({
+        sort: sortSpy,
+      } as unknown as ReturnType<typeof GmailAccountModel.findOne>);
+
+      const res = await fetch(`${baseUrl}/api/gmail/status`);
+      expect(res.status).toBe(401);
+      expect(sortSpy).not.toHaveBeenCalled();
+      expect(GmailAccountModel.findOne).not.toHaveBeenCalled();
     });
   });
 
@@ -245,6 +315,38 @@ describe('Express Gmail Routes (/api/gmail)', () => {
       const data = (await res.json()) as { error: string };
       expect(data.error).toBe('No connected Gmail account found.');
       expect(revokeToken).not.toHaveBeenCalled();
+    });
+
+    it('Case 7: allows Session A to disconnect only its own account and not another session', async () => {
+      vi.mocked(GmailAccountModel.findOne).mockImplementation(((query: { sessionId?: string }) => {
+        if (query?.sessionId === 'session-A') {
+          return Promise.resolve({
+            _id: 'mongo-id-A',
+            sessionId: 'session-A',
+            email: 'userA@gmail.com',
+            accessToken: 'token-A',
+          });
+        }
+        return Promise.resolve(null);
+      }) as unknown as typeof GmailAccountModel.findOne);
+
+      vi.mocked(GmailAccountModel.deleteOne).mockResolvedValue({ acknowledged: true, deletedCount: 1 });
+
+      // Session B attempts to disconnect Session A
+      const resB = await fetch(`${baseUrl}/api/gmail/disconnect`, {
+        method: 'DELETE',
+        headers: { 'x-session-id': 'session-B' },
+      });
+      expect(resB.status).toBe(404);
+      expect(GmailAccountModel.deleteOne).not.toHaveBeenCalled();
+
+      // Session A disconnects its own account
+      const resA = await fetch(`${baseUrl}/api/gmail/disconnect`, {
+        method: 'DELETE',
+        headers: { 'x-session-id': 'session-A' },
+      });
+      expect(resA.status).toBe(200);
+      expect(GmailAccountModel.deleteOne).toHaveBeenCalledWith({ _id: 'mongo-id-A' });
     });
   });
 
@@ -361,6 +463,36 @@ describe('Express Gmail Routes (/api/gmail)', () => {
       expect(data.error).toContain('No connected Gmail account found');
       expect(listMessages).not.toHaveBeenCalled();
     });
+
+    it('Case 6: messages endpoint enforces session isolation between Session A and Session B', async () => {
+      vi.mocked(GmailAccountModel.findOne).mockImplementation(((query: { sessionId?: string }) => {
+        if (query?.sessionId === 'session-A') {
+          return Promise.resolve({
+            sessionId: 'session-A',
+            accessToken: 'token-A',
+          });
+        }
+        return Promise.resolve(null);
+      }) as unknown as typeof GmailAccountModel.findOne);
+
+      vi.mocked(listMessages).mockResolvedValue({
+        messages: [{ id: 'msg-A-secret', sender: 'ceo@target.com', subject: 'Secret A', date: '', snippet: '' }],
+      });
+
+      // Session B requests messages -> 401
+      const resB = await fetch(`${baseUrl}/api/gmail/messages`, {
+        headers: { 'x-session-id': 'session-B' },
+      });
+      expect(resB.status).toBe(401);
+
+      // Session A requests messages -> 200
+      const resA = await fetch(`${baseUrl}/api/gmail/messages`, {
+        headers: { 'x-session-id': 'session-A' },
+      });
+      expect(resA.status).toBe(200);
+      const dataA = (await resA.json()) as { messages: Array<{ id: string }> };
+      expect(dataA.messages[0].id).toBe('msg-A-secret');
+    });
   });
 
   describe('POST /api/gmail/messages/:messageId/analyze', () => {
@@ -404,6 +536,22 @@ describe('Express Gmail Routes (/api/gmail)', () => {
       expect(res.status).toBe(401);
       expect(fetchRawMessage).not.toHaveBeenCalled();
       expect(emailQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('Case 8: message analysis rejects caller when session does not own the account', async () => {
+      vi.mocked(GmailAccountModel.findOne).mockImplementation(((query: { sessionId?: string }) => {
+        if (query?.sessionId === 'session-A') {
+          return Promise.resolve({ sessionId: 'session-A', accessToken: 'token-A' });
+        }
+        return Promise.resolve(null);
+      }) as unknown as typeof GmailAccountModel.findOne);
+
+      const res = await fetch(`${baseUrl}/api/gmail/messages/msg-123/analyze`, {
+        method: 'POST',
+        headers: { 'x-session-id': 'session-attacker' },
+      });
+      expect(res.status).toBe(401);
+      expect(fetchRawMessage).not.toHaveBeenCalled();
     });
   });
 });

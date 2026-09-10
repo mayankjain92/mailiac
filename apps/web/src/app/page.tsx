@@ -16,17 +16,24 @@ import {
   Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useAuth } from '@/lib/auth';
+import { uploadEml, isAuthError } from '@/lib/api';
 
 function LandingPageContent(): React.JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user, openSignInModal } = useAuth();
   const [isIngestionModalOpen, setIsIngestionModalOpen] = useState(false);
   const [isLoadingSample, setIsLoadingSample] = useState(false);
 
   // If redirected from OAuth with ?gmail=connected, automatically navigate to /mailbox
   useEffect(() => {
     if (searchParams.get('gmail') === 'connected') {
-      router.push('/mailbox');
+      const sessionId = searchParams.get('sessionId');
+      const target = sessionId
+        ? `/mailbox?gmail=connected&sessionId=${encodeURIComponent(sessionId)}`
+        : '/mailbox';
+      router.push(target);
     }
   }, [searchParams, router]);
 
@@ -39,6 +46,11 @@ function LandingPageContent(): React.JSX.Element {
   };
 
   const handleLoadSamplePhish = async (): Promise<void> => {
+    if (!user) {
+      openSignInModal('You need to sign in to run forensic analysis.');
+      return;
+    }
+
     setIsLoadingSample(true);
     try {
       const res = await fetch('/samples/sample-phish.eml');
@@ -47,21 +59,13 @@ function LandingPageContent(): React.JSX.Element {
       const sampleFile = new File([blob], 'Urgent_Wire_Transfer_BEC_Phish.eml', {
         type: 'message/rfc822',
       });
-      const formData = new FormData();
-      formData.append('eml', sampleFile);
 
-      const uploadRes = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!uploadRes.ok) {
-        throw new Error('Upload failed');
-      }
-
-      const data = (await uploadRes.json()) as { jobId: string };
+      const data = await uploadEml(sampleFile);
       handleJobCreated(data.jobId, sampleFile.name);
-    } catch {
+    } catch (err: unknown) {
+      if (isAuthError(err)) {
+        return;
+      }
       setIsIngestionModalOpen(true);
     } finally {
       setIsLoadingSample(false);
@@ -81,7 +85,7 @@ function LandingPageContent(): React.JSX.Element {
             <div className="flex flex-col justify-center">
               <div className="flex items-center gap-2 mb-6">
                 <div className="w-2 h-2 rounded-full bg-[#0052ff] dark:bg-[#3b82f6] pulse-dot"></div>
-                <span className="text-xs font-mono font-bold text-[#434656] dark:text-[#A0A7A3] uppercase tracking-widest">
+                <span className="text-xs font-bold text-[#434656] dark:text-[#A0A7A3] uppercase tracking-widest">
                   EMAIL FORENSICS PLATFORM
                 </span>
               </div>
@@ -105,7 +109,7 @@ function LandingPageContent(): React.JSX.Element {
                   type="button"
                   onClick={handleLoadSamplePhish}
                   disabled={isLoadingSample}
-                  className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/40 px-6 py-4 rounded font-mono text-xs font-bold transition-all inline-flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                  className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/40 px-6 py-4 rounded text-xs font-bold transition-all inline-flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
                   title="Live threat simulation: loads simulated CEO wire-transfer BEC attack"
                 >
                   {isLoadingSample ? (
@@ -127,7 +131,7 @@ function LandingPageContent(): React.JSX.Element {
 
               <div className="mt-12 pt-8 border-t border-[#D5D5CE] dark:border-[#29342F] flex items-center gap-3">
                 <ShieldCheck className="w-5 h-5 text-[#0052ff] dark:text-[#3b82f6]" />
-                <span className="text-xs font-mono text-[#434656] dark:text-[#A0A7A3]">
+                <span className="text-xs text-[#434656] dark:text-[#A0A7A3]">
                   Trusted by security & forensic investigation teams
                 </span>
               </div>
@@ -148,7 +152,7 @@ function LandingPageContent(): React.JSX.Element {
         {/* Multi-Source Forensic Ingestion CTA Section */}
         <section id="analysis-console" className="py-20 px-6 md:px-16 max-w-[1440px] mx-auto">
           <div className="mb-10 text-center max-w-xl mx-auto">
-            <div className="text-xs font-mono font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-widest mb-2">
+            <div className="text-xs font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-widest mb-2">
               FORENSIC INGESTION GATEWAY
             </div>
             <h2 className="text-3xl font-bold text-[#1a1c1c] dark:text-[#F2F2EE]">
@@ -168,7 +172,7 @@ function LandingPageContent(): React.JSX.Element {
                     <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
-                    <p className="text-xs font-mono font-bold text-amber-800 dark:text-amber-300">
+                    <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
                       Interactive Forensic Sandbox
                     </p>
                     <p className="text-[11px] text-amber-800/80 dark:text-amber-400/80 mt-0.5">
@@ -180,7 +184,7 @@ function LandingPageContent(): React.JSX.Element {
                   type="button"
                   onClick={handleLoadSamplePhish}
                   disabled={isLoadingSample}
-                  className="shrink-0 w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-mono font-bold rounded shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  className="shrink-0 w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
                   {isLoadingSample ? (
                     <>
@@ -204,13 +208,13 @@ function LandingPageContent(): React.JSX.Element {
                   <div className="w-10 h-10 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6]">
                     <FileText className="w-5 h-5" />
                   </div>
-                  <h3 className="text-xs font-mono font-bold text-[#1a1c1c] dark:text-[#F2F2EE]">
+                  <h3 className="text-xs font-bold text-[#1a1c1c] dark:text-[#F2F2EE]">
                     Upload .EML
                   </h3>
                   <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3]">
                     Local file analysis from workstation
                   </p>
-                  <span className="text-[11px] font-mono text-[#0052ff] dark:text-[#3b82f6] font-semibold mt-1 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                  <span className="text-[11px] text-[#0052ff] dark:text-[#3b82f6] font-semibold mt-1 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
                     Select File <ArrowRight className="w-3 h-3" />
                   </span>
                 </div>
@@ -223,17 +227,17 @@ function LandingPageContent(): React.JSX.Element {
                     <Mail className="w-5 h-5" />
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <h3 className="text-xs font-mono font-bold text-[#1a1c1c] dark:text-[#F2F2EE]">
+                    <h3 className="text-xs font-bold text-[#1a1c1c] dark:text-[#F2F2EE]">
                       Connect Gmail
                     </h3>
-                    <span className="text-[9px] font-mono px-1 py-0.5 bg-blue-500/15 text-[#0052ff] dark:text-[#3b82f6] font-bold rounded">
+                    <span className="text-[9px] px-1 py-0.5 bg-blue-500/15 text-[#0052ff] dark:text-[#3b82f6] font-bold rounded">
                       SANDBOX
                     </span>
                   </div>
                   <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3]">
                     Direct mailbox investigation
                   </p>
-                  <span className="text-[11px] font-mono text-[#0052ff] dark:text-[#3b82f6] font-semibold mt-1 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                  <span className="text-[11px] text-[#0052ff] dark:text-[#3b82f6] font-semibold mt-1 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
                     Open Mailbox <ArrowRight className="w-3 h-3" />
                   </span>
                 </div>
@@ -241,7 +245,7 @@ function LandingPageContent(): React.JSX.Element {
 
               <button
                 onClick={() => setIsIngestionModalOpen(true)}
-                className="w-full bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-mono font-semibold py-3 px-4 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center justify-center gap-2 shadow-sm"
+                className="w-full bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold py-3 px-4 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center justify-center gap-2 shadow-sm"
               >
                 <span>Analyze an email</span>
                 <ArrowRight className="w-4 h-4" />
@@ -261,7 +265,7 @@ function LandingPageContent(): React.JSX.Element {
               </div>
               <span className="text-lg font-bold text-[#1a1c1c] dark:text-[#F2F2EE]">Mailiac</span>
             </Link>
-            <p className="text-xs font-mono text-[#737688] dark:text-[#A0A7A3]">
+            <p className="text-xs text-[#737688] dark:text-[#A0A7A3]">
               © 2026 Mailiac Forensics. All rights reserved.<br />
               Forensic Grade Email Security Pipeline.
             </p>

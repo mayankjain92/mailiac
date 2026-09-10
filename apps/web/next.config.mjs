@@ -12,6 +12,10 @@ const nextConfig = {
     const backendUrl = rawUrl.replace(/\/+$/, '');
     return [
       {
+        source: '/auth/:path*',
+        destination: `${backendUrl}/auth/:path*`,
+      },
+      {
         source: '/api/:path*',
         destination: `${backendUrl}/api/:path*`,
       },

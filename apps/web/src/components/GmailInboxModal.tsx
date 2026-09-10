@@ -20,6 +20,9 @@ import {
 import type { GmailMessageAnalysisEnrichment } from '@mailiac/shared-types';
 import { decodeHtmlEntities } from '@/lib/utils';
 import VerdictBadge from '@/components/VerdictBadge';
+import { sessionFetch, clearSession } from '@/lib/session';
+import { useAuth } from '@/lib/auth';
+import { isAuthError, getErrorMessage } from '@/lib/api';
 
 export interface GmailMessageSummary extends Partial<GmailMessageAnalysisEnrichment> {
   id: string;
@@ -41,6 +44,7 @@ export default function GmailInboxModal({
   onClose,
   onJobCreated,
 }: GmailInboxModalProps): React.JSX.Element | null {
+  const { user, openSignInModal } = useAuth();
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [connectedEmail, setConnectedEmail] = useState<string | null>(null);
   const [messages, setMessages] = useState<GmailMessageSummary[]>([]);
@@ -55,7 +59,7 @@ export default function GmailInboxModal({
   // Check connection status
   const checkStatus = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await fetch('/api/gmail/status');
+      const res = await sessionFetch('/api/gmail/status');
       if (res.ok) {
         const data = (await res.json()) as { connected: boolean; email?: string };
         setIsConnected(data.connected);
@@ -81,7 +85,7 @@ export default function GmailInboxModal({
         if (pageToken) params.append('pageToken', pageToken);
         params.append('maxResults', '20');
 
-        const res = await fetch(`/api/gmail/messages?${params.toString()}`);
+        const res = await sessionFetch(`/api/gmail/messages?${params.toString()}`);
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.error || `Failed to fetch messages (${res.status})`);
@@ -116,15 +120,27 @@ export default function GmailInboxModal({
 
   // Initiate Google OAuth login
   const handleConnect = async (): Promise<void> => {
+    if (!user) {
+      openSignInModal('You need to sign in to connect your Gmail account.');
+      return;
+    }
+
     setIsConnecting(true);
     setError(null);
     try {
-      const res = await fetch('/api/gmail/auth/url');
-      if (!res.ok) throw new Error('Failed to obtain Google authentication URL');
+      const res = await sessionFetch('/api/gmail/auth/url');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to obtain Google authentication URL');
+      }
       const data = (await res.json()) as { url: string };
       window.location.href = data.url;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Authentication initiation failed';
+      if (isAuthError(err)) {
+        setIsConnecting(false);
+        return;
+      }
+      const msg = getErrorMessage(err, 'Authentication initiation failed');
       setError(msg);
       setIsConnecting(false);
     }
@@ -136,13 +152,17 @@ export default function GmailInboxModal({
     setIsDisconnecting(true);
     setError(null);
     try {
-      const res = await fetch('/api/gmail/disconnect', { method: 'DELETE' });
+      const res = await sessionFetch('/api/gmail/disconnect', { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to disconnect Gmail account');
+      clearSession();
       setIsConnected(false);
       setConnectedEmail(null);
       setMessages([]);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Disconnection failed';
+      if (isAuthError(err)) {
+        return;
+      }
+      const msg = getErrorMessage(err, 'Disconnection failed');
       setError(msg);
     } finally {
       setIsDisconnecting(false);
@@ -157,10 +177,15 @@ export default function GmailInboxModal({
 
   // Trigger Forensic Analysis for a specific email
   const handleAnalyze = async (message: GmailMessageSummary): Promise<void> => {
+    if (!user) {
+      openSignInModal('You need to sign in to analyze emails.');
+      return;
+    }
+
     setAnalyzingMessageId(message.id);
     setError(null);
     try {
-      const res = await fetch(`/api/gmail/messages/${message.id}/analyze`, {
+      const res = await sessionFetch(`/api/gmail/messages/${message.id}/analyze`, {
         method: 'POST',
       });
 
@@ -177,7 +202,10 @@ export default function GmailInboxModal({
       onJobCreated(data.jobId, message.subject || 'Gmail Forensics Sample');
       onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to trigger forensic analysis';
+      if (isAuthError(err)) {
+        return;
+      }
+      const msg = getErrorMessage(err, 'Failed to trigger forensic analysis');
       setError(msg);
     } finally {
       setAnalyzingMessageId(null);
@@ -215,17 +243,17 @@ export default function GmailInboxModal({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#0052ff] dark:text-[#3b82f6]">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#0052ff] dark:text-[#3b82f6]">
                   Gmail Ingestion Gateway
                 </span>
                 {isConnected && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#e8f5e9] dark:bg-[#1b3320] text-[#2e7d32] dark:text-[#81c784] border border-[#a5d6a7] dark:border-[#2e7d32]">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#e8f5e9] dark:bg-[#1b3320] text-[#2e7d32] dark:text-[#81c784] border border-[#a5d6a7] dark:border-[#2e7d32]">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#2e7d32] dark:bg-[#81c784] animate-pulse"></span>
                     CONNECTED
                   </span>
                 )}
               </div>
-              <p className="text-xs font-mono text-[#737688] dark:text-[#A0A7A3]">
+              <p className="text-xs text-[#737688] dark:text-[#A0A7A3]">
                 {connectedEmail ? `Active Session: ${connectedEmail}` : 'Connect your inbox for 1-click forensic analysis'}
               </p>
             </div>
@@ -236,7 +264,7 @@ export default function GmailInboxModal({
               <button
                 onClick={handleDisconnect}
                 disabled={isDisconnecting}
-                className="text-xs font-mono text-[#ba1a1a] dark:text-[#ffb4ab] hover:bg-[#ffdad6]/40 dark:hover:bg-[#410e0b]/40 px-3 py-1.5 rounded border border-[#ba1a1a]/30 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                className="text-xs text-[#ba1a1a] dark:text-[#ffb4ab] hover:bg-[#ffdad6]/40 dark:hover:bg-[#410e0b]/40 px-3 py-1.5 rounded border border-[#ba1a1a]/30 transition-colors flex items-center gap-1.5 disabled:opacity-50"
                 title="Disconnect Google Account"
               >
                 {isDisconnecting ? (
@@ -318,13 +346,13 @@ export default function GmailInboxModal({
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder='Filter emails (e.g. from:paypal, is:unread, subject:invoice)...'
-                      className="w-full pl-9 pr-4 py-2 text-xs font-mono bg-[#EAEAE5] dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded text-[#1a1c1c] dark:text-[#F2F2EE] placeholder-[#737688] focus:outline-none focus:border-[#0052ff] dark:focus:border-[#3b82f6]"
+                      className="w-full pl-9 pr-4 py-2 text-xs bg-[#EAEAE5] dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded text-[#1a1c1c] dark:text-[#F2F2EE] placeholder-[#737688] focus:outline-none focus:border-[#0052ff] dark:focus:border-[#3b82f6]"
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-mono font-semibold px-4 py-2 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                    className="bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold px-4 py-2 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-1.5 disabled:opacity-50"
                   >
                     {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
                     Search
@@ -333,7 +361,7 @@ export default function GmailInboxModal({
                     type="button"
                     onClick={() => fetchMessages(searchQuery)}
                     disabled={isLoading}
-                    className="border border-[#D5D5CE] dark:border-[#29342F] text-[#434656] dark:text-[#A0A7A3] hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] text-xs font-mono px-3 py-2 rounded transition-colors"
+                    className="border border-[#D5D5CE] dark:border-[#29342F] text-[#434656] dark:text-[#A0A7A3] hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] text-xs px-3 py-2 rounded transition-colors"
                     title="Refresh List"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -341,7 +369,7 @@ export default function GmailInboxModal({
                 </form>
 
                 {/* Filter Chips */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] font-mono">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px]">
                   <span className="text-[#737688] dark:text-[#A0A7A3] text-[10px] mr-1">Presets:</span>
                   {[
                     { label: 'All', q: '' },
@@ -371,12 +399,12 @@ export default function GmailInboxModal({
               {/* Message Table / List */}
               <div className="border border-[#D5D5CE] dark:border-[#29342F] rounded bg-[#EAEAE5] dark:bg-[#151A17] overflow-hidden">
                 {isLoading && messages.length === 0 ? (
-                  <div className="py-16 text-center text-xs font-mono text-[#737688] dark:text-[#A0A7A3] flex flex-col items-center gap-2">
+                  <div className="py-16 text-center text-xs text-[#737688] dark:text-[#A0A7A3] flex flex-col items-center gap-2">
                     <Loader2 className="w-6 h-6 animate-spin text-[#0052ff] dark:text-[#3b82f6]" />
                     <span>Querying Gmail mailbox metadata...</span>
                   </div>
                 ) : messages.length === 0 ? (
-                  <div className="py-16 text-center text-xs font-mono text-[#737688] dark:text-[#A0A7A3]">
+                  <div className="py-16 text-center text-xs text-[#737688] dark:text-[#A0A7A3]">
                     No matching emails found for this query.
                   </div>
                 ) : (
@@ -390,7 +418,7 @@ export default function GmailInboxModal({
                         >
                           <div className="flex-1 min-w-0 space-y-1">
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-[#1a1c1c] dark:text-[#F2F2EE] truncate flex items-center gap-1.5 font-mono">
+                              <span className="text-xs font-semibold text-[#1a1c1c] dark:text-[#F2F2EE] truncate flex items-center gap-1.5">
                                 <User className="w-3 h-3 text-[#737688] dark:text-[#A0A7A3] shrink-0" />
                                 {decodeHtmlEntities(msg.sender)}
                               </span>
@@ -401,7 +429,7 @@ export default function GmailInboxModal({
                                   size="sm"
                                 />
                               )}
-                              <span className="text-[10px] font-mono text-[#737688] dark:text-[#A0A7A3] flex items-center gap-1 shrink-0 ml-auto sm:ml-0">
+                              <span className="text-[10px] text-[#737688] dark:text-[#A0A7A3] flex items-center gap-1 shrink-0 ml-auto sm:ml-0">
                                 <Clock className="w-3 h-3" />
                                 {formatDate(msg.date)}
                               </span>
@@ -411,7 +439,7 @@ export default function GmailInboxModal({
                               {decodeHtmlEntities(msg.subject) || '(No Subject)'}
                             </p>
 
-                            <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3] line-clamp-1 font-mono">
+                            <p className="text-[11px] text-[#737688] dark:text-[#A0A7A3] line-clamp-1">
                               {decodeHtmlEntities(msg.snippet)}
                             </p>
                           </div>
@@ -426,7 +454,7 @@ export default function GmailInboxModal({
                                       onClose();
                                     }
                                   }}
-                                  className="w-full sm:w-auto bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold px-3 py-1.5 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center justify-center gap-1 shadow-sm font-mono"
+                                  className="w-full sm:w-auto bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold px-3 py-1.5 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center justify-center gap-1 shadow-sm"
                                 >
                                   <span>View Report</span>
                                   <ArrowRight className="w-3 h-3" />
@@ -434,7 +462,7 @@ export default function GmailInboxModal({
                                 <button
                                   onClick={() => handleAnalyze(msg)}
                                   disabled={isAnalyzing || analyzingMessageId !== null}
-                                  className="border border-[#D5D5CE] dark:border-[#29342F] text-[#434656] dark:text-[#A0A7A3] hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] text-xs font-mono px-2.5 py-1.5 rounded transition-colors disabled:opacity-50"
+                                  className="border border-[#D5D5CE] dark:border-[#29342F] text-[#434656] dark:text-[#A0A7A3] hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] text-xs px-2.5 py-1.5 rounded transition-colors disabled:opacity-50"
                                   title="Re-run forensic analysis pipeline"
                                 >
                                   {isAnalyzing ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Re-scan'}
@@ -448,13 +476,13 @@ export default function GmailInboxModal({
                               >
                                 {isAnalyzing ? (
                                   <>
-                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                     <span>Deconstructing...</span>
                                   </>
                                 ) : (
                                   <>
                                     <span>Analyze Forensics</span>
-                                    <ArrowRight className="w-3 h-3" />
+                                    <ArrowRight className="w-3.5 h-3.5" />
                                   </>
                                 )}
                               </button>
@@ -473,9 +501,9 @@ export default function GmailInboxModal({
                   <button
                     onClick={() => fetchMessages(searchQuery, nextPageToken)}
                     disabled={isLoading}
-                    className="text-xs font-mono text-[#0052ff] dark:text-[#3b82f6] hover:underline inline-flex items-center gap-1 disabled:opacity-50"
+                    className="text-xs text-[#0052ff] dark:text-[#3b82f6] hover:underline inline-flex items-center gap-1 disabled:opacity-50"
                   >
-                    {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                    {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                     Load more emails →
                   </button>
                 </div>
@@ -485,7 +513,7 @@ export default function GmailInboxModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17] flex items-center justify-between text-[11px] font-mono text-[#737688] dark:text-[#A0A7A3]">
+        <div className="px-6 py-3 border-t border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17] flex items-center justify-between text-[11px] text-[#737688] dark:text-[#A0A7A3]">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-3.5 h-3.5 text-[#2e7d32] dark:text-[#81c784]" />
             <span>Zero persistent storage of unanalyzed email bodies</span>

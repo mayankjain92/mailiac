@@ -22,13 +22,36 @@ import { jobsRouter } from './routes/jobs.js';
 import { reportsRouter } from './routes/reports.js';
 import { notifyRouter } from './routes/notify.js';
 import { gmailRouter } from './routes/gmail.js';
+import { authRouter } from './routes/auth.js';
+import { authenticateSession } from './middleware/auth.js';
 import { errorHandler } from './middleware/error.js';
 import { connectDb, syncEmailAnalysisIndexes } from '@mailiac/db';
 
 const app: Application = express();
 
-app.use(express.json());
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-session-id'
+    );
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  }
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
 
+app.use(express.json());
+app.use(authenticateSession);
+
+app.use('/auth', authRouter);
+app.use('/api/auth', authRouter);
 app.use('/api', uploadRouter);
 app.use('/api', jobsRouter);
 app.use('/api', reportsRouter);

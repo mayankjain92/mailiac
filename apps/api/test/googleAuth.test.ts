@@ -4,8 +4,13 @@ import {
   generateAuthUrl,
   exchangeCodeForTokens,
   revokeToken,
+  getUserAuthRedirectUri,
+  getGmailAuthRedirectUri,
+  generateUserAuthUrl,
+  exchangeCodeForUserIdentity,
   GoogleAuthError,
   GMAIL_SCOPES,
+  AUTH_SCOPES,
   type OAuth2Client,
 } from '../src/services/googleAuth.js';
 import { google } from 'googleapis';
@@ -169,6 +174,97 @@ describe('GoogleAuthService (apps/api/src/services/googleAuth.ts)', () => {
       await expect(revokeToken('invalid-token')).rejects.toThrow(GoogleAuthError);
 
       revokeSpy.mockRestore();
+    });
+  });
+
+  describe('getUserAuthRedirectUri and getGmailAuthRedirectUri', () => {
+    it('getUserAuthRedirectUri prefers customRedirectUri when passed', () => {
+      const uri = getUserAuthRedirectUri('http://custom-app.com/callback');
+      expect(uri).toBe('http://custom-app.com/callback');
+    });
+
+    it('getUserAuthRedirectUri strictly uses GOOGLE_AUTH_REDIRECT_URI when set', () => {
+      process.env['GOOGLE_AUTH_REDIRECT_URI'] = 'http://localhost:4000/api/auth/google/callback';
+      process.env['GOOGLE_REDIRECT_URI'] = 'http://localhost:4000/api/integrations/gmail/callback';
+      expect(getUserAuthRedirectUri()).toBe('http://localhost:4000/api/auth/google/callback');
+    });
+
+    it('getUserAuthRedirectUri does NOT fall back to GOOGLE_REDIRECT_URI and defaults to localhost auth callback', () => {
+      delete process.env['GOOGLE_AUTH_REDIRECT_URI'];
+      process.env['GOOGLE_REDIRECT_URI'] = 'http://localhost:4000/api/integrations/gmail/callback';
+      expect(getUserAuthRedirectUri()).toBe('http://localhost:4000/api/auth/google/callback');
+    });
+
+    it('getGmailAuthRedirectUri strictly uses GOOGLE_REDIRECT_URI', () => {
+      process.env['GOOGLE_AUTH_REDIRECT_URI'] = 'http://localhost:4000/api/auth/google/callback';
+      process.env['GOOGLE_REDIRECT_URI'] = 'http://localhost:4000/api/integrations/gmail/callback';
+      expect(getGmailAuthRedirectUri()).toBe('http://localhost:4000/api/integrations/gmail/callback');
+      expect(getGmailAuthRedirectUri('http://override.com/cb')).toBe('http://override.com/cb');
+    });
+  });
+
+  describe('generateUserAuthUrl vs generateAuthUrl redirect URIs', () => {
+    it('generateUserAuthUrl exclusively uses GOOGLE_AUTH_REDIRECT_URI', () => {
+      process.env['GOOGLE_AUTH_REDIRECT_URI'] = 'http://localhost:4000/api/auth/google/callback';
+      process.env['GOOGLE_REDIRECT_URI'] = 'http://localhost:4000/api/integrations/gmail/callback';
+
+      const url = generateUserAuthUrl('login_state_123');
+      expect(url).toContain('https://accounts.google.com/o/oauth2/v2/auth');
+      expect(url).toContain('redirect_uri=' + encodeURIComponent('http://localhost:4000/api/auth/google/callback'));
+      expect(url).toContain('state=login_state_123');
+      for (const scope of AUTH_SCOPES) {
+        expect(url).toContain(encodeURIComponent(scope));
+      }
+    });
+
+    it('generateAuthUrl exclusively uses GOOGLE_REDIRECT_URI', () => {
+      process.env['GOOGLE_AUTH_REDIRECT_URI'] = 'http://localhost:4000/api/auth/google/callback';
+      process.env['GOOGLE_REDIRECT_URI'] = 'http://localhost:4000/api/integrations/gmail/callback';
+
+      const url = generateAuthUrl('gmail_state_456');
+      expect(url).toContain('https://accounts.google.com/o/oauth2/v2/auth');
+      expect(url).toContain('redirect_uri=' + encodeURIComponent('http://localhost:4000/api/integrations/gmail/callback'));
+      expect(url).toContain('state=gmail_state_456');
+      for (const scope of GMAIL_SCOPES) {
+        expect(url).toContain(encodeURIComponent(scope));
+      }
+    });
+  });
+
+  describe('exchangeCodeForUserIdentity', () => {
+    it('successfully extracts user identity using GOOGLE_AUTH_REDIRECT_URI', async () => {
+      process.env['GOOGLE_AUTH_REDIRECT_URI'] = 'http://localhost:4000/api/auth/google/callback';
+      process.env['GOOGLE_REDIRECT_URI'] = 'http://localhost:4000/api/integrations/gmail/callback';
+
+      const mockTokens = {
+        access_token: 'mock-user-access-token',
+        id_token: 'mock-user-id-token',
+      };
+
+      const getTokenSpy = vi.spyOn(google.auth.OAuth2.prototype, 'getToken').mockResolvedValue({
+        tokens: mockTokens,
+        res: null,
+      });
+
+      const verifyIdTokenSpy = vi.spyOn(google.auth.OAuth2.prototype, 'verifyIdToken').mockResolvedValue({
+        getPayload: () => ({
+          sub: 'google-sub-999',
+          email: 'user@example.com',
+          name: 'Jane Doe',
+          picture: 'https://example.com/avatar.jpg',
+        }),
+      } as unknown as Awaited<ReturnType<OAuth2Client['verifyIdToken']>>);
+
+      const identity = await exchangeCodeForUserIdentity('auth-code-777');
+
+      expect(getTokenSpy).toHaveBeenCalledWith('auth-code-777');
+      expect(identity.googleId).toBe('google-sub-999');
+      expect(identity.email).toBe('user@example.com');
+      expect(identity.name).toBe('Jane Doe');
+      expect(identity.picture).toBe('https://example.com/avatar.jpg');
+
+      getTokenSpy.mockRestore();
+      verifyIdTokenSpy.mockRestore();
     });
   });
 });

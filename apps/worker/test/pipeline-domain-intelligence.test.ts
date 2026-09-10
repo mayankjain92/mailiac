@@ -43,7 +43,6 @@ describe('Worker Forensic Pipeline - Domain Intelligence & RDAP Integration', ()
     clearDomainIntelligenceCache();
     mockDomainDoc.doc = null;
     vi.clearAllMocks();
-    vi.restoreAllMocks();
   });
 
   it('enriches email analysis with domain registration findings and caches in MongoDB', async () => {
@@ -117,7 +116,10 @@ describe('Worker Forensic Pipeline - Domain Intelligence & RDAP Integration', ()
     expect(identityFindings.some((f) => f.type === 'NEWLY_REGISTERED_DOMAIN')).toBe(true);
 
     // Global fetch for RDAP was NOT invoked because MongoDB cache was hit
-    expect(fetchSpy).not.toHaveBeenCalled();
+    const rdapFetchCalls = fetchSpy.mock.calls.filter(([url]) =>
+      typeof url === 'string' && (url.includes('rdap') || url.includes('/domain/'))
+    );
+    expect(rdapFetchCalls).toHaveLength(0);
   }, 15000);
 
   it('continues analysis smoothly without crashing when RDAP lookup fails or times out', async () => {
