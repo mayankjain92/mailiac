@@ -14,12 +14,16 @@ import {
   X,
 } from 'lucide-react';
 import GmailInboxModal from './GmailInboxModal';
+import { sessionFetch } from '@/lib/session';
+import { useAuth } from '@/lib/auth';
+import { uploadEml, isAuthError, getErrorMessage } from '@/lib/api';
 
 interface UploadZoneProps {
   onJobCreated: (jobId: string, fileName: string) => void;
 }
 
 export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX.Element {
+  const { user, openSignInModal } = useAuth();
   const [ingestionMode, setIngestionMode] = useState<'eml' | 'gmail'>('eml');
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -34,7 +38,7 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX
   // Check Gmail connection status on load
   const checkGmailStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/gmail/status');
+      const res = await sessionFetch('/api/gmail/status');
       if (res.ok) {
         const data = (await res.json()) as { connected: boolean; email?: string };
         setIsGmailConnected(data.connected);
@@ -89,24 +93,16 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX
   const handleUpload = async (): Promise<void> => {
     if (!selectedFile) return;
 
+    if (!user) {
+      openSignInModal('You need to sign in to upload and analyze emails.');
+      return;
+    }
+
     setIsUploading(true);
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('eml', selectedFile);
-
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errJson = await response.json().catch(() => ({}));
-        throw new Error(errJson.error || `Upload failed with status ${response.status}`);
-      }
-
-      const data = await response.json();
+      const data = await uploadEml(selectedFile);
       if (!data.jobId) {
         throw new Error('No jobId returned from API server');
       }
@@ -114,7 +110,10 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX
       onJobCreated(data.jobId, selectedFile.name);
       setSelectedFile(null);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to upload email for forensic analysis.';
+      if (isAuthError(err)) {
+        return;
+      }
+      const message = getErrorMessage(err, 'Failed to upload email for forensic analysis.');
       setError(message);
     } finally {
       setIsUploading(false);
@@ -128,11 +127,11 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX
         {/* Dual Mode Switcher Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-[#D5D5CE] dark:border-[#29342F]">
           <div>
-            <div className="text-xs font-mono font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-widest flex items-center gap-2">
+            <div className="text-xs font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-widest flex items-center gap-2">
               <UploadCloud className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" />
               FORENSIC INGESTION SOURCE
             </div>
-            <p className="text-xs text-[#737688] dark:text-[#A0A7A3] mt-0.5 font-mono">
+            <p className="text-xs text-[#737688] dark:text-[#A0A7A3] mt-0.5">
               Select ingestion pathway for multi-pillar threat deconstruction
             </p>
           </div>
@@ -140,7 +139,7 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX
           <div className="flex items-center gap-1.5 p-1 bg-[#EAEAE5] dark:bg-[#151A17] rounded border border-[#D5D5CE] dark:border-[#29342F] self-start sm:self-auto">
             <button
               onClick={() => setIngestionMode('eml')}
-              className={`px-3 py-1.5 rounded text-xs font-mono font-semibold transition-colors flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors flex items-center gap-1.5 ${
                 ingestionMode === 'eml'
                   ? 'bg-[#0052ff] dark:bg-[#3b82f6] text-white shadow-sm'
                   : 'text-[#434656] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#F2F2EE]'
@@ -152,7 +151,7 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX
 
             <button
               onClick={() => setIngestionMode('gmail')}
-              className={`px-3 py-1.5 rounded text-xs font-mono font-semibold transition-colors flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors flex items-center gap-1.5 ${
                 ingestionMode === 'gmail'
                   ? 'bg-[#0052ff] dark:bg-[#3b82f6] text-white shadow-sm'
                   : 'text-[#434656] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#F2F2EE]'
@@ -301,9 +300,9 @@ export default function UploadZone({ onJobCreated }: UploadZoneProps): React.JSX
               </button>
             </div>
 
-            <div className="pt-2 flex items-center gap-2 text-[11px] font-mono text-[#737688] dark:text-[#A0A7A3]">
+            <div className="pt-2 flex items-center gap-2 text-[11px] text-[#737688] dark:text-[#A0A7A3]">
               <ShieldCheck className="w-3.5 h-3.5 text-[#0052ff] dark:text-[#3b82f6]" />
-              <span>Read-only scope (<code className="text-[#0052ff] dark:text-[#3b82f6]">gmail.readonly</code>) · Privacy first</span>
+              <span>Read-only scope (<code className="font-mono text-[#0052ff] dark:text-[#3b82f6]">gmail.readonly</code>) · Privacy first</span>
             </div>
           </div>
         )}

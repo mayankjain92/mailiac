@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "test": "vitest run --passWithNoTests",
+    "cleanup:gmail": "node --env-file=../../.env dist/scripts/cleanup-gmail-accounts.js",
     "dev": "tsc --watch"
   },
   "dependencies": {

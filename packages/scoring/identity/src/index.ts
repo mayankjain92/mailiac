@@ -823,11 +823,9 @@ export function scoreIdentity(
   }
 
   // 4. Combosquatting Analysis
-  let isCombosquattingMatched = false;
   if (!isExactSldCousin) {
     const combosquatting = detectCombosquatting(normalizedSender, combinedProtected);
     if (combosquatting.isCombosquatting && combosquatting.matchedBrand) {
-      isCombosquattingMatched = true;
       matchedBrand = matchedBrand || combosquatting.matchedBrand;
       if (combosquatting.severity === 'HIGH') {
         candidateScores.push(95);

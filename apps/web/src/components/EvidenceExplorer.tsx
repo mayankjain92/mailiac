@@ -26,7 +26,6 @@ import {
   Info,
   RefreshCw,
   X,
-  Loader2,
 } from 'lucide-react';
 import AnalystFeedbackModal from './AnalystFeedbackModal';
 import ReverseHopMapVisualizer from './ReverseHopMapVisualizer';
@@ -39,6 +38,8 @@ import {
   getAiDiagnosticsSummary,
   normalizeIntents,
 } from '@/lib/findings';
+import { useAuth } from '@/lib/auth';
+import { reanalyzeReport, isAuthError, isForbiddenError, getErrorMessage } from '@/lib/api';
 
 interface EvidenceExplorerProps {
   report: AnalysisReport;
@@ -152,7 +153,7 @@ function synthesizeAiInterpretation(
   return `High-confidence malicious threat detected. The AI identified aggressive deceptive intent, deceptive sender impersonation, and fraudulent payload triggers requiring immediate quarantine.`;
 }
 
-export default function EvidenceExplorer({ report: initialReport, caseId, onReportUpdated }: EvidenceExplorerProps): React.JSX.Element {
+export default function EvidenceExplorer({ report: initialReport, caseId, onReportUpdated: _onReportUpdated }: EvidenceExplorerProps): React.JSX.Element {
   const [report, setReport] = useState<AnalysisReport>(initialReport);
   useEffect(() => {
     setReport(initialReport);
@@ -169,6 +170,7 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
   const [showHopMap, setShowHopMap] = useState<boolean>(true);
 
   const router = useRouter();
+  const { user, openSignInModal } = useAuth();
 
   // Re-analysis states
   const [isConfirmReanalyzeOpen, setIsConfirmReanalyzeOpen] = useState<boolean>(false);
@@ -178,22 +180,18 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
   const [reanalyzeSuccessToast, setReanalyzeSuccessToast] = useState<string | null>(null);
 
   const handleReanalyze = async (): Promise<void> => {
+    if (!user) {
+      openSignInModal('You need to sign in to schedule re-analysis.');
+      return;
+    }
+
     setIsReanalyzing(true);
     setReanalyzeError(null);
     setReanalyzeSuccessToast(null);
     setReanalyzeStatus('Scheduling...');
 
     try {
-      const res = await fetch(`/api/reports/${encodeURIComponent(caseId)}/reanalyze`, {
-        method: 'POST',
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: 'Failed to schedule re-analysis' }));
-        throw new Error(errData.error || `HTTP ${res.status}: Re-analysis rejected`);
-      }
-
-      const data = await res.json();
+      const data = await reanalyzeReport(caseId);
       const targetJobId = data.jobId || caseId;
       const fileName = report?.senderDomain ? `${report.senderDomain}.eml` : `case_${targetJobId.slice(0, 8)}.eml`;
 
@@ -204,7 +202,14 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
     } catch (err: unknown) {
       setIsReanalyzing(false);
       setReanalyzeStatus(null);
-      const msg = err instanceof Error ? err.message : 'Failed to execute re-analysis';
+      if (isAuthError(err)) {
+        return;
+      }
+      if (isForbiddenError(err)) {
+        setReanalyzeError('You are not authorized to re-analyze this report.');
+        return;
+      }
+      const msg = getErrorMessage(err, 'Failed to execute re-analysis');
       setReanalyzeError(msg);
     }
   };
@@ -434,7 +439,7 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
               type="button"
               onClick={() => setIsConfirmReanalyzeOpen(true)}
               disabled={isReanalyzing}
-              className="border border-[#0052ff] dark:border-[#3b82f6] text-[#0052ff] dark:text-[#3b82f6] hover:bg-[#0052ff]/10 dark:hover:bg-[#3b82f6]/20 px-4 py-2.5 rounded text-xs font-mono font-bold inline-flex items-center gap-1.5 transition-colors bg-[#FFFFFF] dark:bg-[#151A17] shadow-sm disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
+              className="border border-[#0052ff] dark:border-[#3b82f6] text-[#0052ff] dark:text-[#3b82f6] hover:bg-[#0052ff]/10 dark:hover:bg-[#3b82f6]/20 px-4 py-2.5 rounded text-xs font-semibold inline-flex items-center gap-1.5 transition-colors bg-[#FFFFFF] dark:bg-[#151A17] shadow-sm disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
               title="Re-run forensic pipeline on this email using current engine code and scoring algorithms"
             >
               <RefreshCw className={`w-4 h-4 ${isReanalyzing ? 'animate-spin' : ''}`} />
@@ -444,7 +449,7 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
             <button
               type="button"
               onClick={() => setIsFeedbackModalOpen(true)}
-              className="border border-[#0052ff] dark:border-[#3b82f6] text-[#0052ff] dark:text-[#3b82f6] hover:bg-[#0052ff]/10 dark:hover:bg-[#3b82f6]/20 px-4 py-2.5 rounded text-xs font-mono font-bold inline-flex items-center gap-1.5 transition-colors bg-[#FFFFFF] dark:bg-[#151A17] shadow-sm"
+              className="border border-[#0052ff] dark:border-[#3b82f6] text-[#0052ff] dark:text-[#3b82f6] hover:bg-[#0052ff]/10 dark:hover:bg-[#3b82f6]/20 px-4 py-2.5 rounded text-xs font-semibold inline-flex items-center gap-1.5 transition-colors bg-[#FFFFFF] dark:bg-[#151A17] shadow-sm"
               title="Submit SOC Analyst Feedback & Ground-Truth Calibration"
             >
               <ShieldCheck className="w-4 h-4" /> Submit Feedback
@@ -452,7 +457,7 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
 
             <div className="flex items-center gap-2 border border-[#E5E5E5] dark:border-[#29342F] bg-[#FFFFFF] dark:bg-[#151A17] px-4 py-2 rounded shadow-sm">
               <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
-              <span className="font-mono text-[11px] font-bold text-[#121212] dark:text-[#F2F2EE] tracking-wider">
+              <span className="text-[11px] font-bold text-[#121212] dark:text-[#F2F2EE] tracking-wider">
                 Status: COMPLETE
               </span>
             </div>
@@ -461,7 +466,7 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
               type="button"
               onClick={handleExportPdf}
               disabled={isExportingPdf}
-              className="bg-[#0052FF] dark:bg-[#3b82f6] text-white font-mono text-[11px] font-bold tracking-wider px-6 py-2.5 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-all border border-[#0052FF] dark:border-[#3b82f6] shadow-sm flex items-center gap-2 active:scale-95 disabled:opacity-75 cursor-pointer"
+              className="bg-[#0052FF] dark:bg-[#3b82f6] text-white text-[11px] font-bold tracking-wider px-6 py-2.5 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-all border border-[#0052FF] dark:border-[#3b82f6] shadow-sm flex items-center gap-2 active:scale-95 disabled:opacity-75 cursor-pointer"
             >
               <Printer className="w-4 h-4" />
               <span>{isExportingPdf ? 'GENERATING REPORT...' : 'EXPORT FORENSIC REPORT'}</span>
@@ -472,7 +477,7 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
 
       {/* Re-analysis Feedback Notifications */}
       {reanalyzeSuccessToast && (
-        <div className="mb-6 p-4 bg-emerald-50 dark:bg-green-500/10 border border-emerald-300 dark:border-green-500/30 rounded flex items-center justify-between text-xs font-mono text-emerald-800 dark:text-green-300 animate-fadeIn">
+        <div className="mb-6 p-4 bg-emerald-50 dark:bg-green-500/10 border border-emerald-300 dark:border-green-500/30 rounded flex items-center justify-between text-xs text-emerald-800 dark:text-green-300 animate-fadeIn">
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-green-400 shrink-0" />
             <span>{reanalyzeSuccessToast}</span>
@@ -488,7 +493,7 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
       )}
 
       {reanalyzeError && (
-        <div className="mb-6 p-4 bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 rounded flex items-center justify-between text-xs font-mono text-red-800 dark:text-red-300 animate-fadeIn">
+        <div className="mb-6 p-4 bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 rounded flex items-center justify-between text-xs text-red-800 dark:text-red-300 animate-fadeIn">
           <div className="flex items-center gap-2.5">
             <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
             <span>{reanalyzeError}</span>
@@ -1076,7 +1081,7 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
       >
         <div className="flex justify-between items-center border-b border-[#E5E5E5] dark:border-[#29342F] pb-4">
           <div>
-            <h2 className="font-mono text-[11px] font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-wider">
+            <h2 className="text-[11px] font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-wider">
               TECHNICAL EVIDENCE
             </h2>
             <p className="text-xs text-[#737688] dark:text-[#A0A7A3] mt-0.5">
@@ -1088,7 +1093,7 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
             <button
               type="button"
               onClick={() => setIsTechnicalExpanded(!isTechnicalExpanded)}
-              className="bg-[#F2F2EE] dark:bg-[#1B211E] border border-[#E5E5E5] dark:border-[#29342F] px-4 py-2 rounded text-xs font-mono font-bold text-[#0052FF] dark:text-[#3b82f6] hover:border-[#0052FF] transition-all flex items-center gap-1.5 cursor-pointer"
+              className="bg-[#F2F2EE] dark:bg-[#1B211E] border border-[#E5E5E5] dark:border-[#29342F] px-4 py-2 rounded text-xs font-bold text-[#0052FF] dark:text-[#3b82f6] hover:border-[#0052FF] transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <span>{isTechnicalExpanded ? 'Collapse Technical View' : 'Expand Technical Evidence'}</span>
               {isTechnicalExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -1096,7 +1101,7 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
             <button
               type="button"
               onClick={handleExportJson}
-              className="text-xs font-mono text-[#737688] dark:text-[#A0A7A3] hover:text-[#121212] dark:hover:text-[#F2F2EE] flex items-center gap-1 cursor-pointer"
+              className="text-xs text-[#737688] dark:text-[#A0A7A3] hover:text-[#121212] dark:hover:text-[#F2F2EE] flex items-center gap-1 cursor-pointer font-medium"
               title="Download Full Evidence JSON"
             >
               <Download className="w-3.5 h-3.5" /> JSON
@@ -1475,7 +1480,7 @@ export default function EvidenceExplorer({ report: initialReport, caseId, onRepo
       {/* Confirmation Modal for Case Re-Analysis */}
       {isConfirmReanalyzeOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-[#FFFFFF] dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-lg shadow-2xl max-w-md w-full p-6 font-mono text-[#1a1c1c] dark:text-[#F2F2EE]">
+          <div className="bg-[#FFFFFF] dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-lg shadow-2xl max-w-md w-full p-6 text-[#1a1c1c] dark:text-[#F2F2EE]">
             <div className="flex items-center gap-2 text-[#0052ff] dark:text-[#3b82f6] text-xs font-bold uppercase tracking-wider mb-2">
               <RefreshCw className="w-4 h-4 animate-spin-slow" />
               <span>Forensic Engine Re-analysis</span>

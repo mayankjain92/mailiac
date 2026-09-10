@@ -6,10 +6,14 @@ import StitchLandingHeader from '@/components/StitchLandingHeader';
 import ForensicAnalysisConsole, { type ForensicJob } from '@/components/ForensicAnalysisConsole';
 import RiskPillarGrid from '@/components/RiskPillarGrid';
 import ForensicIngestionModal from '@/components/ForensicIngestionModal';
+import SignInRequiredState from '@/components/SignInRequiredState';
+import { useAuth } from '@/lib/auth';
+import { reanalyzeReport } from '@/lib/api';
 import type { AnalysisReport } from '@mailiac/shared-types';
 import { Terminal, FileCode, Loader2, CheckCircle2, XCircle, Mail, FileText, ArrowRight, FileSearch } from 'lucide-react';
 
 function ForensicAnalysisContent(): React.JSX.Element {
+  const { user, isLoading: isAuthLoading } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -86,7 +90,40 @@ function ForensicAnalysisContent(): React.JSX.Element {
           }
 
           const res = await fetch(`/api/jobs/${job.id}`);
-          if (!res.ok) continue;
+          if (!res.ok) {
+            // First check if report document is already complete
+            const fetched = await fetchReport(job.id);
+            if (fetched) continue;
+
+            // If 404 and haven't attempted re-analysis yet, auto-trigger re-analysis for expired case
+            if (res.status === 404 && !job.hasAttemptedReanalyze) {
+              try {
+                const reData = await reanalyzeReport(job.id);
+                if (reData?.jobId) {
+                  setJobs((prev) =>
+                    prev.map((j) => (j.id === job.id ? { ...j, hasAttemptedReanalyze: true, status: 'processing' } : j))
+                  );
+                  continue;
+                }
+              } catch {
+                setJobs((prev) =>
+                  prev.map((j) =>
+                    j.id === job.id
+                      ? {
+                          ...j,
+                          hasAttemptedReanalyze: true,
+                          status: 'failed',
+                          error:
+                            'This forensic case has expired and the raw MIME email payload is no longer stored in temporary cache.',
+                        }
+                      : j
+                  )
+                );
+                continue;
+              }
+            }
+            continue;
+          }
 
           const data = await res.json();
           const currentStatus = data.status as ForensicJob['status'];
@@ -130,6 +167,20 @@ function ForensicAnalysisContent(): React.JSX.Element {
     router.push('/forensic-analysis');
   };
 
+  if (!isAuthLoading && !user) {
+    return (
+      <div className="min-h-screen bg-[#F2F2EE] dark:bg-[#0E1210] text-[#1a1c1c] dark:text-[#F2F2EE] transition-colors duration-200">
+        <StitchLandingHeader />
+        <main className="max-w-[1440px] mx-auto px-6 md:px-16 py-16 flex flex-col items-center justify-center min-h-[75vh]">
+          <SignInRequiredState
+            title="Sign in required to run Forensic Analysis"
+            description="Sign in with your Google account to upload .EML samples, inspect email headers, and monitor multi-pillar analysis jobs."
+          />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F2F2EE] dark:bg-[#0E1210] text-[#1a1c1c] dark:text-[#F2F2EE] transition-colors duration-200">
       <StitchLandingHeader onJobCreated={handleJobCreated} />
@@ -158,7 +209,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
           /* Modern Ingestion Mode State when no job is selected */
           <section className="py-16 px-6 md:px-16 max-w-[1440px] mx-auto min-h-[75vh] flex flex-col justify-center">
             <div className="mb-8 text-center max-w-2xl mx-auto">
-              <div className="text-xs font-mono font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-widest mb-2">
+              <div className="text-xs font-bold text-[#0052ff] dark:text-[#3b82f6] uppercase tracking-widest mb-2">
                 FORENSIC INVESTIGATION PIPELINE
               </div>
               <h1 className="text-3xl md:text-4xl font-extrabold text-[#1a1c1c] dark:text-[#F2F2EE] tracking-tight mb-3">
@@ -179,7 +230,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
                   <div className="w-10 h-10 rounded bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6] mb-4">
                     <Mail className="w-5 h-5" />
                   </div>
-                  <span className="font-mono text-[10px] font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-wider block mb-1">
+                  <span className="text-[10px] font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-wider block mb-1">
                     DIRECT CLOUD INGESTION
                   </span>
                   <h3 className="text-lg font-bold text-[#1a1c1c] dark:text-[#F2F2EE] mb-2">
@@ -189,7 +240,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
                     Triage live emails directly from your synchronized inbox with pre-parsed headers and instant 1-click forensic analysis.
                   </p>
                 </div>
-                <div className="mt-6 flex items-center gap-1.5 text-xs font-mono font-bold text-[#0052ff] dark:text-[#3b82f6] group-hover:translate-x-1 transition-transform">
+                <div className="mt-6 flex items-center gap-1.5 text-xs font-bold text-[#0052ff] dark:text-[#3b82f6] group-hover:translate-x-1 transition-transform">
                   <span>Open Gmail Mailbox</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </div>
@@ -204,7 +255,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
                   <div className="w-10 h-10 rounded bg-purple-500/10 dark:bg-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400 mb-4">
                     <FileText className="w-5 h-5" />
                   </div>
-                  <span className="font-mono text-[10px] font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-wider block mb-1">
+                  <span className="text-[10px] font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-wider block mb-1">
                     LOCAL RFC822 INGESTION
                   </span>
                   <h3 className="text-lg font-bold text-[#1a1c1c] dark:text-[#F2F2EE] mb-2">
@@ -214,7 +265,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
                     Upload a raw forensic email export from Outlook, Apple Mail, or Thunderbird to launch the 9-stage asynchronous pipeline.
                   </p>
                 </div>
-                <div className="mt-6 flex items-center gap-1.5 text-xs font-mono font-bold text-purple-600 dark:text-purple-400 group-hover:translate-x-1 transition-transform">
+                <div className="mt-6 flex items-center gap-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 group-hover:translate-x-1 transition-transform">
                   <span>Launch Ingestion Dialog</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </div>
@@ -225,7 +276,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
               <button
                 type="button"
                 onClick={() => setIsIngestionModalOpen(true)}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white rounded text-xs font-mono font-bold transition-colors shadow-sm uppercase tracking-wider"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] text-white rounded text-xs font-bold transition-colors shadow-sm uppercase tracking-wider"
               >
                 <FileSearch className="w-4 h-4" />
                 <span>Open Ingestion Mode Dialog</span>
@@ -240,7 +291,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
             <div className="flex justify-between items-center mb-6">
               <div className="flex items-center gap-2">
                 <Terminal className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" />
-                <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-[#1a1c1c] dark:text-[#F2F2EE]">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#1a1c1c] dark:text-[#F2F2EE]">
                   {activeJob
                     ? `Other Investigations in This Session (${otherJobs.length})`
                     : `Session Investigations (${jobs.length})`}
@@ -248,7 +299,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
               </div>
               <button
                 onClick={handleReset}
-                className="text-xs font-mono text-[#0052ff] dark:text-[#3b82f6] hover:underline font-bold"
+                className="text-xs text-[#0052ff] dark:text-[#3b82f6] hover:underline font-bold"
               >
                 + New Analysis
               </button>
@@ -280,7 +331,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
                         </span>
                       </div>
 
-                      <span className="text-[11px] font-mono shrink-0 ml-2">
+                      <span className="text-[11px] shrink-0 ml-2">
                         {isPending ? (
                           <span className="text-[#0052ff] dark:text-[#3b82f6] font-bold flex items-center gap-1">
                             <Loader2 className="w-3 h-3 animate-spin" /> {job.status}
@@ -297,10 +348,10 @@ function ForensicAnalysisContent(): React.JSX.Element {
                       </span>
                     </div>
 
-                    <div className="flex justify-between items-center text-[11px] font-mono text-[#737688] dark:text-[#A0A7A3] pt-2 border-t border-[#D5D5CE] dark:border-[#29342F]">
-                      <span>CASE: {job.id.substring(0, 8).toUpperCase()}</span>
+                    <div className="flex justify-between items-center text-[11px] text-[#737688] dark:text-[#A0A7A3] pt-2 border-t border-[#D5D5CE] dark:border-[#29342F]">
+                      <span className="font-mono">CASE: {job.id.substring(0, 8).toUpperCase()}</span>
                       {job.report && (
-                        <span className="text-[#0052ff] dark:text-[#3b82f6] font-bold">
+                        <span className="text-[#0052ff] dark:text-[#3b82f6] font-bold font-mono">
                           Risk: {job.report.riskMatrix.finalScore}/100
                         </span>
                       )}
@@ -322,7 +373,7 @@ function ForensicAnalysisContent(): React.JSX.Element {
 
       {/* Footer */}
       <footer className="bg-[#EAEAE5] dark:bg-[#151A17] border-t border-[#D5D5CE] dark:border-[#29342F] w-full px-6 md:px-16 py-12 max-w-[1440px] mx-auto transition-colors duration-200">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-xs font-mono text-[#737688] dark:text-[#A0A7A3]">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-[#737688] dark:text-[#A0A7A3]">
           <div>Mailiac Forensic Intelligence Engine · Multi-Stage RFC822 Dissection</div>
           <div>© {new Date().getFullYear()} Mailiac. All rights reserved.</div>
         </div>
@@ -335,7 +386,7 @@ export default function ForensicAnalysisPage(): React.JSX.Element {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#F2F2EE] dark:bg-[#0E1210] flex items-center justify-center font-mono text-sm">
+        <div className="min-h-screen bg-[#F2F2EE] dark:bg-[#0E1210] flex items-center justify-center text-sm">
           <Loader2 className="w-5 h-5 animate-spin text-[#0052ff] dark:text-[#3b82f6] mr-2" />
           Loading Forensic Console...
         </div>

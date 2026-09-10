@@ -10,6 +10,7 @@ export async function connectDb(uri: string): Promise<void> {
     return;
   }
   await mongoose.connect(uri);
+  await fixLegacyEmailAnalysisIndexes();
 }
 
 export async function disconnectDb(): Promise<void> {
@@ -24,6 +25,7 @@ export async function disconnectDb(): Promise<void> {
 
 export type AnalysisReportDocument = AnalysisReport &
   Document & {
+    userId?: string;
     expireAt?: Date;
   };
 
@@ -102,6 +104,7 @@ const riskMatrixSchema = new Schema(
 const analysisReportSchema = new Schema<AnalysisReportDocument>(
   {
     messageId: { type: String, required: true },
+    userId: { type: String, index: true },
     senderDomain: { type: String, required: true, index: true },
     timestamp: { type: String, required: true },
     executionTimeMs: { type: Number },
@@ -125,6 +128,7 @@ const analysisReportSchema = new Schema<AnalysisReportDocument>(
 );
 
 analysisReportSchema.index({ messageId: 1 }, { unique: true });
+analysisReportSchema.index({ userId: 1, timestamp: -1 });
 
 export const AnalysisReportModel =
   (mongoose.models?.['AnalysisReport'] as mongoose.Model<AnalysisReportDocument>) ||
@@ -136,8 +140,9 @@ export const AnalysisReportModel =
 
 export interface RawEmailRecord {
   messageId: string;
+  userId?: string;
   buffer: Uint8Array | unknown;
-  source?: 'eml' | 'gmail';
+  source?: 'eml' | 'gmail' | 'sandbox';
   gmailMessageId?: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -148,14 +153,16 @@ export type RawEmailDocument = RawEmailRecord & Document;
 const rawEmailSchema = new Schema<RawEmailDocument>(
   {
     messageId: { type: String, required: true },
+    userId: { type: String, index: true },
     buffer: { type: Schema.Types.Buffer, required: true },
-    source: { type: String, enum: ['eml', 'gmail'], default: 'eml' },
+    source: { type: String, enum: ['eml', 'gmail', 'sandbox'], default: 'eml' },
     gmailMessageId: { type: String },
   },
   { timestamps: true }
 );
 
 rawEmailSchema.index({ messageId: 1 }, { unique: true });
+rawEmailSchema.index({ userId: 1, messageId: 1 });
 
 export const RawEmailModel =
   (mongoose.models?.['RawEmail'] as mongoose.Model<RawEmailDocument>) ||
@@ -166,11 +173,14 @@ export const RawEmailModel =
 // ---------------------------------------------------------------------------
 
 export interface GmailAccount {
+  userId?: string;
   sessionId: string;
+  googleAccountId?: string;
   email: string;
   accessToken: string;
   refreshToken?: string;
   tokenExpiry: Date;
+  scopes?: string[];
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -179,11 +189,14 @@ export type GmailAccountDocument = GmailAccount & Document;
 
 const gmailAccountSchema = new Schema<GmailAccountDocument>(
   {
+    userId: { type: String, index: true },
     sessionId: { type: String, required: true, index: true },
+    googleAccountId: { type: String },
     email: { type: String, required: true },
     accessToken: { type: String, required: true },
     refreshToken: { type: String },
     tokenExpiry: { type: Date, required: true },
+    scopes: [{ type: String }],
   },
   { timestamps: true }
 );
@@ -192,13 +205,18 @@ export const GmailAccountModel =
   (mongoose.models?.['GmailAccount'] as mongoose.Model<GmailAccountDocument>) ||
   model<GmailAccountDocument>('GmailAccount', gmailAccountSchema);
 
+export type GmailConnection = GmailAccount;
+export type GmailConnectionDocument = GmailAccountDocument;
+export const GmailConnectionModel = GmailAccountModel;
+
 // ---------------------------------------------------------------------------
 // EmailAnalysisRecord Mongoose schema + model (for Unified .EML + Gmail Tracking)
 // ---------------------------------------------------------------------------
 
 export interface EmailAnalysisRecord {
   jobId: string;
-  source: 'eml' | 'gmail';
+  userId?: string;
+  source: 'eml' | 'gmail' | 'sandbox';
   gmailMessageId?: string;
   sender?: string;
   subject?: string;
@@ -219,7 +237,8 @@ export type EmailAnalysisRecordDocument = EmailAnalysisRecord & Document;
 const emailAnalysisRecordSchema = new Schema<EmailAnalysisRecordDocument>(
   {
     jobId: { type: String, required: true },
-    source: { type: String, enum: ['eml', 'gmail'], required: true },
+    userId: { type: String, index: true },
+    source: { type: String, enum: ['eml', 'gmail', 'sandbox'], required: true },
     gmailMessageId: { type: String },
     sender: { type: String },
     subject: { type: String },
@@ -239,9 +258,18 @@ const emailAnalysisRecordSchema = new Schema<EmailAnalysisRecordDocument>(
 );
 
 emailAnalysisRecordSchema.index({ jobId: 1 }, { unique: true });
-emailAnalysisRecordSchema.index({ gmailMessageId: 1 }, { unique: true, sparse: true });
-emailAnalysisRecordSchema.index({ source: 1, createdAt: -1 });
-emailAnalysisRecordSchema.index({ verdict: 1, createdAt: -1 });
+emailAnalysisRecordSchema.index(
+  { userId: 1, gmailMessageId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      gmailMessageId: { $type: 'string' },
+    },
+  }
+);
+emailAnalysisRecordSchema.index({ userId: 1, createdAt: -1 });
+emailAnalysisRecordSchema.index({ userId: 1, source: 1, createdAt: -1 });
+emailAnalysisRecordSchema.index({ userId: 1, verdict: 1, createdAt: -1 });
 
 export const EmailAnalysisRecordModel =
   (mongoose.models?.['EmailAnalysisRecord'] as mongoose.Model<EmailAnalysisRecordDocument>) ||
@@ -254,10 +282,10 @@ export const EmailAnalysisRecordModel =
 export async function cleanupDuplicateGmailRecords(): Promise<{ duplicatesRemoved: number }> {
   try {
     const duplicates = await EmailAnalysisRecordModel.aggregate([
-      { $match: { gmailMessageId: { $exists: true, $ne: null } } },
+      { $match: { gmailMessageId: { $exists: true, $ne: null }, userId: { $exists: true, $ne: null } } },
       {
         $group: {
-          _id: '$gmailMessageId',
+          _id: { userId: '$userId', gmailMessageId: '$gmailMessageId' },
           count: { $sum: 1 },
           docs: { $push: { id: '$_id', createdAt: '$createdAt' } },
         },
@@ -285,6 +313,30 @@ export async function cleanupDuplicateGmailRecords(): Promise<{ duplicatesRemove
     return { duplicatesRemoved };
   } catch (err) {
     console.error('[db] Error cleaning up duplicate Gmail records:', err);
+    throw err;
+  }
+}
+
+/**
+ * Safe database cleanup routine for Gmail accounts.
+ *
+ * In development or maintenance, allows purging stale or orphaned GmailAccount records
+ * created prior to browser-scoped session isolation.
+ * If olderThanHours is provided, only accounts inactive for that duration are removed.
+ */
+export async function cleanupStaleGmailAccounts(
+  options: { olderThanHours?: number; wipeAll?: boolean } = {}
+): Promise<{ deletedCount: number }> {
+  try {
+    const filter: Record<string, unknown> = {};
+    if (!options.wipeAll && options.olderThanHours) {
+      const cutoff = new Date(Date.now() - options.olderThanHours * 3600 * 1000);
+      filter['updatedAt'] = { $lt: cutoff };
+    }
+    const result = await GmailAccountModel.deleteMany(filter);
+    return { deletedCount: result.deletedCount || 0 };
+  } catch (err) {
+    console.error('[db] Error cleaning up stale Gmail accounts:', err);
     throw err;
   }
 }
@@ -331,15 +383,39 @@ export async function cleanupDuplicateAnalysisReports(): Promise<{ duplicatesRem
 }
 
 /**
+ * Drops legacy unique indexes (like sparse userId_1_gmailMessageId_1) that conflict
+ * with compound partial indexing on .eml uploads where gmailMessageId is null.
+ */
+export async function fixLegacyEmailAnalysisIndexes(): Promise<void> {
+  try {
+    if (mongoose.connection.readyState !== 1) return;
+    const collection = EmailAnalysisRecordModel.collection;
+    const indexes = await collection.indexes();
+    const oldIndex = indexes.find((idx) => idx.name === 'userId_1_gmailMessageId_1');
+    if (oldIndex && !oldIndex['partialFilterExpression']) {
+      await collection.dropIndex('userId_1_gmailMessageId_1');
+    }
+  } catch {
+    // Collection or index might not exist yet; safe to ignore
+  }
+}
+
+/**
  * Safely synchronizes indexes across forensic models after deduplication cleanup.
  */
 export async function syncEmailAnalysisIndexes(): Promise<void> {
+  await fixLegacyEmailAnalysisIndexes();
   await cleanupDuplicateGmailRecords();
   await cleanupDuplicateAnalysisReports();
   await EmailAnalysisRecordModel.syncIndexes();
   await AnalysisReportModel.syncIndexes();
   await RawEmailModel.syncIndexes();
   await DomainIntelligenceModel.syncIndexes();
+  await UserModel.syncIndexes();
+  await SessionModel.syncIndexes();
+  await GmailAccountModel.syncIndexes();
+  await AnalystFeedbackModel.syncIndexes();
+  await OAuthTransactionModel.syncIndexes();
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +424,7 @@ export async function syncEmailAnalysisIndexes(): Promise<void> {
 
 export interface AnalystFeedback {
   jobId: string;
+  userId?: string;
   feedbackMode?: 'user' | 'expert';
   analystVerdict:
     | 'CONFIRMED_TRUE_POSITIVE'
@@ -379,6 +456,7 @@ export type AnalystFeedbackDocument = AnalystFeedback & Document;
 const analystFeedbackSchema = new Schema<AnalystFeedbackDocument>(
   {
     jobId: { type: String, required: true },
+    userId: { type: String, index: true },
     feedbackMode: { type: String, enum: ['user', 'expert'], default: 'expert' },
     analystVerdict: {
       type: String,
@@ -411,6 +489,7 @@ const analystFeedbackSchema = new Schema<AnalystFeedbackDocument>(
 );
 
 analystFeedbackSchema.index({ jobId: 1 }, { unique: true });
+analystFeedbackSchema.index({ userId: 1, jobId: 1 });
 
 export const AnalystFeedbackModel =
   (mongoose.models?.['AnalystFeedback'] as mongoose.Model<AnalystFeedbackDocument>) ||
@@ -454,7 +533,7 @@ export type DomainIntelligenceDocument = DomainIntelligenceRecord & Document;
 
 const domainIntelligenceSchema = new Schema<DomainIntelligenceDocument>(
   {
-    domain: { type: String, required: true, unique: true, index: true },
+    domain: { type: String, required: true },
     registrableDomain: { type: String, required: true, index: true },
     registration: {
       createdAt: { type: Date },
@@ -495,5 +574,98 @@ export const DomainIntelligenceModel =
   (mongoose.models?.['DomainIntelligence'] as mongoose.Model<DomainIntelligenceDocument>) ||
   model<DomainIntelligenceDocument>('DomainIntelligence', domainIntelligenceSchema);
 
+// ---------------------------------------------------------------------------
+// User Mongoose schema + model (Mailiac Identity)
+// ---------------------------------------------------------------------------
 
+export interface User {
+  id: string; // Stable internal Mailiac userId (UUID)
+  googleId: string; // Google subject identifier (sub)
+  email: string;
+  name?: string;
+  picture?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type UserDocument = User & Document;
+
+const userSchema = new Schema<UserDocument>(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    googleId: { type: String, required: true, unique: true, index: true },
+    email: { type: String, required: true, index: true },
+    name: { type: String },
+    picture: { type: String },
+  },
+  { timestamps: true }
+);
+
+export const UserModel =
+  (mongoose.models?.['User'] as mongoose.Model<UserDocument>) ||
+  model<UserDocument>('User', userSchema);
+
+// ---------------------------------------------------------------------------
+// Session Mongoose schema + model (Mailiac Authenticated Sessions)
+// ---------------------------------------------------------------------------
+
+export interface Session {
+  id: string; // Session ID (UUID)
+  userId: string; // Internal Mailiac userId
+  expiresAt: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type SessionDocument = Session & Document;
+
+const sessionSchema = new Schema<SessionDocument>(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    userId: { type: String, required: true, index: true },
+    expiresAt: { type: Date, required: true },
+  },
+  { timestamps: true }
+);
+
+sessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+export const SessionModel =
+  (mongoose.models?.['Session'] as mongoose.Model<SessionDocument>) ||
+  model<SessionDocument>('Session', sessionSchema);
+
+// ---------------------------------------------------------------------------
+// OAuthTransaction Mongoose schema + model (Short-lived OAuth State Verification)
+// ---------------------------------------------------------------------------
+
+export interface OAuthTransaction {
+  id: string; // state token (UUID)
+  userId?: string;
+  sessionId?: string;
+  action?: 'login' | 'gmail';
+  expiresAt: Date;
+  used: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type OAuthTransactionDocument = OAuthTransaction & Document;
+
+const oAuthTransactionSchema = new Schema<OAuthTransactionDocument>(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    userId: { type: String, index: true },
+    sessionId: { type: String },
+    action: { type: String, enum: ['login', 'gmail'], default: 'gmail' },
+    expiresAt: { type: Date, required: true },
+    used: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
+
+oAuthTransactionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+export const OAuthTransactionModel =
+  (mongoose.models?.['OAuthTransaction'] as mongoose.Model<OAuthTransactionDocument>) ||
+  model<OAuthTransactionDocument>('OAuthTransaction', oAuthTransactionSchema);
 

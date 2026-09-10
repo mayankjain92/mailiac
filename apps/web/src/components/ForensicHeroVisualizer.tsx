@@ -15,7 +15,7 @@ import { Shield, Sparkles, Target } from 'lucide-react';
  */
 export default function ForensicHeroVisualizer(): React.JSX.Element {
   return (
-    <div className="relative w-full max-w-[700px] lg:max-w-[740px] aspect-[760/540] min-h-[460px] sm:min-h-[500px] lg:min-h-[540px] flex items-center justify-center select-none overflow-visible">
+    <div className="relative w-full max-w-[700px] lg:max-w-[740px] aspect-[760/540] min-h-[380px] sm:min-h-[500px] lg:min-h-[540px] flex items-center justify-center select-none overflow-visible">
       
       {/* ============================================================ */}
       {/* 1. VECTOR FORENSIC DIAGRAM: CONNECTORS, NODES & FLOATING ENVELOPE */}
@@ -359,10 +359,10 @@ export default function ForensicHeroVisualizer(): React.JSX.Element {
       {/* CARD 1 — TOP LEFT: EMAIL · TRACE */}
       {/* ------------------------------------------------------------ */}
       <div
-        className="absolute z-20 w-[205px] sm:w-[220px] p-3 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-[3px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] font-mono transition-colors duration-200"
+        className="absolute z-20 w-[145px] sm:w-[210px] md:w-[220px] p-2.5 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded shadow-sm dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] transition-colors duration-200"
         style={{
-          top: '6%',
-          left: '3%',
+          top: '5%',
+          left: '2%',
         }}
       >
         {/* Blue Corner L-Brackets */}
@@ -372,18 +372,18 @@ export default function ForensicHeroVisualizer(): React.JSX.Element {
         <div className="absolute -bottom-[1px] -right-[1px] w-2 h-2 border-b-[1.5px] border-r-[1.5px] border-[#0052ff] dark:border-[#3b82f6]" />
 
         {/* Card Header */}
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <span className="text-[10px] font-semibold tracking-wider text-[#555968] dark:text-[#A0A7A3] uppercase">
+        <div className="flex items-center justify-between gap-2 mb-1.5 sm:mb-2">
+          <span className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#555968] dark:text-[#A0A7A3] uppercase">
             EMAIL · TRACE
           </span>
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#0052ff] dark:bg-[#3b82f6]" />
         </div>
 
         {/* Card Body */}
-        <div className="text-[11px] font-medium text-[#1a1c1c] dark:text-[#F2F2EE] leading-tight mb-2">
+        <div className="text-[9.5px] sm:text-[11px] font-medium text-[#1a1c1c] dark:text-[#F2F2EE] leading-tight mb-1 sm:mb-2">
           &gt; sender path captured
         </div>
-        <div className="text-[10px] text-[#555968] dark:text-[#A0A7A3] flex items-center gap-1.5 font-medium">
+        <div className="text-[8.5px] sm:text-[10px] text-[#555968] dark:text-[#A0A7A3] flex items-center gap-1 sm:gap-1.5 font-medium">
           <span>origin</span>
           <span className="text-[#0052ff] dark:text-[#3b82f6]">→</span>
           <span className="text-[#0052ff] dark:text-[#3b82f6] font-semibold">relay</span>
@@ -396,9 +396,9 @@ export default function ForensicHeroVisualizer(): React.JSX.Element {
       {/* CARD 2 — TOP RIGHT: AUTH · VERIFY */}
       {/* ------------------------------------------------------------ */}
       <div
-        className="absolute z-20 w-[165px] sm:w-[180px] p-3 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-[3px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] font-mono transition-colors duration-200"
+        className="absolute z-20 w-[130px] sm:w-[170px] md:w-[180px] p-2.5 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded shadow-sm dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] transition-colors duration-200"
         style={{
-          top: '7%',
+          top: '5%',
           right: '2%',
         }}
       >
@@ -409,15 +409,15 @@ export default function ForensicHeroVisualizer(): React.JSX.Element {
         <div className="absolute -bottom-[1px] -right-[1px] w-2 h-2 border-b-[1.5px] border-r-[1.5px] border-[#0052ff] dark:border-[#3b82f6]" />
 
         {/* Card Header */}
-        <div className="flex items-center justify-between gap-2 mb-2.5">
-          <span className="text-[10px] font-semibold tracking-wider text-[#555968] dark:text-[#A0A7A3] uppercase">
+        <div className="flex items-center justify-between gap-2 mb-1.5 sm:mb-2">
+          <span className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#555968] dark:text-[#A0A7A3] uppercase">
             AUTH · VERIFY
           </span>
-          <Shield className="w-3.5 h-3.5 text-[#555968] dark:text-[#A0A7A3]" />
+          <Shield className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#555968] dark:text-[#A0A7A3]" />
         </div>
 
         {/* Status Rows */}
-        <div className="space-y-1.5 text-[10px]">
+        <div className="space-y-1 sm:space-y-1.5 text-[8.5px] sm:text-[10px]">
           <div className="flex justify-between items-center text-[#1a1c1c] dark:text-[#F2F2EE]">
             <span className="text-[#555968] dark:text-[#A0A7A3]">SPF</span>
             <span className="font-bold text-[#16a34a] dark:text-[#22c55e]">PASS</span>
@@ -437,10 +437,10 @@ export default function ForensicHeroVisualizer(): React.JSX.Element {
       {/* CARD 3 — BOTTOM LEFT: AI · ANALYSIS */}
       {/* ------------------------------------------------------------ */}
       <div
-        className="absolute z-20 w-[215px] sm:w-[230px] p-3 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-[3px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] font-mono transition-colors duration-200"
+        className="absolute z-20 w-[145px] sm:w-[215px] md:w-[230px] p-2.5 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded shadow-sm dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] transition-colors duration-200"
         style={{
-          bottom: '6%',
-          left: '3%',
+          bottom: '5%',
+          left: '2%',
         }}
       >
         {/* Blue Corner L-Brackets */}
@@ -450,23 +450,23 @@ export default function ForensicHeroVisualizer(): React.JSX.Element {
         <div className="absolute -bottom-[1px] -right-[1px] w-2 h-2 border-b-[1.5px] border-r-[1.5px] border-[#0052ff] dark:border-[#3b82f6]" />
 
         {/* Card Header */}
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <span className="text-[10px] font-semibold tracking-wider text-[#555968] dark:text-[#A0A7A3] uppercase">
+        <div className="flex items-center justify-between gap-2 mb-1.5 sm:mb-2">
+          <span className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#555968] dark:text-[#A0A7A3] uppercase">
             AI · ANALYSIS
           </span>
-          <Sparkles className="w-3.5 h-3.5 text-[#555968] dark:text-[#A0A7A3]" />
+          <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#555968] dark:text-[#A0A7A3]" />
         </div>
 
         {/* Card Content */}
-        <div className="text-[10px] text-[#1a1c1c] dark:text-[#F2F2EE] space-y-1">
-          <div className="font-medium text-[11px]">
+        <div className="text-[8.5px] sm:text-[10px] text-[#1a1c1c] dark:text-[#F2F2EE] space-y-0.5 sm:space-y-1">
+          <div className="font-medium text-[9.5px] sm:text-[11px]">
             &gt; intent detected
           </div>
-          <div className="text-[#555968] dark:text-[#A0A7A3] pl-2">
+          <div className="text-[#555968] dark:text-[#A0A7A3] pl-1.5 sm:pl-2">
             risk signals evaluated
           </div>
-          <div className="text-[#555968] dark:text-[#A0A7A3] pl-2 flex items-center justify-between pt-0.5">
-            <span>forensic confidence</span>
+          <div className="text-[#555968] dark:text-[#A0A7A3] pl-1.5 sm:pl-2 flex items-center justify-between pt-0.5">
+            <span>confidence</span>
             <span className="text-[#0052ff] dark:text-[#3b82f6] font-bold">98.4%</span>
           </div>
         </div>
@@ -476,10 +476,10 @@ export default function ForensicHeroVisualizer(): React.JSX.Element {
       {/* CARD 4 — BOTTOM RIGHT: FORENSIC CORE */}
       {/* ------------------------------------------------------------ */}
       <div
-        className="absolute z-20 w-[195px] sm:w-[210px] p-3 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded-[3px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] font-mono transition-colors duration-200"
+        className="absolute z-20 w-[135px] sm:w-[195px] md:w-[210px] p-2.5 sm:p-3.5 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] rounded shadow-sm dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] transition-colors duration-200"
         style={{
-          bottom: '6%',
-          right: '3%',
+          bottom: '5%',
+          right: '2%',
         }}
       >
         {/* Blue Corner L-Brackets */}
@@ -489,15 +489,15 @@ export default function ForensicHeroVisualizer(): React.JSX.Element {
         <div className="absolute -bottom-[1px] -right-[1px] w-2 h-2 border-b-[1.5px] border-r-[1.5px] border-[#0052ff] dark:border-[#3b82f6]" />
 
         {/* Card Header */}
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <span className="text-[10px] font-semibold tracking-wider text-[#555968] dark:text-[#A0A7A3] uppercase">
+        <div className="flex items-center justify-between gap-2 mb-1.5 sm:mb-2">
+          <span className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#555968] dark:text-[#A0A7A3] uppercase">
             FORENSIC CORE
           </span>
-          <Target className="w-3.5 h-3.5 text-[#555968] dark:text-[#A0A7A3]" />
+          <Target className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#555968] dark:text-[#A0A7A3]" />
         </div>
 
         {/* Card Content */}
-        <div className="text-[10px] text-[#555968] dark:text-[#A0A7A3] leading-relaxed">
+        <div className="text-[8.5px] sm:text-[10px] text-[#555968] dark:text-[#A0A7A3] leading-relaxed">
           real-time signal correlation<br />
           and threat intelligence
         </div>

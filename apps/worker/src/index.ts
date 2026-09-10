@@ -25,8 +25,9 @@ export { runForensicPipeline };
 interface EmailJobData {
   messageId: string;
   buffer: Buffer;
-  source?: 'eml' | 'gmail';
+  source?: 'eml' | 'gmail' | 'sandbox';
   gmailMessageId?: string;
+  userId?: string;
 }
 
 const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
@@ -64,7 +65,7 @@ function coerceToBuffer(val: unknown): Buffer | null {
 }
 
 async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
-  const { messageId, source, gmailMessageId } = job.data;
+  const { messageId, source, gmailMessageId, userId } = job.data;
 
   try {
     const rawEmlBuffer = coerceToBuffer(job.data.buffer);
@@ -77,6 +78,7 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
       protectedDomains,
       source,
       gmailMessageId,
+      userId,
     });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);

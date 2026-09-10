@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "turbo run dev --concurrency=20",
     "build": "turbo run build",
+    "clean": "rm -rf .turbo apps/*/.turbo apps/*/.next apps/*/dist packages/*/.turbo packages/*/dist packages/*/*/.turbo packages/*/*/dist dist",
+    "rebuild": "pnpm clean && pnpm build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",

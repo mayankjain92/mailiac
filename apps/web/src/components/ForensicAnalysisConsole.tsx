@@ -33,6 +33,7 @@ export interface ForensicJob {
   status: 'queued' | 'active' | 'processing' | 'completed' | 'failed';
   error?: string;
   report?: AnalysisReport;
+  hasAttemptedReanalyze?: boolean;
 }
 
 interface ForensicAnalysisConsoleProps {
@@ -159,7 +160,7 @@ export default function ForensicAnalysisConsole({
           <div className="h-7 w-7 rounded bg-[#0052ff] dark:bg-[#3b82f6] flex items-center justify-center text-white font-bold text-xs shadow-sm">
             M
           </div>
-          <span className="font-mono text-xs font-bold uppercase tracking-widest text-[#434656] dark:text-[#A0A7A3]">
+          <span className="text-xs font-bold uppercase tracking-widest text-[#434656] dark:text-[#A0A7A3]">
             MAILIAC FORENSICS CONSOLE
           </span>
         </div>
@@ -199,22 +200,22 @@ export default function ForensicAnalysisConsole({
       <section className="mb-14 text-center max-w-3xl mx-auto">
         {/* State-Aware Pipeline Status Pill */}
         {isCompleted ? (
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 mb-4 rounded-full bg-[#10b981]/10 dark:bg-[#10b981]/20 border border-[#10b981]/30 text-[#10b981] dark:text-[#34d399] text-[11px] font-mono font-bold tracking-wider uppercase">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 mb-4 rounded-full bg-[#10b981]/10 dark:bg-[#10b981]/20 border border-[#10b981]/30 text-[#10b981] dark:text-[#34d399] text-[11px] font-bold tracking-wider uppercase">
             <CheckCircle2 className="w-3.5 h-3.5" />
             Forensic Triage Complete
           </div>
         ) : isFailed ? (
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 mb-4 rounded-full bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-[11px] font-mono font-bold tracking-wider uppercase">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 mb-4 rounded-full bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-[11px] font-bold tracking-wider uppercase">
             <XCircle className="w-3.5 h-3.5" />
             Analysis Interrupted
           </div>
         ) : isQueued ? (
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 mb-4 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[11px] font-mono font-bold tracking-wider uppercase">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 mb-4 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[11px] font-bold tracking-wider uppercase">
             <Clock className="w-3.5 h-3.5" />
             Pipeline Queued
           </div>
         ) : (
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 mb-4 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 border border-[#0052ff]/20 dark:border-[#3b82f6]/30 text-[#0052ff] dark:text-[#3b82f6] text-[11px] font-mono font-bold tracking-wider uppercase">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 mb-4 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 border border-[#0052ff]/20 dark:border-[#3b82f6]/30 text-[#0052ff] dark:text-[#3b82f6] text-[11px] font-bold tracking-wider uppercase">
             <Radio className="w-3.5 h-3.5 animate-pulse" />
             Real-Time Pipeline Execution
           </div>
@@ -229,7 +230,7 @@ export default function ForensicAnalysisConsole({
           <p className="text-base text-[#434656] dark:text-[#A0A7A3] mb-6 leading-relaxed">
             Multi-stage dissection completed in {(elapsedMs / 1000).toFixed(2)}s. All 9 forensic engines evaluated.{' '}
             {job.report && (
-              <span className="inline-flex items-center gap-2 mt-2 sm:mt-0 font-mono text-xs font-semibold text-[#1a1c1c] dark:text-[#F2F2EE]">
+              <span className="inline-flex items-center gap-2 mt-2 sm:mt-0 text-xs font-semibold text-[#1a1c1c] dark:text-[#F2F2EE]">
                 <span>Forensic Verdict:</span>
                 <VerdictBadge
                   verdict={verdict.severityLabel}
@@ -265,10 +266,10 @@ export default function ForensicAnalysisConsole({
       {/* Forensic Pipeline Visual Timeline */}
       <section className="mb-16 w-full">
         <div className="flex justify-between items-center mb-8">
-          <h2 className="font-mono text-xs font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-widest">
+          <h2 className="text-xs font-bold text-[#737688] dark:text-[#A0A7A3] uppercase tracking-widest">
             Forensic Pipeline Activity
           </h2>
-          <span className="font-mono text-xs text-[#0052ff] dark:text-[#3b82f6] font-bold">
+          <span className="text-xs text-[#0052ff] dark:text-[#3b82f6] font-bold">
             {completedCount} / 9 stages complete
           </span>
         </div>
@@ -560,7 +561,7 @@ export default function ForensicAnalysisConsole({
       {isCompleted && (
         <div className="bg-[#10b981]/10 border border-[#10b981]/30 p-6 rounded flex flex-col sm:flex-row justify-between items-center gap-4 transition-all animate-fadeIn">
           <div>
-            <div className="flex items-center gap-2 text-[#10b981] font-bold text-sm mb-1 font-mono">
+            <div className="flex items-center gap-2 text-[#10b981] font-bold text-sm mb-1">
               <CheckCircle2 className="w-5 h-5" />
               FORENSIC ANALYSIS COMPLETE
             </div>
@@ -582,14 +583,14 @@ export default function ForensicAnalysisConsole({
           <div className="flex flex-wrap items-center gap-3">
             <Link
               href={`/analysis-console/${job.id}/evidence`}
-              className="bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold px-5 py-2.5 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 shadow-sm font-mono"
+              className="bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold px-5 py-2.5 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 shadow-sm"
             >
               <FileText className="w-4 h-4" /> View Full Evidence Explorer <ArrowRight className="w-4 h-4" />
             </Link>
 
             <button
               onClick={() => setIsFeedbackModalOpen(true)}
-              className="border border-[#0052ff] dark:border-[#3b82f6] text-[#0052ff] dark:text-[#3b82f6] hover:bg-[#0052ff]/10 dark:hover:bg-[#3b82f6]/20 bg-white dark:bg-[#151A17] text-xs font-bold px-4 py-2.5 rounded transition-colors flex items-center gap-2 font-mono shadow-sm"
+              className="border border-[#0052ff] dark:border-[#3b82f6] text-[#0052ff] dark:text-[#3b82f6] hover:bg-[#0052ff]/10 dark:hover:bg-[#3b82f6]/20 bg-white dark:bg-[#151A17] text-xs font-bold px-4 py-2.5 rounded transition-colors flex items-center gap-2 shadow-sm"
               title="Submit SOC Analyst Feedback & Ground-Truth Calibration"
             >
               <ShieldCheck className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" /> Submit Feedback
@@ -598,7 +599,7 @@ export default function ForensicAnalysisConsole({
             {onReset && (
               <button
                 onClick={onReset}
-                className="border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold px-4 py-2.5 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-colors font-mono"
+                className="border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold px-4 py-2.5 rounded hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-colors"
               >
                 Analyze Another
               </button>
@@ -611,7 +612,7 @@ export default function ForensicAnalysisConsole({
       {isFailed && (
         <div className="bg-[#ba1a1a]/10 border border-[#ba1a1a]/30 p-6 rounded flex flex-col sm:flex-row justify-between items-center gap-4 transition-all">
           <div>
-            <div className="flex items-center gap-2 text-[#ba1a1a] dark:text-[#ef4444] font-bold text-sm mb-1 font-mono">
+            <div className="flex items-center gap-2 text-[#ba1a1a] dark:text-[#ef4444] font-bold text-sm mb-1">
               <XCircle className="w-5 h-5" />
               ANALYSIS FAILED
             </div>
@@ -623,7 +624,7 @@ export default function ForensicAnalysisConsole({
           {onReset && (
             <button
               onClick={onReset}
-              className="bg-[#ba1a1a] text-white text-xs font-semibold px-5 py-2.5 rounded hover:bg-[#93000a] transition-colors flex items-center gap-2 font-mono"
+              className="bg-[#ba1a1a] text-white text-xs font-semibold px-5 py-2.5 rounded hover:bg-[#93000a] transition-colors flex items-center gap-2"
             >
               <RefreshCw className="w-4 h-4" /> Return to Upload
             </button>

@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from 'express';
 import { emailQueue } from '../queue.js';
+import { requireAuth } from '../middleware/auth.js';
 
 export interface JobStatusResponse {
   jobId: string;
@@ -9,7 +10,7 @@ export interface JobStatusResponse {
 
 export const jobsRouter: IRouter = Router();
 
-jobsRouter.get('/jobs/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+jobsRouter.get('/jobs/:id', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = req.params['id'];
     if (!id || typeof id !== 'string' || id.trim() === '') {
@@ -21,6 +22,12 @@ jobsRouter.get('/jobs/:id', async (req: Request, res: Response, next: NextFuncti
 
     if (!job) {
       res.status(404).json({ error: 'Job not found.' });
+      return;
+    }
+
+    const jobUserId = job.data?.userId;
+    if (jobUserId && req.user!.id !== jobUserId) {
+      res.status(403).json({ error: 'Access denied. You do not have permission to inspect this job.' });
       return;
     }
 

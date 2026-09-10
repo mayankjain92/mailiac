@@ -1,10 +1,10 @@
 import React from 'react';
 
-export type BackendVerdict = 'QUARANTINE' | 'FLAG' | 'SAFE';
+export type BackendVerdict = 'QUARANTINE' | 'FLAG' | 'SAFE' | 'UNANALYZED';
 
 export interface VerdictConfig {
   verdict: BackendVerdict;
-  label: 'QUARANTINE' | 'SUSPICIOUS' | 'SAFE';
+  label: 'QUARANTINE' | 'SUSPICIOUS' | 'SAFE' | 'UNANALYZED';
   colorText: string;
   colorBg: string;
   colorBorder: string;
@@ -16,12 +16,24 @@ export interface VerdictConfig {
  * - QUARANTINE -> "QUARANTINE", red
  * - FLAG -> "SUSPICIOUS", amber
  * - SAFE -> "SAFE", emerald
+ * - UNANALYZED -> "UNANALYZED", neutral slate
  */
 export function getVerdictConfig(
   verdict?: string | null,
   score?: number | null
 ): VerdictConfig {
   const normalized = (verdict || '').toUpperCase();
+
+  if (normalized === 'UNANALYZED') {
+    return {
+      verdict: 'UNANALYZED',
+      label: 'UNANALYZED',
+      colorText: 'text-[#434656] dark:text-[#A0A7A3]',
+      colorBg: 'bg-[#EAEAE5] dark:bg-[#222B27]',
+      colorBorder: 'border-[#D5D5CE] dark:border-[#29342F]',
+      badgeHex: '#737688',
+    };
+  }
 
   if (normalized === 'QUARANTINE' || (typeof score === 'number' && score >= 70)) {
     return {
@@ -42,7 +54,7 @@ export function getVerdictConfig(
     return {
       verdict: 'FLAG',
       label: 'SUSPICIOUS',
-      colorText: 'text-amber-700 dark:text-amber-400',
+      colorText: 'text-amber-800 dark:text-amber-300',
       colorBg: 'bg-amber-50 dark:bg-amber-500/15',
       colorBorder: 'border-amber-200 dark:border-amber-500/30',
       badgeHex: '#f59e0b',
@@ -85,15 +97,17 @@ export default function VerdictBadge({
       ? 'px-3 py-1 text-xs'
       : 'px-2 py-0.5 text-[10px]';
 
+  const shouldRenderScore = showScore && typeof score === 'number' && config.label !== 'UNANALYZED';
+
   return (
     <span
       className={`inline-flex items-center font-mono font-bold uppercase tracking-wider rounded border shrink-0 ${config.colorBg} ${config.colorText} ${config.colorBorder} ${sizeClasses} ${className}`}
       title={`Forensic Verdict: ${config.label}${
-        typeof score === 'number' ? ` (Risk Score: ${score}/100)` : ''
+        typeof score === 'number' && config.label !== 'UNANALYZED' ? ` (Risk Score: ${score}/100)` : ''
       }`}
     >
       [{prefix ? `${prefix} ` : ''}{config.label}
-      {showScore && typeof score === 'number' ? ` · ${score}` : ''}]
+      {shouldRenderScore ? ` · ${score}` : ''}]
     </span>
   );
 }

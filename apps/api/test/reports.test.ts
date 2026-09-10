@@ -16,23 +16,41 @@ vi.mock('@mailiac/db', () => ({
   connectDb: vi.fn().mockResolvedValue(undefined),
   AnalysisReportModel: {
     findOne: vi.fn(),
+    deleteOne: vi.fn().mockResolvedValue({ deletedCount: 1 }),
+    deleteMany: vi.fn().mockResolvedValue({ deletedCount: 1 }),
   },
   EmailAnalysisRecordModel: {
     find: vi.fn(),
     findOne: vi.fn(),
+    countDocuments: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ deletedCount: 1 }),
   },
   AnalystFeedbackModel: {
     findOneAndUpdate: vi.fn(),
     findOne: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ deletedCount: 1 }),
   },
   RawEmailModel: {
     findOne: vi.fn(),
     findOneAndUpdate: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ deletedCount: 1 }),
+  },
+  GmailAccountModel: {
+    findOne: vi.fn(),
   },
 }));
 
-import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel, AnalystFeedbackModel, RawEmailModel } from '@mailiac/db';
+vi.mock('../src/services/googleAuth.js', () => ({
+  getOAuthClient: vi.fn().mockReturnValue({ setCredentials: vi.fn() }),
+}));
+
+vi.mock('../src/services/gmailClient.js', () => ({
+  fetchRawMessage: vi.fn(),
+}));
+
+import { connectDb, AnalysisReportModel, EmailAnalysisRecordModel, AnalystFeedbackModel, RawEmailModel, GmailAccountModel } from '@mailiac/db';
 import { emailQueue } from '../src/queue.js';
+import { fetchRawMessage } from '../src/services/gmailClient.js';
 
 describe('GET /api/reports/:id', () => {
   let server: ReturnType<ReturnType<typeof express>['listen']>;
@@ -77,8 +95,15 @@ describe('GET /api/reports/:id', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    });
     const app = express();
     app.use(express.json());
+    app.use((req, _res, next) => {
+      req.user = { id: 'mock-user-123', email: 'test@example.com' };
+      next();
+    });
     app.use('/api', reportsRouter);
     app.use(errorHandler);
 
@@ -126,6 +151,29 @@ describe('GET /api/reports/:id', () => {
 
     const data = (await res.json()) as { error: string };
     expect(data.error).toBe('Report not found.');
+  });
+
+  it('expired report: returns 404 with expired flag when report has expired from cache but exists in EmailAnalysisRecordModel', async () => {
+    (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    });
+
+    (EmailAnalysisRecordModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+      lean: vi.fn().mockResolvedValue({
+        jobId: 'case-expired-get',
+        userId: 'mock-user-123',
+        subject: 'Expired Subject',
+        sender: 'sender@example.com',
+      }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/reports/case-expired-get`);
+    expect(res.status).toBe(404);
+
+    const data = (await res.json()) as { error: string; expired: boolean; canReanalyze: boolean; caseId: string };
+    expect(data.expired).toBe(true);
+    expect(data.canReanalyze).toBe(true);
+    expect(data.caseId).toBe('case-expired-get');
   });
 
   it('happy path: GET /api/reports/:id/pdf returns PDF binary with application/pdf header', async () => {
@@ -200,12 +248,116 @@ describe('GET /api/reports/:id', () => {
       const res = await fetch(`${baseUrl}/api/reports/history?source=gmail&limit=10`);
       expect(res.status).toBe(200);
 
-      const data = (await res.json()) as { records: Array<Record<string, unknown>> };
+      const data = (await res.json()) as { records: Array<Record<string, unknown>>; total: number; page: number; totalPages: number };
       expect(data.records).toHaveLength(2);
       expect(data.records[0]?.['jobId']).toBe('job-1');
       expect(data.records[0]?.['_id']).toBeUndefined();
       expect(data.records[0]?.['__v']).toBeUndefined();
-      expect(EmailAnalysisRecordModel.find).toHaveBeenCalledWith({ source: 'gmail' });
+      expect(EmailAnalysisRecordModel.find).toHaveBeenCalledWith(expect.objectContaining({ source: 'gmail', userId: 'mock-user-123' }));
+    });
+
+    it('returns pagination metadata with page, limit, total, and totalPages', async () => {
+      (EmailAnalysisRecordModel.countDocuments as ReturnType<typeof vi.fn>).mockResolvedValue(55);
+      (EmailAnalysisRecordModel.find as ReturnType<typeof vi.fn>).mockReturnValue({
+        sort: vi.fn().mockReturnValue({
+          skip: vi.fn().mockReturnValue({
+            limit: vi.fn().mockReturnValue({
+              lean: vi.fn().mockResolvedValue([{ jobId: 'job-p2', senderDomain: 'test.com' }]),
+            }),
+          }),
+        }),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/history?page=2&limit=25`);
+      expect(res.status).toBe(200);
+
+      const data = (await res.json()) as { records: unknown[]; total: number; page: number; totalPages: number };
+      expect(data.total).toBe(55);
+      expect(data.page).toBe(2);
+      expect(data.totalPages).toBe(3);
+    });
+
+    it('searches subject, sender, and senderDomain with q parameter', async () => {
+      (EmailAnalysisRecordModel.countDocuments as ReturnType<typeof vi.fn>).mockResolvedValue(1);
+      (EmailAnalysisRecordModel.find as ReturnType<typeof vi.fn>).mockReturnValue({
+        sort: vi.fn().mockReturnValue({
+          skip: vi.fn().mockReturnValue({
+            limit: vi.fn().mockReturnValue({
+              lean: vi.fn().mockResolvedValue([{ jobId: 'job-q', subject: 'Urgent Wire', senderDomain: 'bank.com' }]),
+            }),
+          }),
+        }),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/history?q=wire`);
+      expect(res.status).toBe(200);
+
+      expect(EmailAnalysisRecordModel.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'mock-user-123',
+          $or: expect.arrayContaining([
+            { subject: expect.any(RegExp) },
+            { sender: expect.any(RegExp) },
+            { senderDomain: expect.any(RegExp) },
+          ]),
+        })
+      );
+    });
+
+    it('rejects invalid source or verdict with 400', async () => {
+      const resBadSource = await fetch(`${baseUrl}/api/reports/history?source=unknown_source`);
+      expect(resBadSource.status).toBe(400);
+
+      const resBadVerdict = await fetch(`${baseUrl}/api/reports/history?verdict=MALICIOUS`);
+      expect(resBadVerdict.status).toBe(400);
+    });
+  });
+
+  describe('DELETE /api/reports/:id', () => {
+    it('deletes report and all associated models with strict userId scoping', async () => {
+      (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          _id: 'report-mongo-1',
+          messageId: 'case-to-delete-123',
+          userId: 'mock-user-123',
+        }),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/case-to-delete-123`, { method: 'DELETE' });
+      expect(res.status).toBe(200);
+
+      const data = await res.json();
+      expect(data.success).toBe(true);
+
+      expect(AnalysisReportModel.deleteOne).toHaveBeenCalledWith({ _id: 'report-mongo-1', userId: 'mock-user-123' });
+      expect(EmailAnalysisRecordModel.deleteMany).toHaveBeenCalledWith({ jobId: 'case-to-delete-123', userId: 'mock-user-123' });
+      expect(RawEmailModel.deleteMany).toHaveBeenCalledWith({ messageId: 'case-to-delete-123', userId: 'mock-user-123' });
+      expect(AnalystFeedbackModel.deleteMany).toHaveBeenCalledWith({ jobId: 'case-to-delete-123', userId: 'mock-user-123' });
+    });
+
+    it('returns 404 when report does not exist in any collection', async () => {
+      (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue(null),
+      });
+      (EmailAnalysisRecordModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue(null),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/non-existent-case`, { method: 'DELETE' });
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 403 when attempting to delete another tenant report', async () => {
+      (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          _id: 'report-mongo-other',
+          messageId: 'case-other-tenant',
+          userId: 'other-user-999',
+        }),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/case-other-tenant`, { method: 'DELETE' });
+      expect(res.status).toBe(403);
     });
   });
 
@@ -362,6 +514,59 @@ describe('GET /api/reports/:id', () => {
       expect(json.error).toContain('no longer available');
     });
 
+    it('Case 9: reanalysis for Gmail source email checks session ID and does not fetch from Gmail if unauthenticated', async () => {
+      (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          messageId: 'gmail-case-123',
+          senderDomain: 'example.com',
+          source: 'gmail',
+        }),
+      });
+
+      (emailQueue.getJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+        getState: vi.fn().mockResolvedValue('completed'),
+        data: {},
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      (RawEmailModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue(null),
+      });
+
+      (EmailAnalysisRecordModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          jobId: 'gmail-case-123',
+          source: 'gmail',
+          gmailMessageId: 'gmail-msg-id-456',
+        }),
+      });
+
+      // Attempt reanalysis without session -> fails because no session owns Gmail credentials
+      const resNoSession = await fetch(`${baseUrl}/api/reports/gmail-case-123/reanalyze`, { method: 'POST' });
+      expect(resNoSession.status).toBe(422);
+
+      // Now with valid session
+      (GmailAccountModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          sessionId: 'valid-sess-reanalyze',
+          accessToken: 'mock-token',
+        }),
+      });
+
+      const sampleBuf = Buffer.from('From: sender@domain.com\r\n\r\nHello');
+      (fetchRawMessage as ReturnType<typeof vi.fn>).mockResolvedValue(sampleBuf);
+
+      const resWithSession = await fetch(`${baseUrl}/api/reports/gmail-case-123/reanalyze`, {
+        method: 'POST',
+        headers: { 'x-session-id': 'valid-sess-reanalyze' },
+      });
+      expect(resWithSession.status).toBe(202);
+      const data = (await resWithSession.json()) as { success: boolean; status: string };
+      expect(data.success).toBe(true);
+      expect(data.status).toBe('queued');
+      expect(GmailAccountModel.findOne).toHaveBeenCalledWith(expect.objectContaining({ userId: 'mock-user-123' }));
+    });
+
     it('happy path: successfully schedules re-analysis using RawEmailModel buffer', async () => {
       const mockRawBuffer = Buffer.from('From: test@example.com\r\nSubject: Re-test\r\n\r\nBody');
 
@@ -458,6 +663,75 @@ describe('GET /api/reports/:id', () => {
         }),
         { jobId: 'case-bull-fallback' }
       );
+    });
+
+    it('successfully re-analyzes when AnalysisReportModel has expired (24h TTL) but EmailAnalysisRecordModel exists', async () => {
+      const mockRawBuffer = Buffer.from('From: expired@example.com\r\nSubject: Expired Test\r\n\r\nPayload');
+
+      // AnalysisReportModel document has expired from MongoDB
+      (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue(null),
+      });
+
+      // EmailAnalysisRecordModel retains the historical audit entry
+      (EmailAnalysisRecordModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          jobId: 'case-expired-ttl',
+          userId: 'mock-user-123',
+          source: 'eml',
+          subject: 'Expired Test',
+        }),
+      });
+
+      // RawEmailModel has the durable buffer
+      (RawEmailModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          messageId: 'case-expired-ttl',
+          buffer: mockRawBuffer,
+          source: 'eml',
+          userId: 'mock-user-123',
+        }),
+      });
+
+      (RawEmailModel.findOneAndUpdate as ReturnType<typeof vi.fn>).mockResolvedValue({});
+      (emailQueue.getJob as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+      (emailQueue.add as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'case-expired-ttl' });
+
+      const res = await fetch(`${baseUrl}/api/reports/case-expired-ttl/reanalyze`, { method: 'POST' });
+      expect(res.status).toBe(202);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.jobId).toBe('case-expired-ttl');
+      expect(json.status).toBe('queued');
+
+      expect(emailQueue.add).toHaveBeenCalledWith(
+        'process-email',
+        expect.objectContaining({
+          messageId: 'case-expired-ttl',
+          isReanalysis: true,
+          userId: 'mock-user-123',
+        }),
+        { jobId: 'case-expired-ttl' }
+      );
+    });
+
+    it('returns 403 Forbidden when re-analyzing an expired case owned by a different user', async () => {
+      (AnalysisReportModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue(null),
+      });
+
+      (EmailAnalysisRecordModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          jobId: 'case-victim-other-user',
+          userId: 'other-user-999',
+          source: 'eml',
+        }),
+      });
+
+      const res = await fetch(`${baseUrl}/api/reports/case-victim-other-user/reanalyze`, { method: 'POST' });
+      expect(res.status).toBe(403);
+      const json = await res.json();
+      expect(json.error).toContain('Access denied');
     });
   });
 });

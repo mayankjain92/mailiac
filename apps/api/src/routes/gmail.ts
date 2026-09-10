@@ -4,6 +4,7 @@ import {
   connectDb,
   GmailAccountModel,
   EmailAnalysisRecordModel,
+  OAuthTransactionModel,
   type GmailAccountDocument,
 } from '@mailiac/db';
 import type { GmailMessageAnalysisEnrichment } from '@mailiac/shared-types';
@@ -15,6 +16,7 @@ import {
 } from '../services/googleAuth.js';
 import { listMessages, fetchRawMessage } from '../services/gmailClient.js';
 import { emailQueue } from '../queue.js';
+import { requireAuth } from '../middleware/auth.js';
 
 export const gmailRouter: IRouter = Router();
 
@@ -22,7 +24,8 @@ export const gmailRouter: IRouter = Router();
  * Helper to resolve sessionId from request headers, query parameters, or cookies.
  */
 export function resolveSessionId(req: Request): string | undefined {
-  const headerSessionId = req.headers['x-session-id'];
+  const rawHeader = req.headers['x-session-id'];
+  const headerSessionId = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
   if (typeof headerSessionId === 'string' && headerSessionId.trim() !== '') {
     return headerSessionId.trim();
   }
@@ -44,30 +47,48 @@ export function resolveSessionId(req: Request): string | undefined {
 }
 
 /**
- * Safely looks up the connected Gmail account for a given session or latest active account.
+ * Looks up the connected Gmail account strictly for the authenticated user or browser session.
+ * Prioritizes userId if authenticated, never falling back to another user's account.
  */
 export async function findConnectedAccount(
+  userId?: string,
   sessionId?: string
 ): Promise<GmailAccountDocument | null> {
-  if (sessionId) {
-    return await GmailAccountModel.findOne({ sessionId });
+  if (userId && typeof userId === 'string' && userId.trim() !== '') {
+    const byUser = await GmailAccountModel.findOne({ userId: userId.trim() });
+    if (byUser) return byUser;
   }
-  const query = GmailAccountModel.findOne();
-  if (query && typeof query.sort === 'function') {
-    return await query.sort({ updatedAt: -1 });
+  if (sessionId && typeof sessionId === 'string' && sessionId.trim() !== '') {
+    return await GmailAccountModel.findOne({ sessionId: sessionId.trim() });
   }
-  return await query;
+  return null;
 }
 
 /**
  * GET /api/gmail/auth/url or /api/gmail/url
- * Generates the Google OAuth 2.0 consent URL.
+ * Generates the Google OAuth 2.0 consent URL bound to the authenticated user's state or browser session.
  */
-gmailRouter.get(['/auth/url', '/url'], (req: Request, res: Response, next: NextFunction): void => {
+gmailRouter.get(['/auth/url', '/url'], requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const mongoUri = process.env['MONGODB_URI'] ?? 'mongodb://localhost:27017/mailiac';
+    await connectDb(mongoUri);
+
     const existingSessionId = resolveSessionId(req) ?? randomUUID();
-    const url = generateAuthUrl(existingSessionId);
-    res.json({ url });
+    const state = existingSessionId;
+
+    if (OAuthTransactionModel && typeof OAuthTransactionModel.create === 'function') {
+      await OAuthTransactionModel.create({
+        id: state,
+        userId: req.user!.id,
+        sessionId: existingSessionId,
+        action: 'gmail',
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes TTL
+        used: false,
+      });
+    }
+
+    const url = generateAuthUrl(state);
+    res.json({ url, sessionId: existingSessionId });
   } catch (err) {
     next(err);
   }
@@ -75,8 +96,8 @@ gmailRouter.get(['/auth/url', '/url'], (req: Request, res: Response, next: NextF
 
 /**
  * GET /api/gmail/auth/callback & /api/gmail/callback
- * Handles Google OAuth redirect, exchanges authorization code for tokens,
- * persists the account in MongoDB, sets a session cookie, and redirects to frontend.
+ * Handles Google OAuth redirect, validates transaction state, exchanges code for tokens,
+ * persists the account in MongoDB scoped to userId/session, and redirects to frontend.
  */
 gmailRouter.get(['/auth/callback', '/callback'], async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -89,35 +110,68 @@ gmailRouter.get(['/auth/callback', '/callback'], async (req: Request, res: Respo
       return;
     }
 
-    const tokens = await exchangeCodeForTokens(code);
-
-    const sessionId =
-      typeof state === 'string' && state.trim() !== ''
-        ? state.trim()
-        : resolveSessionId(req) ?? randomUUID();
-
     const mongoUri = process.env['MONGODB_URI'] ?? 'mongodb://localhost:27017/mailiac';
     await connectDb(mongoUri);
 
+    let targetUserId = req.user?.id;
+    let targetSessionId = resolveSessionId(req) ?? (typeof state === 'string' ? state.trim() : randomUUID());
+
+    if (typeof state === 'string' && state.trim() !== '') {
+      if (OAuthTransactionModel && typeof OAuthTransactionModel.findOne === 'function') {
+        const tx = await OAuthTransactionModel.findOne({ id: state.trim() });
+        if (tx) {
+          if (tx.used) {
+            res.status(400).json({ error: 'OAuth transaction has already been used.' });
+            return;
+          }
+          if (tx.expiresAt < new Date()) {
+            res.status(400).json({ error: 'OAuth transaction has expired.' });
+            return;
+          }
+
+          // Prevent account confusion: if logged-in user differs from initiating user
+          if (req.user?.id && req.user.id !== tx.userId) {
+            res.status(403).json({ error: 'OAuth transaction does not match authenticated user.' });
+            return;
+          }
+
+          tx.used = true;
+          await tx.save();
+
+          targetUserId = tx.userId;
+          if (tx.sessionId) {
+            targetSessionId = tx.sessionId;
+          }
+        }
+      }
+    }
+
+    const tokens = await exchangeCodeForTokens(code);
+
+    const filter = targetUserId ? { userId: targetUserId } : { sessionId: targetSessionId };
+
     await GmailAccountModel.findOneAndUpdate(
-      { sessionId },
+      filter,
       {
-        sessionId,
+        userId: targetUserId,
+        sessionId: targetSessionId,
         email: tokens.email,
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         tokenExpiry: tokens.tokenExpiry,
+        googleAccountId: tokens.googleAccountId,
+        scopes: tokens.scopes,
       },
       { upsert: true, new: true }
     );
 
-    res.cookie('mailiac_session_id', sessionId, {
+    res.cookie('mailiac_session_id', targetSessionId, {
       httpOnly: true,
       sameSite: 'lax',
       path: '/',
     });
 
-    res.redirect(`${frontendUrl}/?gmail=connected`);
+    res.redirect(`${frontendUrl}/mailbox?gmail=connected&sessionId=${encodeURIComponent(targetSessionId)}`);
   } catch (err) {
     next(err);
   }
@@ -127,13 +181,13 @@ gmailRouter.get(['/auth/callback', '/callback'], async (req: Request, res: Respo
  * GET /api/gmail/status
  * Returns connection status and email address of connected Gmail account.
  */
-gmailRouter.get('/status', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+gmailRouter.get('/status', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const mongoUri = process.env['MONGODB_URI'] ?? 'mongodb://localhost:27017/mailiac';
     await connectDb(mongoUri);
 
     const sessionId = resolveSessionId(req);
-    const account = await findConnectedAccount(sessionId);
+    const account = await findConnectedAccount(req.user!.id, sessionId);
 
     if (!account) {
       res.json({ connected: false });
@@ -153,13 +207,13 @@ gmailRouter.get('/status', async (req: Request, res: Response, next: NextFunctio
  * DELETE /api/gmail/disconnect
  * Revokes Google OAuth token and deletes connected account from MongoDB.
  */
-gmailRouter.delete('/disconnect', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+gmailRouter.delete('/disconnect', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const mongoUri = process.env['MONGODB_URI'] ?? 'mongodb://localhost:27017/mailiac';
     await connectDb(mongoUri);
 
     const sessionId = resolveSessionId(req);
-    const account = await findConnectedAccount(sessionId);
+    const account = await findConnectedAccount(req.user!.id, sessionId);
 
     if (!account) {
       res.status(404).json({ error: 'No connected Gmail account found.' });
@@ -185,13 +239,13 @@ gmailRouter.delete('/disconnect', async (req: Request, res: Response, next: Next
  * GET /api/gmail/messages
  * Returns a paginated list of recent email metadata for the connected Gmail account.
  */
-gmailRouter.get('/messages', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+gmailRouter.get('/messages', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const mongoUri = process.env['MONGODB_URI'] ?? 'mongodb://localhost:27017/mailiac';
     await connectDb(mongoUri);
 
     const sessionId = resolveSessionId(req);
-    const account = await findConnectedAccount(sessionId);
+    const account = await findConnectedAccount(req.user!.id, sessionId);
 
     if (!account) {
       res.status(401).json({
@@ -216,9 +270,11 @@ gmailRouter.get('/messages', async (req: Request, res: Response, next: NextFunct
     const result = await listMessages(auth, { q, pageToken, maxResults });
 
     const gmailIds = result.messages.map((m) => m.id);
-    const existingRecords = await EmailAnalysisRecordModel.find({
+    const query: Record<string, unknown> = {
       gmailMessageId: { $in: gmailIds },
-    }).lean();
+      userId: req.user!.id,
+    };
+    const existingRecords = await EmailAnalysisRecordModel.find(query).lean();
 
     const enrichedMessages = result.messages.map((msg) => {
       const match = existingRecords.find((r) => r.gmailMessageId === msg.id);
@@ -258,6 +314,7 @@ gmailRouter.get('/messages', async (req: Request, res: Response, next: NextFunct
  */
 gmailRouter.post(
   '/messages/:messageId/analyze',
+  requireAuth,
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const messageId = req.params['messageId'];
@@ -270,7 +327,7 @@ gmailRouter.post(
       await connectDb(mongoUri);
 
       const sessionId = resolveSessionId(req);
-      const account = await findConnectedAccount(sessionId);
+      const account = await findConnectedAccount(req.user!.id, sessionId);
 
       if (!account) {
         res.status(401).json({
@@ -296,6 +353,7 @@ gmailRouter.post(
           buffer: rawEmlBuffer,
           source: 'gmail',
           gmailMessageId: messageId.trim(),
+          userId: req.user!.id,
         },
         { jobId: analysisJobId }
       );
