@@ -98,18 +98,19 @@ function LandingPageContent(): React.JSX.Element {
                 Mailiac performs deep forensics, authentication validation, and AI analysis to expose phishing, BEC and spoofing attacks that bypass traditional defenses.
               </p>
 
-              <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 sm:gap-4">
                 <button
                   onClick={() => setIsIngestionModalOpen(true)}
-                  className="bg-[#0052ff] dark:bg-[#3b82f6] text-white px-8 py-4 rounded font-medium hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors inline-flex items-center justify-center gap-2 text-base shadow-sm"
+                  className="w-full sm:w-auto bg-[#0052ff] dark:bg-[#3b82f6] text-white px-8 py-3.5 rounded font-medium hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-all inline-flex items-center justify-center gap-2 text-sm sm:text-base shadow-sm active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none"
                 >
-                  Analyze an email <ArrowUpRight className="w-4 h-4" />
+                  <span>Analyze an email</span>
+                  <ArrowUpRight className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
                   onClick={handleLoadSamplePhish}
                   disabled={isLoadingSample}
-                  className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/40 px-6 py-4 rounded text-xs font-bold transition-all inline-flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                  className="w-full sm:w-auto bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/40 px-5 py-3.5 rounded text-xs font-bold transition-all inline-flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
                   title="Live threat simulation: loads simulated CEO wire-transfer BEC attack"
                 >
                   {isLoadingSample ? (
@@ -119,14 +120,13 @@ function LandingPageContent(): React.JSX.Element {
                   )}
                   <span>⚡ Try Sample Attack (Demo)</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setIsIngestionModalOpen(true)}
-                  className="border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] px-6 py-4 rounded font-medium hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-colors inline-flex items-center justify-center text-base gap-2 cursor-pointer"
+                <Link
+                  href="/mailbox"
+                  className="w-full sm:w-auto border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] px-6 py-3.5 rounded font-medium hover:bg-[#EAEAE5] dark:hover:bg-[#151A17] transition-all inline-flex items-center justify-center text-sm sm:text-base gap-2 cursor-pointer active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none"
                 >
                   <Mail className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6]" />
-                  Gmail Mailbox →
-                </button>
+                  <span>Gmail Mailbox →</span>
+                </Link>
               </div>
 
               <div className="mt-12 pt-8 border-t border-[#D5D5CE] dark:border-[#29342F] flex items-center gap-3">
@@ -202,8 +202,16 @@ function LandingPageContent(): React.JSX.Element {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setIsIngestionModalOpen(true)}
-                  className="p-5 border border-[#D5D5CE] dark:border-[#29342F] rounded bg-[#EAEAE5] dark:bg-[#151A17] hover:border-[#0052ff] dark:hover:border-[#3b82f6] cursor-pointer transition-all flex flex-col items-center gap-2 group"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setIsIngestionModalOpen(true);
+                    }
+                  }}
+                  className="p-5 border border-[#D5D5CE] dark:border-[#29342F] rounded bg-[#EAEAE5] dark:bg-[#151A17] hover:border-[#0052ff] dark:hover:border-[#3b82f6] cursor-pointer transition-all flex flex-col items-center gap-2 group active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none"
                 >
                   <div className="w-10 h-10 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6]">
                     <FileText className="w-5 h-5" />
@@ -220,8 +228,16 @@ function LandingPageContent(): React.JSX.Element {
                 </div>
 
                 <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setIsIngestionModalOpen(true)}
-                  className="p-5 border border-[#0052ff]/30 dark:border-[#3b82f6]/30 rounded bg-[#0052ff]/5 dark:bg-[#3b82f6]/10 hover:border-[#0052ff] dark:hover:border-[#3b82f6] cursor-pointer transition-all flex flex-col items-center gap-2 group"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setIsIngestionModalOpen(true);
+                    }
+                  }}
+                  className="p-5 border border-[#0052ff]/30 dark:border-[#3b82f6]/30 rounded bg-[#0052ff]/5 dark:bg-[#3b82f6]/10 hover:border-[#0052ff] dark:hover:border-[#3b82f6] cursor-pointer transition-all flex flex-col items-center gap-2 group active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none"
                 >
                   <div className="w-10 h-10 rounded-full bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6]">
                     <Mail className="w-5 h-5" />
@@ -245,7 +261,7 @@ function LandingPageContent(): React.JSX.Element {
 
               <button
                 onClick={() => setIsIngestionModalOpen(true)}
-                className="w-full bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold py-3 px-4 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center justify-center gap-2 shadow-sm"
+                className="w-full bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold py-3 px-4 rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-all flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none"
               >
                 <span>Analyze an email</span>
                 <ArrowRight className="w-4 h-4" />

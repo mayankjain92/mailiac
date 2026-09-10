@@ -82,10 +82,10 @@ reportsRouter.get('/reports/history', requireAuth, async (req: Request, res: Res
     };
 
     if (source && source !== 'all') {
-      if (source === 'eml' || source === 'gmail') {
+      if (source === 'eml' || source === 'gmail' || source === 'sandbox') {
         filter['source'] = source;
       } else {
-        res.status(400).json({ error: "Invalid source filter. Must be 'all', 'gmail', or 'eml'." });
+        res.status(400).json({ error: "Invalid source filter. Must be 'all', 'gmail', 'eml', or 'sandbox'." });
         return;
       }
     }

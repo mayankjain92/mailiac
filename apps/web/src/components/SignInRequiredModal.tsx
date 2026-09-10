@@ -54,6 +54,7 @@ export default function SignInRequiredModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="signin-modal-title"
+      aria-describedby="signin-modal-desc"
     >
       <div
         className="relative w-full max-w-md flex flex-col bg-[#F2F2EE] dark:bg-[#1B211E] border border-[#D5D5CE] dark:border-[#29342F] rounded-lg shadow-2xl overflow-hidden bracket-tl bracket-br"
@@ -84,7 +85,7 @@ export default function SignInRequiredModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-[#737688] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] p-1 rounded transition-colors"
+            className="text-[#737688] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] p-1 rounded transition-colors focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none"
             aria-label="Close dialog"
           >
             <X className="w-5 h-5" />
@@ -92,7 +93,7 @@ export default function SignInRequiredModal({
         </div>
 
         {/* Body Content */}
-        <div className="px-6 py-4 space-y-3">
+        <div id="signin-modal-desc" className="px-6 py-4 space-y-3">
           <p className="text-sm text-[#434656] dark:text-[#C5CDC8] leading-relaxed">
             {message || 'You need to sign in to use this feature.'}
           </p>
@@ -106,7 +107,7 @@ export default function SignInRequiredModal({
           <button
             type="button"
             onClick={onClose}
-            className="w-full sm:w-auto px-4 py-2 text-xs font-semibold text-[#434656] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] border border-[#D5D5CE] dark:border-[#29342F] rounded bg-white dark:bg-[#1B211E] hover:bg-[#EAEAE5] dark:hover:bg-[#222B27] transition-colors"
+            className="w-full sm:w-auto px-4 py-2 text-xs font-semibold text-[#434656] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8] border border-[#D5D5CE] dark:border-[#29342F] rounded bg-white dark:bg-[#1B211E] hover:bg-[#EAEAE5] dark:hover:bg-[#222B27] active:scale-[0.98] transition-all focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none cursor-pointer"
           >
             Cancel
           </button>
@@ -115,7 +116,7 @@ export default function SignInRequiredModal({
             type="button"
             onClick={handleSignIn}
             disabled={isRedirecting}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] rounded shadow-sm transition-colors disabled:opacity-75"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#0052ff] hover:bg-[#004ced] dark:bg-[#3b82f6] dark:hover:bg-[#2563eb] rounded shadow-sm active:scale-[0.98] transition-all disabled:opacity-75 focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none cursor-pointer"
           >
             {isRedirecting ? (
               <>

@@ -29,7 +29,7 @@ export interface PipelineOptions {
   protectedDomains?: string[];
   skipDbPersist?: boolean;
   skipRdap?: boolean;
-  source?: 'eml' | 'gmail';
+  source?: 'eml' | 'gmail' | 'sandbox';
   gmailMessageId?: string;
   userId?: string;
 }
@@ -295,13 +295,13 @@ export async function runForensicPipeline(
             { upsert: true, new: true }
           );
         } else {
-          // .EML file upload: key on jobId
+          // .EML / Sandbox file upload: key on jobId
           await EmailAnalysisRecordModel.findOneAndUpdate(
             { jobId: messageId },
             {
               $set: {
                 jobId: messageId,
-                source: 'eml',
+                source,
                 sender,
                 subject: mdm.subject,
                 senderDomain,
@@ -331,13 +331,13 @@ export async function runForensicPipeline(
           } catch {
             // Index might already be dropped or in-memory mock
           }
-          // Retry the findOneAndUpdate for .EML upload
+          // Retry the findOneAndUpdate for upload
           await EmailAnalysisRecordModel.findOneAndUpdate(
             { jobId: messageId },
             {
               $set: {
                 jobId: messageId,
-                source: 'eml',
+                source,
                 sender,
                 subject: mdm.subject,
                 senderDomain,

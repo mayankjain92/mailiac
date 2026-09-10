@@ -35,6 +35,14 @@ uploadRouter.post('/upload', requireAuth, upload.single('eml'), async (req, res,
     }
 
     const messageId = randomUUID();
+    const requestedSource = (
+      typeof req.body?.source === 'string'
+        ? req.body.source
+        : typeof req.query['source'] === 'string'
+        ? req.query['source']
+        : ''
+    ).trim().toLowerCase();
+    const source: 'eml' | 'sandbox' = requestedSource === 'sandbox' ? 'sandbox' : 'eml';
 
     await emailQueue.add(
       'process-email',
@@ -42,6 +50,7 @@ uploadRouter.post('/upload', requireAuth, upload.single('eml'), async (req, res,
         messageId,
         buffer: req.file.buffer,
         userId: req.user!.id,
+        source,
       },
       { jobId: messageId }
     );

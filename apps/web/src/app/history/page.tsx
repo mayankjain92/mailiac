@@ -27,7 +27,7 @@ import {
 
 export interface EmailAnalysisRecordItem {
   jobId: string;
-  source: 'eml' | 'gmail';
+  source: 'eml' | 'gmail' | 'sandbox';
   gmailMessageId?: string;
   sender?: string;
   subject?: string;
@@ -55,7 +55,7 @@ export default function ForensicHistoryPage(): React.JSX.Element {
   const [totalPages, setTotalPages] = useState<number>(0);
 
   // Filters
-  const [sourceFilter, setSourceFilter] = useState<'all' | 'gmail' | 'eml'>('all');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'gmail' | 'eml' | 'sandbox'>('all');
   const [verdictFilter, setVerdictFilter] = useState<'all' | 'QUARANTINE' | 'FLAG' | 'SAFE'>('all');
   const [searchInput, setSearchInput] = useState<string>('');
   const [debouncedQuery, setDebouncedQuery] = useState<string>('');
@@ -317,6 +317,21 @@ export default function ForensicHistoryPage(): React.JSX.Element {
                 <FileText className="w-3 h-3" />
                 <span>.EML</span>
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSourceFilter('sandbox');
+                  setPage(1);
+                }}
+                className={`px-2.5 py-1 rounded transition-colors font-medium flex items-center gap-1 ${
+                  sourceFilter === 'sandbox'
+                    ? 'bg-white dark:bg-[#2d3731] text-[#0052ff] dark:text-[#3b82f6] shadow-sm font-bold'
+                    : 'text-[#434656] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#fdfcf8]'
+                }`}
+              >
+                <Shield className="w-3 h-3" />
+                <span>Sandbox</span>
+              </button>
             </div>
 
             {/* Verdict Segmented Control */}
@@ -447,6 +462,11 @@ export default function ForensicHistoryPage(): React.JSX.Element {
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-[#0052ff]/10 dark:bg-[#3b82f6]/15 text-[#0052ff] dark:text-[#3b82f6] border border-[#0052ff]/30 dark:border-[#3b82f6]/30 shrink-0 uppercase tracking-wider">
                         <Mail className="w-3 h-3" />
                         <span>Gmail</span>
+                      </span>
+                    ) : record.source === 'sandbox' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 dark:border-amber-500/40 shrink-0 uppercase tracking-wider">
+                        <Shield className="w-3 h-3" />
+                        <span>Sandbox</span>
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-500/10 dark:bg-purple-500/15 text-purple-700 dark:text-purple-400 border border-purple-500/30 dark:border-purple-500/40 shrink-0 uppercase tracking-wider">

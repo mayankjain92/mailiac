@@ -105,7 +105,7 @@ export function AppHeader({
             <button
               type="button"
               onClick={toggleTheme}
-              className="flex items-center justify-center h-8 w-8 rounded-full border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] hover:bg-[#EAEAE5] dark:hover:bg-[#222B27] text-[#434656] dark:text-[#F2F2EE] transition-colors"
+              className="flex items-center justify-center h-8 w-8 rounded-full border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] hover:bg-[#EAEAE5] dark:hover:bg-[#222B27] text-[#434656] dark:text-[#F2F2EE] transition-all active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none"
               aria-label="Theme toggle"
               title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             >
@@ -141,7 +141,7 @@ export function AppHeader({
                     <button
                       type="button"
                       onClick={() => logout()}
-                      className="text-xs text-[#434656] dark:text-[#A0A7A3] hover:text-red-500 dark:hover:text-red-400 transition-colors ml-1 font-medium"
+                      className="text-xs text-[#434656] dark:text-[#A0A7A3] hover:text-red-500 dark:hover:text-red-400 transition-colors ml-1 font-medium active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:outline-none"
                       title="Sign Out"
                     >
                       Sign Out
@@ -151,7 +151,7 @@ export function AppHeader({
                   <button
                     type="button"
                     onClick={login}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] hover:bg-[#EAEAE5] dark:hover:bg-[#222B27] text-xs font-medium text-[#1a1c1c] dark:text-[#F2F2EE] transition-colors shadow-sm"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] hover:bg-[#EAEAE5] dark:hover:bg-[#222B27] text-xs font-medium text-[#1a1c1c] dark:text-[#F2F2EE] transition-all shadow-sm active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none"
                   >
                     <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
                       <path
@@ -180,7 +180,7 @@ export function AppHeader({
             <button
               type="button"
               onClick={handleAnalyzeClick}
-              className="hidden sm:inline-flex bg-[#0052ff] dark:bg-[#3b82f6] text-white px-4 py-2 rounded font-medium hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors shadow-sm font-sans text-xs uppercase tracking-wider"
+              className="hidden sm:inline-flex bg-[#0052ff] dark:bg-[#3b82f6] text-white px-4 py-2 rounded font-medium hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-all shadow-sm font-sans text-xs uppercase tracking-wider active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none"
             >
               Analyze an email
             </button>
@@ -189,7 +189,7 @@ export function AppHeader({
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="md:hidden flex items-center justify-center h-8 w-8 rounded-full border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] hover:bg-[#EAEAE5] dark:hover:bg-[#222B27] text-[#434656] dark:text-[#F2F2EE] transition-colors"
+              className="md:hidden flex items-center justify-center h-8 w-8 rounded-full border border-[#D5D5CE] dark:border-[#29342F] bg-white dark:bg-[#151A17] hover:bg-[#EAEAE5] dark:hover:bg-[#222B27] text-[#434656] dark:text-[#F2F2EE] transition-all active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none"
               aria-label="Toggle navigation menu"
             >
               {isMobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}

@@ -159,6 +159,15 @@ describe('packages/db', () => {
       expect(doc.source).toBe('eml');
     });
 
+    it('validates a sandbox sourced record without gmailMessageId', () => {
+      const { gmailMessageId, ...sandboxRecord } = { ...validRecord, source: 'sandbox' };
+      const doc = new EmailAnalysisRecordModel(sandboxRecord);
+      const err = doc.validateSync();
+      expect(err).toBeUndefined();
+      expect(doc.gmailMessageId).toBeUndefined();
+      expect(doc.source).toBe('sandbox');
+    });
+
     it('fails validation on invalid source or verdict', () => {
       const invalidDoc = new EmailAnalysisRecordModel({
         ...validRecord,

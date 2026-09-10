@@ -6,7 +6,7 @@ import StitchLandingHeader from '@/components/StitchLandingHeader';
 import EvidenceExplorer from '@/components/EvidenceExplorer';
 import SignInRequiredState from '@/components/SignInRequiredState';
 import { useAuth } from '@/lib/auth';
-import { api, isAuthError, isForbiddenError, reanalyzeReport, getErrorMessage } from '@/lib/api';
+import { api, isAuthError, isForbiddenError, reanalyzeReport, getErrorMessage, uploadEml } from '@/lib/api';
 import type { AnalysisReport } from '@mailiac/shared-types';
 import axios from 'axios';
 import {
@@ -39,6 +39,10 @@ export default function EvidenceExplorerPage(): React.JSX.Element {
   const [isAutoReanalyzing, setIsAutoReanalyzing] = useState<boolean>(false);
   const [reanalyzeStep, setReanalyzeStep] = useState<string>('Initializing forensic pipeline...');
   const [isPayloadExpired, setIsPayloadExpired] = useState<boolean>(false);
+
+  // Manual retry/reanalyze loading feedback
+  const [isReanalyzingManual, setIsReanalyzingManual] = useState<boolean>(false);
+  const [isRetrying, setIsRetrying] = useState<boolean>(false);
 
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -138,6 +142,41 @@ export default function EvidenceExplorerPage(): React.JSX.Element {
       setIsAutoReanalyzing(true);
       setError(null);
       setIsPayloadExpired(false);
+
+      const isDemoCase =
+        !targetCaseId ||
+        targetCaseId === 'undefined' ||
+        targetCaseId.startsWith('demo-') ||
+        targetCaseId === 'sample-phish';
+
+      if (isDemoCase) {
+        setReanalyzeStep('Loading simulated sandbox email payload...');
+        try {
+          const res = await fetch('/samples/sample-phish.eml');
+          if (!res.ok) throw new Error('Could not load sample demo payload.');
+          const blob = await res.blob();
+          const sampleFile = new File([blob], 'Urgent_Wire_Transfer_BEC_Phish.eml', {
+            type: 'message/rfc822',
+          });
+          setReanalyzeStep('Ingesting sandbox payload into forensic worker queue...');
+          const uploadData = await uploadEml(sampleFile);
+          setJobStatus('queued');
+          setReanalyzeStep('Email queued for multi-pillar forensic inspection...');
+          if (typeof window !== 'undefined') {
+            window.history.replaceState(null, '', `/analysis-console/${encodeURIComponent(uploadData.jobId)}/evidence`);
+          }
+          pollForJobCompletion(uploadData.jobId);
+          return;
+        } catch (demoErr: unknown) {
+          setIsAutoReanalyzing(false);
+          if (isAuthError(demoErr)) {
+            return;
+          }
+          setError(getErrorMessage(demoErr, 'Failed to re-analyze sandbox email.'));
+          return;
+        }
+      }
+
       setReanalyzeStep('Dispatching email payload to forensic worker queue...');
 
       try {
@@ -179,6 +218,17 @@ export default function EvidenceExplorerPage(): React.JSX.Element {
 
     if (!user) {
       setIsLoading(false);
+      return;
+    }
+
+    // Check if this is a demo sandbox case
+    const isDemoCase =
+      caseId === 'undefined' ||
+      caseId.startsWith('demo-') ||
+      caseId === 'sample-phish';
+
+    if (isDemoCase) {
+      await startReanalysis(caseId);
       return;
     }
 
@@ -446,19 +496,45 @@ export default function EvidenceExplorerPage(): React.JSX.Element {
               {caseId && (
                 <button
                   type="button"
-                  onClick={() => startReanalysis(caseId)}
-                  className="bg-[#0052ff] dark:bg-[#3b82f6] text-white px-5 py-2.5 rounded text-xs font-bold tracking-wider hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center gap-2 shadow-sm"
+                  onClick={async () => {
+                    setIsReanalyzingManual(true);
+                    try {
+                      await startReanalysis(caseId);
+                    } finally {
+                      setIsReanalyzingManual(false);
+                    }
+                  }}
+                  disabled={isReanalyzingManual || isRetrying}
+                  className="bg-[#0052ff] dark:bg-[#3b82f6] text-white px-5 py-2.5 rounded text-xs font-bold tracking-wider hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-all flex items-center gap-2 shadow-sm disabled:opacity-50 active:scale-[0.98]"
                 >
-                  <RefreshCw className="w-4 h-4" /> Re-analyze Case Now
+                  {isReanalyzingManual ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                  <span>{isReanalyzingManual ? 'Re-analyzing...' : 'Re-analyze Case Now'}</span>
                 </button>
               )}
 
               <button
                 type="button"
-                onClick={() => fetchAnalysisReport()}
-                className="border border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] px-5 py-2.5 rounded text-xs font-semibold hover:border-[#0052ff] transition-colors flex items-center gap-2"
+                onClick={async () => {
+                  setIsRetrying(true);
+                  try {
+                    await fetchAnalysisReport();
+                  } finally {
+                    setIsRetrying(false);
+                  }
+                }}
+                disabled={isReanalyzingManual || isRetrying}
+                className="border border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17] text-[#1a1c1c] dark:text-[#F2F2EE] px-5 py-2.5 rounded text-xs font-semibold hover:border-[#0052ff] transition-all flex items-center gap-2 disabled:opacity-50 active:scale-[0.98]"
               >
-                <RefreshCw className="w-4 h-4" /> Retry Retrieval
+                {isRetrying ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                <span>{isRetrying ? 'Retrying...' : 'Retry Retrieval'}</span>
               </button>
 
               <Link

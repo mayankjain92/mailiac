@@ -159,9 +159,15 @@ api.interceptors.response.use(
 
 // Typed helper methods for core Mailiac workflows
 
-export async function uploadEml(file: File): Promise<{ jobId: string }> {
+export async function uploadEml(
+  file: File,
+  options?: { source?: 'eml' | 'sandbox' }
+): Promise<{ jobId: string }> {
   const formData = new FormData();
   formData.append('eml', file);
+  if (options?.source) {
+    formData.append('source', options.source);
+  }
   const res = await api.post<{ jobId: string }>('/api/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });

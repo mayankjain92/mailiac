@@ -25,7 +25,7 @@ export { runForensicPipeline };
 interface EmailJobData {
   messageId: string;
   buffer: Buffer;
-  source?: 'eml' | 'gmail';
+  source?: 'eml' | 'gmail' | 'sandbox';
   gmailMessageId?: string;
   userId?: string;
 }

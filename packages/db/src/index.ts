@@ -142,7 +142,7 @@ export interface RawEmailRecord {
   messageId: string;
   userId?: string;
   buffer: Uint8Array | unknown;
-  source?: 'eml' | 'gmail';
+  source?: 'eml' | 'gmail' | 'sandbox';
   gmailMessageId?: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -155,7 +155,7 @@ const rawEmailSchema = new Schema<RawEmailDocument>(
     messageId: { type: String, required: true },
     userId: { type: String, index: true },
     buffer: { type: Schema.Types.Buffer, required: true },
-    source: { type: String, enum: ['eml', 'gmail'], default: 'eml' },
+    source: { type: String, enum: ['eml', 'gmail', 'sandbox'], default: 'eml' },
     gmailMessageId: { type: String },
   },
   { timestamps: true }
@@ -216,7 +216,7 @@ export const GmailConnectionModel = GmailAccountModel;
 export interface EmailAnalysisRecord {
   jobId: string;
   userId?: string;
-  source: 'eml' | 'gmail';
+  source: 'eml' | 'gmail' | 'sandbox';
   gmailMessageId?: string;
   sender?: string;
   subject?: string;
@@ -238,7 +238,7 @@ const emailAnalysisRecordSchema = new Schema<EmailAnalysisRecordDocument>(
   {
     jobId: { type: String, required: true },
     userId: { type: String, index: true },
-    source: { type: String, enum: ['eml', 'gmail'], required: true },
+    source: { type: String, enum: ['eml', 'gmail', 'sandbox'], required: true },
     gmailMessageId: { type: String },
     sender: { type: String },
     subject: { type: String },

@@ -57,6 +57,17 @@ export default function ForensicIngestionModal({
     }
   }, []);
 
+  // Close modal on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return (): void => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   useEffect(() => {
     if (isOpen) {
       checkGmailStatus();
@@ -217,38 +228,44 @@ export default function ForensicIngestionModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="ingestion-modal-title"
     >
       {/* Main Modal Container */}
       <div
-        className="relative z-20 w-full max-w-[820px] bg-[#F2F2EE] dark:bg-[#121614] border border-[#D5D5CE] dark:border-[#29342F] rounded-lg shadow-2xl flex flex-col overflow-hidden text-[#1a1c1c] dark:text-[#F2F2EE] forensic-card bracket-tl bracket-br transition-colors duration-200"
+        className="relative z-20 w-full max-w-[820px] max-h-[90vh] bg-[#F2F2EE] dark:bg-[#121614] border border-[#D5D5CE] dark:border-[#29342F] rounded-lg shadow-2xl flex flex-col overflow-hidden text-[#1a1c1c] dark:text-[#F2F2EE] forensic-card bracket-tl bracket-br transition-colors duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
         <button
           onClick={onClose}
           aria-label="Close modal"
-          className="absolute top-6 right-6 text-[#737688] dark:text-[#A0A7A3] hover:text-[#0052ff] dark:hover:text-[#3b82f6] p-1.5 rounded-full hover:bg-[#EAEAE5] dark:hover:bg-[#1B211E] transition-colors focus:outline-none z-10"
+          className="absolute top-4 right-4 sm:top-6 sm:right-6 text-[#737688] dark:text-[#A0A7A3] hover:text-[#0052ff] dark:hover:text-[#3b82f6] p-1.5 rounded-full hover:bg-[#EAEAE5] dark:hover:bg-[#1B211E] transition-colors focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none z-10"
         >
           <X className="w-5 h-5" />
         </button>
 
         {/* Modal Header */}
-        <header className="p-8 md:p-10 border-b border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17]">
-          <p className="text-xs font-semibold text-[#0052ff] dark:text-[#3b82f6] mb-2 tracking-widest uppercase">
+        <header className="p-5 sm:p-8 md:p-10 border-b border-[#D5D5CE] dark:border-[#29342F] bg-[#EAEAE5] dark:bg-[#151A17] shrink-0">
+          <p className="text-xs font-semibold text-[#0052ff] dark:text-[#3b82f6] mb-1.5 sm:mb-2 tracking-widest uppercase">
             MAILIAC · FORENSIC INGESTION
           </p>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-[#1a1c1c] dark:text-[#F2F2EE] tracking-tight mb-2">
+          <h1
+            id="ingestion-modal-title"
+            className="text-xl sm:text-2xl md:text-3xl font-extrabold text-[#1a1c1c] dark:text-[#F2F2EE] tracking-tight mb-1.5 sm:mb-2"
+          >
             Analyze an email.
           </h1>
-          <p className="text-sm text-[#434656] dark:text-[#A0A7A3] max-w-xl leading-relaxed">
+          <p className="text-xs sm:text-sm text-[#434656] dark:text-[#A0A7A3] max-w-xl leading-relaxed">
             Choose how you want to submit an email for multi-stage forensic analysis.
           </p>
         </header>
 
         {/* Content Area */}
-        <div className="p-6 md:p-8 flex-grow space-y-6">
+        <div className="p-4 sm:p-6 md:p-8 flex-grow overflow-y-auto space-y-5 sm:space-y-6">
           {error && (
             <div className="p-3.5 bg-[#ffdad6] dark:bg-[#410e0b] border border-[#ba1a1a]/30 rounded text-[#93000a] dark:text-[#ffb4ab] text-xs flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -265,7 +282,7 @@ export default function ForensicIngestionModal({
           )}
 
           {/* Interactive Threat Simulation Banner */}
-          <div className="mb-5 p-3.5 bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
+          <div className="p-3.5 bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
                 <Sparkles className="w-4 h-4" />
@@ -286,7 +303,7 @@ export default function ForensicIngestionModal({
               type="button"
               onClick={handleLoadSample}
               disabled={isUploading}
-              className="shrink-0 w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+              className="shrink-0 w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 active:scale-[0.98] text-white text-xs font-bold rounded shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none cursor-pointer"
             >
               {isUploading ? (
                 <>
@@ -309,7 +326,7 @@ export default function ForensicIngestionModal({
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className={`group relative flex flex-col border rounded p-6 transition-all duration-200 ${
+              className={`group relative flex flex-col border rounded p-5 sm:p-6 transition-all duration-200 ${
                 isDragging
                   ? 'border-[#0052ff] dark:border-[#3b82f6] bg-[#0052ff]/10 dark:bg-[#3b82f6]/20'
                   : 'border-[#D5D5CE] dark:border-[#29342F] bg-[#F2F2EE] dark:bg-[#1B211E] hover:border-[#0052ff] dark:hover:border-[#3b82f6]'
@@ -361,7 +378,7 @@ export default function ForensicIngestionModal({
                   <button
                     onClick={handleUploadEml}
                     disabled={isUploading}
-                    className="w-full py-3 px-4 bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                    className="w-full py-3 px-4 bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none cursor-pointer"
                   >
                     {isUploading ? (
                       <>
@@ -379,7 +396,7 @@ export default function ForensicIngestionModal({
               ) : (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-3 px-4 bg-[#EAEAE5] dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold rounded hover:border-[#0052ff] dark:hover:border-[#3b82f6] hover:bg-[#0052ff] hover:text-white dark:hover:bg-[#3b82f6] dark:hover:text-white transition-all flex items-center justify-between group"
+                  className="w-full py-3 px-4 bg-[#EAEAE5] dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] text-[#1a1c1c] dark:text-[#F2F2EE] text-xs font-semibold rounded hover:border-[#0052ff] dark:hover:border-[#3b82f6] hover:bg-[#0052ff] hover:text-white dark:hover:bg-[#3b82f6] dark:hover:text-white active:scale-[0.98] transition-all flex items-center justify-between group focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none cursor-pointer"
                 >
                   <span>Choose .EML file</span>
                   <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
@@ -388,7 +405,7 @@ export default function ForensicIngestionModal({
             </div>
 
             {/* Card 2: Connect Gmail */}
-            <div className="group relative flex flex-col border border-[#0052ff]/30 dark:border-[#3b82f6]/30 bg-[#0052ff]/5 dark:bg-[#3b82f6]/10 rounded p-6 transition-all duration-200">
+            <div className="group relative flex flex-col border border-[#0052ff]/30 dark:border-[#3b82f6]/30 bg-[#0052ff]/5 dark:bg-[#3b82f6]/10 rounded p-5 sm:p-6 transition-all duration-200">
               <div className="flex items-center justify-between mb-4">
                 <div className="w-10 h-10 rounded bg-[#0052ff]/10 dark:bg-[#3b82f6]/20 flex items-center justify-center text-[#0052ff] dark:text-[#3b82f6]">
                   <Mail className="w-5 h-5" />
@@ -424,7 +441,7 @@ export default function ForensicIngestionModal({
                     onClose();
                     router.push('/mailbox');
                   }}
-                  className="w-full py-3 px-4 bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center justify-between shadow-sm"
+                  className="w-full py-3 px-4 bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] active:scale-[0.98] transition-all flex items-center justify-between shadow-sm focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none cursor-pointer"
                 >
                   <span>Open Connected Mailbox</span>
                   <ArrowRight className="w-4 h-4" />
@@ -437,7 +454,7 @@ export default function ForensicIngestionModal({
                       onClose();
                       router.push('/mailbox?demo=true');
                     }}
-                    className="w-full py-3 px-4 bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] transition-colors flex items-center justify-between shadow-sm group"
+                    className="w-full py-3 px-4 bg-[#0052ff] dark:bg-[#3b82f6] text-white text-xs font-semibold rounded hover:bg-[#004ced] dark:hover:bg-[#2563eb] active:scale-[0.98] transition-all flex items-center justify-between shadow-sm group focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none cursor-pointer"
                   >
                     <span>⚡ Explore Sandbox Mailbox</span>
                     <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
@@ -447,7 +464,7 @@ export default function ForensicIngestionModal({
                     type="button"
                     onClick={handleConnectGmail}
                     disabled={isConnecting}
-                    className="w-full py-2.5 px-3 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] text-[#434656] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#F2F2EE] hover:border-[#0052ff] dark:hover:border-[#3b82f6] text-xs font-medium rounded transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="w-full py-2.5 px-3 bg-white dark:bg-[#151A17] border border-[#D5D5CE] dark:border-[#29342F] text-[#434656] dark:text-[#A0A7A3] hover:text-[#1a1c1c] dark:hover:text-[#F2F2EE] hover:border-[#0052ff] dark:hover:border-[#3b82f6] text-xs font-medium rounded active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none cursor-pointer"
                   >
                     {isConnecting ? (
                       <>
@@ -479,7 +496,7 @@ export default function ForensicIngestionModal({
 
             <button
               onClick={() => setShowHelpOverlay(!showHelpOverlay)}
-              className="text-xs font-semibold text-[#0052ff] dark:text-[#3b82f6] hover:underline flex items-center gap-1.5 border-b border-[#0052ff] dark:border-[#3b82f6] pb-0.5"
+              className="text-xs font-semibold text-[#0052ff] dark:text-[#3b82f6] hover:underline flex items-center gap-1.5 border-b border-[#0052ff] dark:border-[#3b82f6] pb-0.5 focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none cursor-pointer"
             >
               <HelpCircle className="w-3.5 h-3.5" />
               <span>How to get an .EML from Gmail</span>
@@ -496,7 +513,8 @@ export default function ForensicIngestionModal({
                 </span>
                 <button
                   onClick={() => setShowHelpOverlay(false)}
-                  className="text-[#737688] hover:text-[#1a1c1c] dark:hover:text-[#F2F2EE]"
+                  aria-label="Close help drawer"
+                  className="text-[#737688] hover:text-[#1a1c1c] dark:hover:text-[#F2F2EE] p-1 rounded transition-colors focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:outline-none cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -525,7 +543,7 @@ export default function ForensicIngestionModal({
         </div>
 
         {/* Footer / Privacy Policy note */}
-        <footer className="p-4 md:px-8 bg-[#EAEAE5] dark:bg-[#151A17] border-t border-[#D5D5CE] dark:border-[#29342F] flex items-center gap-3 text-xs text-[#737688] dark:text-[#A0A7A3]">
+        <footer className="p-4 md:px-8 bg-[#EAEAE5] dark:bg-[#151A17] border-t border-[#D5D5CE] dark:border-[#29342F] flex items-center gap-3 text-xs text-[#737688] dark:text-[#A0A7A3] shrink-0">
           <Shield className="w-4 h-4 text-[#0052ff] dark:text-[#3b82f6] shrink-0" />
           <p className="leading-snug">
             Your mailbox remains under your control. Mailiac only requests read-only permissions required for forensic analysis.
